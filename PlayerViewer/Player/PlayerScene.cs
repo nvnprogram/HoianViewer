@@ -812,12 +812,19 @@ namespace PlayerViewer.Player
         }
 
         /// <summary>Hair preset key: "Har_SQD012" -> "SQD012".</summary>
+        /// <summary>
+        /// Hair preset key: "Har_SQD012" -> "SQD012".
+        /// Side Order variants map to their base: "Har_OCT000_SdodrCstm00" -> "OCT000".
+        /// </summary>
         string GetHairKey()
         {
             if (CurrentHair == null || CurrentHair.IsCustom)
                 return null;
             string id = CurrentHair.RowId;
-            return id.StartsWith("Har_") ? id.Substring(4) : id;
+            if (id.StartsWith("Har_")) id = id.Substring(4);
+            int sd = id.IndexOf("_SdodrCstm", StringComparison.Ordinal);
+            if (sd > 0) id = id.Substring(0, sd);
+            return id;
         }
 
         static Dictionary<string, ArrangeBoneParam> ParseHairArrange(byte[] data, out string afroType)
