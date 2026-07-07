@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net6.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Platforms>AnyCPU;x64</Platforms>
+    <AssemblyName>PlayerViewer</AssemblyName>
+    <RootNamespace>PlayerViewer</RootNamespace>
+    <CssRoot>..\Cafe-Shader-Studio</CssRoot>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="BfresLibrary">
+      <HintPath>$(CssRoot)\BfresEditor\Lib\BfresLibrary.dll</HintPath>
+    </Reference>
+    <Reference Include="ImGui.NET">
+      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\ImGui.NET.dll</HintPath>
+    </Reference>
+    <Reference Include="OpenTK">
+      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\OpenTK.dll</HintPath>
+    </Reference>
+    <Reference Include="Syroot.BinaryData">
+      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Syroot.BinaryData.dll</HintPath>
+    </Reference>
+    <Reference Include="Syroot.Maths">
+      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Syroot.Maths.dll</HintPath>
+    </Reference>
+    <Reference Include="Syroot.NintenTools.NSW.Bntx">
+      <HintPath>$(CssRoot)\BfresEditor\Lib\Syroot.NintenTools.NSW.Bntx.dll</HintPath>
+    </Reference>
+    <Reference Include="Toolbox.Core">
+      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Toolbox.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="ZstdNet">
+      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\ZstdNet.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(CssRoot)\AGraphicsLibrary\AGraphicsLibrary.csproj" />
+    <ProjectReference Include="$(CssRoot)\BfresEditor\BfresEditor.csproj" />
+    <ProjectReference Include="$(CssRoot)\CafeStudio.UI\CafeStudio.UI.csproj" />
+    <ProjectReference Include="$(CssRoot)\GLFrameworkEngine\GLFrameworkEngine.csproj" />
+  </ItemGroup>
+
+  <!-- Runtime content shared with Cafe Shader Studio (shaders, resources, natives). -->
+  <ItemGroup>
+    <Content Include="$(CssRoot)\CafeShaderStudio\Shaders\**\*.*" LinkBase="Shaders" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(CssRoot)\CafeShaderStudio\Resources\**\*.*" LinkBase="Resources" CopyToOutputDirectory="PreserveNewest" />
+    <!-- ImGuiController loads fonts from Lib/ relative to the exe. -->
+    <Content Include="$(CssRoot)\CafeShaderStudio\Lib\Font.ttf" Link="Lib\Font.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(CssRoot)\CafeShaderStudio\Lib\OpenFontIcons.ttf" Link="Lib\OpenFontIcons.ttf" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(CssRoot)\CafeShaderStudio\cimgui.dll" Link="cimgui.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="$(CssRoot)\CafeShaderStudio\x64\libzstd.dll" Link="libzstd.dll" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- Toolbox.Core's PluginManager discovers file formats by scanning <exe>/Plugins/*.dll,
+       so BfresEditor (which contains the BFRES IFileFormat + IPlugin) must be copied there. -->
+  <Target Name="CopyPluginDlls" AfterTargets="Build">
+    <Copy SourceFiles="$(OutDir)BfresEditor.dll" DestinationFolder="$(OutDir)Plugins" SkipUnchangedFiles="true" />
+  </Target>
+</Project>

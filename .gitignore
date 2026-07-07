@@ -1,0 +1,17 @@
+bin/
+obj/
+.vs/
+.vscode/
+.cursor/
+**/Objects/*.dgspec.json
+**/Objects/project.assets.json
+**/Objects/*.nuget.*
+**/Objects/*.cache
+**/Objects/*.g.props
+**/Objects/*.g.targets
+*.user
+*.suo
+config.json
+packages/
+.idea/
+*.DotSettings.user

@@ -1,0 +1,105 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using System.IO;
+using Newtonsoft.Json;
+using ImGuiNET;
+using CafeStudio.UI;
+
+namespace CafeShaderStudio
+{
+    public class Config
+    {
+        public string SMOGamePath = "";
+        public string SM3DWGamePath = "";
+        public string MK8DGamePath = "";
+        public string SP3GamePath = "";
+
+        [JsonIgnore]
+        public bool HasValidSMOPath = false;
+        [JsonIgnore]
+        public bool HasValidSM3DWPath = false;
+        [JsonIgnore]
+        public bool HasValidMK8DPath = false;
+        [JsonIgnore]
+        public bool HasValidSP3Path = false;
+
+        /// <summary>
+        /// Renders the current configuration UI.
+        /// </summary>
+        public void RenderUI()
+        {
+            RenderPathUI("Super Mario Odyssey Path", ref SMOGamePath, HasValidSMOPath);
+            RenderPathUI("Super Mario 3DW Path", ref SM3DWGamePath, HasValidSM3DWPath);
+            RenderPathUI("Mario Kart 8 Deluxe Path", ref MK8DGamePath, HasValidMK8DPath);
+            RenderPathUI("Splatoon 3 romfs Path", ref SP3GamePath, HasValidSP3Path);
+        }
+
+        private void RenderPathUI(string label, ref string path, bool isValid)
+        {
+            bool clicked = ImGui.Button($"  -  ##{label}");
+
+            ImGui.SameLine();
+            if (!isValid)
+            {
+                ImGui.PushStyleColor(ImGuiCol.FrameBg, new Vector4(0.5f, 0, 0, 1));
+                ImGui.InputText(label, ref path, 500, ImGuiInputTextFlags.ReadOnly);
+                ImGui.PopStyleColor();
+            }
+            else
+            {
+                ImGui.PushStyleColor(ImGuiCol.FrameBg, new Vector4(0, 0.5f, 0, 1));
+                ImGui.InputText(label, ref path, 500, ImGuiInputTextFlags.ReadOnly);
+                ImGui.PopStyleColor();
+            }
+
+            if (clicked)
+            {
+                var dialog = new ImguiFolderDialog();
+                if (dialog.ShowDialog()) {
+                    path = dialog.SelectedPath;
+                    Save();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Loads the config json file on disc or creates a new one if it does not exist.
+        /// </summary>
+        /// <returns></returns>
+        public static Config Load() {
+            if (!File.Exists("Config.json")) { new Config().Save(); }
+
+            var config = JsonConvert.DeserializeObject<Config>(File.ReadAllText("Config.json"));
+            config.Reload();
+            return config;
+        }
+
+        /// <summary>
+        /// Saves the current configuration to json on disc.
+        /// </summary>
+        public void Save() {
+           File.WriteAllText("Config.json", JsonConvert.SerializeObject(this));
+            Reload();
+        }
+
+        /// <summary>
+        /// Called when the config file has been loaded or saved.
+        /// </summary>
+        public void Reload()
+        {
+            RedStarLibrary.GlobalSettings.GamePath = SMOGamePath;
+            HasValidSMOPath = Directory.Exists($"{SMOGamePath}{Path.DirectorySeparatorChar}ShaderData");
+
+            BfresEditor.SM3DWShaderLoader.GamePath = SM3DWGamePath;
+            HasValidSM3DWPath = Directory.Exists($"{SM3DWGamePath}{Path.DirectorySeparatorChar}ShaderData");
+
+            TrackStudioLibrary.Turbo.GlobalSettingsMK8.MarioKart8Path = MK8DGamePath;
+            HasValidMK8DPath = File.Exists($"{MK8DGamePath}{Path.DirectorySeparatorChar}Data{Path.DirectorySeparatorChar}objflow.byaml");
+
+            BfresEditor.HoianNXRender.GamePath = SP3GamePath;
+            HasValidSP3Path = Directory.Exists($"{SP3GamePath}{Path.DirectorySeparatorChar}Shader");
+        }
+    }
+}
