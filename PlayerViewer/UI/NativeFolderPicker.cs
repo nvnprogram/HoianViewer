@@ -11,6 +11,12 @@ namespace PlayerViewer.UI
             catch { return null; }
         }
 
+        public static string OpenFile(string title, string filterDisplay, string filterExt)
+        {
+            try { return OpenFileCom(title, filterDisplay, filterExt); }
+            catch { return null; }
+        }
+
         public static string SaveFile(string title, string defaultName, string filterDisplay, string filterExt)
         {
             try { return SaveFileCom(title, defaultName, filterDisplay, filterExt); }
@@ -60,6 +66,42 @@ namespace PlayerViewer.UI
         {
             [MarshalAs(UnmanagedType.LPWStr)] public string pszName;
             [MarshalAs(UnmanagedType.LPWStr)] public string pszSpec;
+        }
+
+        static string OpenFileCom(string title, string filterDisplay, string filterExt)
+        {
+            int hr = CoCreateInstance(ref CLSID_FileOpenDialog, IntPtr.Zero, 1,
+                ref IID_IFileOpenDialog, out IntPtr dlg);
+            if (hr != 0) return null;
+
+            try
+            {
+                GetOptions(dlg, out uint opts);
+                SetOptions(dlg, opts | 0x40 /* FOS_FORCEFILESYSTEM */);
+
+                if (!string.IsNullOrEmpty(title))
+                    SetTitle(dlg, title);
+
+                var filter = new COMDLG_FILTERSPEC { pszName = filterDisplay, pszSpec = filterExt };
+                SetFileTypes(dlg, 1, ref filter);
+
+                hr = Show(dlg, GetActiveWindow());
+                if (hr != 0) return null;
+
+                hr = GetResult(dlg, out IntPtr item);
+                if (hr != 0 || item == IntPtr.Zero) return null;
+
+                try
+                {
+                    hr = GetDisplayName(item, 0x80058000, out IntPtr namePtr);
+                    if (hr != 0) return null;
+                    string path = Marshal.PtrToStringUni(namePtr);
+                    Marshal.FreeCoTaskMem(namePtr);
+                    return path;
+                }
+                finally { Marshal.Release(item); }
+            }
+            finally { Marshal.Release(dlg); }
         }
 
         static string SelectFolderCom(string title, string startPath)

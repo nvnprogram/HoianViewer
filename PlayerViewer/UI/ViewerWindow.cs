@@ -435,11 +435,9 @@ namespace PlayerViewer.UI
                 }
                 if (ImGui.MenuItem("View model file... (or drag && drop)"))
                 {
-                    var dlg = new ImguiFileDialog();
-                    dlg.AddFilter(".bfres", "Model");
-                    dlg.AddFilter(".zs", "Compressed model");
-                    if (dlg.ShowDialog("standalone_model"))
-                        OpenStandalone(dlg.FilePath);
+                    string file = NativeFolderPicker.OpenFile("Open Model", "BFRES models (*.bfres;*.zs)", "*.bfres;*.zs");
+                    if (!string.IsNullOrEmpty(file))
+                        OpenStandalone(file);
                 }
                 if (_standalone != null && ImGui.MenuItem("Back to player"))
                     CloseStandalone();
@@ -966,14 +964,14 @@ namespace PlayerViewer.UI
 
         void SaveScreenshot()
         {
-            var dlg = new ImguiFileDialog { SaveDialog = true, FileName = "player.png" };
-            dlg.AddFilter(".png", "PNG image");
-            if (!dlg.ShowDialog("screenshot"))
+            string path = NativeFolderPicker.SaveFile("Save Screenshot", "player.png", "PNG image (*.png)", "*.png");
+            if (string.IsNullOrEmpty(path))
                 return;
+            if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                path += ".png";
 
             var (_, w, h) = CaptureSizes[_captureRes];
             using var bmp = _pipeline.Capture(ActiveScene, w, h, _pipeline.BackgroundColor, _captureTransparent);
-            string path = dlg.FilePath.EndsWith(".png") ? dlg.FilePath : dlg.FilePath + ".png";
             bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
             Console.WriteLine($"[UI] Saved {path}");
         }
