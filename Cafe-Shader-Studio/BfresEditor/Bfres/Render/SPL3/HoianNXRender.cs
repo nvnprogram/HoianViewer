@@ -85,6 +85,44 @@ namespace BfresEditor
         public static GLTexture ShadowPrepassTexture = null;
 
         /// <summary>
+        /// Half-resolution scene color buffer for refraction materials (blitz_refract_type).
+        /// Set by the pipeline between opaque and transparent passes.
+        /// </summary>
+        public static GLTexture RefractionColorBuffer = null;
+
+        /// <summary>
+        /// Scene depth buffer for refraction materials. Set by the pipeline.
+        /// </summary>
+        public static GLTexture RefractionDepthBuffer = null;
+
+        /// <summary>
+        /// Set to true when any loaded material has blitz_refract_type, so the
+        /// pipeline knows it needs to capture refraction buffers this frame.
+        /// </summary>
+        public static bool NeedsRefractionBuffers = false;
+
+        /// <summary>
+        /// Debug: when set, every uniform block submitted for materials whose name
+        /// contains DumpUniformsMaterial is written to this directory as
+        /// "material_blockname.bin" (exact bytes the GL driver receives).
+        /// </summary>
+        public static string DumpUniformsDir = null;
+        public static string DumpUniformsMaterial = "";
+
+        /// <summary>
+        /// When set, every uniform block for materials containing OverrideUniformsMaterial
+        /// is replaced with the corresponding fp_cN.bin from this directory (N derived from
+        /// the fragment location). Blocks listed in OverrideSkipBlocks are left untouched.
+        /// </summary>
+        public static string OverrideUniformsDir = null;
+        public static string OverrideUniformsMaterial = "";
+        public static HashSet<string> OverrideSkipBlocks = new HashSet<string>
+        {
+            "gsys_context", "gsys_shape", "gsys_skeleton", "gsys_shader_option",
+            "gsys_skeleton_ex", "gsys_shape_ex", "gsys_scene_material",
+        };
+
+        /// <summary>
         /// The world-space direction the main light travels (override or dumped env data).
         /// </summary>
         public static OpenTK.Vector3 GetMainLightDir()
@@ -408,6 +446,18 @@ namespace BfresEditor
             if (mat.BlendState.State == GLMaterialBlendState.BlendState.Translucent ||
                 mat.BlendState.State == GLMaterialBlendState.BlendState.Custom)
                 mesh.Pass = Pass.TRANSPARENT;
+
+            //Materials that sample the game framebuffer (gsys_enable_color_buffer=1)
+            //must render in the transparent pass so the pipeline can capture the 
+            //framebuffer between passes.
+            bool usesFramebuffer =
+                (mat.ShaderOptions.TryGetValue("gsys_enable_color_buffer", out string ecb) && ecb == "1");
+            if (usesFramebuffer)
+            {
+                mesh.Pass = Pass.TRANSPARENT;
+                mesh.IsRefractionPass = true;
+                NeedsRefractionBuffers = true;
+            }
         }
 
         public override void ReloadProgram(BfresMeshAsset mesh)
@@ -564,7 +614,8 @@ namespace BfresEditor
                     SetShapeBlock(bfresMesh, meshBone.Transform, block);
                     break;
                 case "gsys_skeleton":
-                    SetBoneMatrixBlock(this.ParentModel.Skeleton, bfresMesh.SkinCount > 1, block, 150);
+                    SetBoneMatrixBlock(this.ParentModel.Skeleton, bfresMesh.SkinCount > 1, block,
+                        Math.Max(this.ParentModel.Skeleton.Bones.Count, 1));
                     break;
                 case "gsys_material":
                     SetMaterialBlock(bfresMaterial, block);
@@ -828,27 +879,37 @@ namespace BfresEditor
 
         void OverrideMaterialUniforms(UniformBlock block, int blockSize)
         {
-            string model = ParentModel.Name;
-            bool isHair = model.StartsWith("Har_");
-            bool isRollerBrush = model.Contains("Roller") || model.Contains("Brush");
-            if (!isHair && !isRollerBrush) return;
-
-            float paintIntensity = isHair ? 0f : 1f;
-
             var matBlock = ShaderModel.UniformBlocks.Values.FirstOrDefault(x =>
                 x.Type == BfshaLibrary.UniformBlock.BlockType.Material);
             if (matBlock == null) return;
+
+            while (block.Buffer.Count < blockSize)
+                block.Buffer.Add(0);
+
+            string model = ParentModel.Name;
+            bool isHair = model.StartsWith("Har_");
+            bool isRollerBrush = model.Contains("Roller") || model.Contains("Brush");
+
+            var overrides = new Dictionary<string, float>();
+
+            if (isHair)
+                overrides["two_color_complement_paint_intensity"] = 0f;
+            else if (isRollerBrush)
+                overrides["two_color_complement_paint_intensity"] = 1f;
+
+            overrides["output_clamp_value"] = 100f;
+
+            if (overrides.Count == 0) return;
 
             int index = 0;
             foreach (var param in matBlock.Uniforms.Values)
             {
                 string name = matBlock.Uniforms.GetKey(index++);
-                if (name != "two_color_complement_paint_intensity") continue;
+                if (!overrides.TryGetValue(name, out float value)) continue;
 
                 int offset = param.Offset - 1;
                 if (offset + 4 <= block.Buffer.Count)
-                    WriteFloat(block.Buffer, offset, paintIntensity);
-                break;
+                    WriteFloat(block.Buffer, offset, value);
             }
         }
 
@@ -1001,6 +1062,10 @@ namespace BfresEditor
                         return BrdfTexture;
                     if (samplerName == "gsys_shadow_prepass" && ShadowPrepassTexture != null)
                         return ShadowPrepassTexture;
+                    if (samplerName == "gsys_color_buffer" && RefractionColorBuffer != null)
+                        return RefractionColorBuffer;
+                    if (samplerName == "gsys_depth_buffer" && RefractionDepthBuffer != null)
+                        return RefractionDepthBuffer;
                     if (WhiteDefaultSamplers.Contains(samplerName))
                         return WhiteTexture;
                     return BlackTexture;

@@ -429,9 +429,27 @@ namespace BfresEditor
             }
         }
 
+        private static readonly HashSet<string> _framebufferSamplers = new HashSet<string>
+        {
+            "gsys_depth_buffer", "gsys_color_buffer"
+        };
+
         private void DecodeSwitchBinary(BfshaLibrary.ResShaderProgram program)
         {
-            GLShaders[ShaderIndex] = TegraShaderDecoder.LoadShaderProgram(ShaderModel, ShaderModel.GetShaderVariation(program));
+            HashSet<string> yFlipSamplers = null;
+            var samplerLocs = program.SamplerLocations;
+            for (int i = 0; i < ShaderModel.Samplers.Count && i < samplerLocs.Length; i++)
+            {
+                if (!_framebufferSamplers.Contains(ShaderModel.Samplers.GetKey(i)))
+                    continue;
+                int loc = samplerLocs[i].FragmentLocation;
+                if (loc < 0) continue;
+                yFlipSamplers ??= new HashSet<string>();
+                yFlipSamplers.Add(ConvertSamplerID(loc));
+            }
+
+            GLShaders[ShaderIndex] = TegraShaderDecoder.LoadShaderProgram(
+                ShaderModel, ShaderModel.GetShaderVariation(program), yFlipSamplers);
             shaderProgram = GLShaderInfo.Program;
         }
 

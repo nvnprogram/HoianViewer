@@ -255,10 +255,12 @@ namespace BfresEditor
 
             //Go through each mesh and map materials using shader programs
             var meshes = RenderLayer.Sort(this);
+
             foreach (var mesh in meshes)
             {
                 if (mesh.Pass != pass || !mesh.IsVisible || 
-                    mesh.IsDepthShadow || mesh.IsCubeMap || mesh.UseColorBufferPass)
+                    mesh.IsDepthShadow || mesh.IsCubeMap || mesh.UseColorBufferPass ||
+                    mesh.IsRefractionPass)
                     continue;
 
                 //Load the material data
@@ -273,6 +275,14 @@ namespace BfresEditor
 
                 RenderMesh(control, mesh);
             }
+
+            //Refraction meshes: depth prepass with color writes disabled, then
+            //color pass with GL_EQUAL.
+            //This is seemingly NOT accurate to the game, as far as I could tell,
+            //it's rendering and then immediately sampling the depth buffer,
+            //which caused artifacts when testing here.
+            if (pass == GLFrameworkEngine.Pass.TRANSPARENT)
+                DrawRefractionMeshes(control, meshes, parentRender);
 
             GL.DepthMask(true);
             GL.BindTexture(TextureTarget.Texture2D, 0);
@@ -315,6 +325,46 @@ namespace BfresEditor
             GL.Disable(EnableCap.Blend);
             GL.Enable(EnableCap.CullFace);
             GL.CullFace(CullFaceMode.Back);
+        }
+
+        private void DrawRefractionMeshes(GLContext control, List<BfresMeshAsset> meshes,
+            BfresRender parentRender)
+        {
+            var refractionMeshes = new List<BfresMeshAsset>();
+            foreach (var mesh in meshes)
+            {
+                if (mesh.Pass != GLFrameworkEngine.Pass.TRANSPARENT || !mesh.IsVisible ||
+                    !mesh.IsRefractionPass || mesh.IsDepthShadow || mesh.IsCubeMap)
+                    continue;
+                if (!ModelData.Skeleton.Bones[mesh.BoneIndex].Visible)
+                    continue;
+                refractionMeshes.Add(mesh);
+            }
+            if (refractionMeshes.Count == 0)
+                return;
+
+            GL.ColorMask(false, false, false, false);
+            GL.DepthMask(true);
+            GL.Enable(EnableCap.DepthTest);
+            GL.DepthFunc(DepthFunction.Lequal);
+            foreach (var mesh in refractionMeshes)
+            {
+                mesh.Material = (FMAT)mesh.Shape.Material;
+                ((BfresMaterialAsset)mesh.MaterialAsset).ParentRenderer = parentRender;
+                RenderMesh(control, mesh);
+            }
+
+            //Flush depth writes so refraction can reliably sample them
+            GL.TextureBarrier();
+
+            GL.ColorMask(true, true, true, true);
+            GL.DepthMask(false);
+            GL.DepthFunc(DepthFunction.Equal);
+            foreach (var mesh in refractionMeshes)
+                RenderMesh(control, mesh);
+
+            GL.DepthMask(true);
+            GL.DepthFunc(DepthFunction.Lequal);
         }
 
         private void DrawSelectedFaces()

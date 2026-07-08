@@ -4,6 +4,37 @@ using Newtonsoft.Json;
 
 namespace PlayerViewer.Core
 {
+    
+    public class PlayerConfig
+    {
+        public int PlayerType;
+        public int EyeColor;
+        public int SkinTone;
+        public string Hair;
+        public int HairVariation;
+        public string Eyebrow;
+        public int EyebrowVariation;
+        public string Head;
+        public int HeadVariation;
+        public string Clothes;
+        public int ClothesVariation;
+        public string Bottom;
+        public int BottomVariation;
+        public string Shoes;
+        public int ShoesVariation;
+        public string Tank;
+        public int TankVariation;
+        public string Weapon;
+        public int WeaponVariation;
+        public int TeamColorIndex;
+        public int TeamIndex;
+        public bool UseCustomTeamColor = true;
+        public float[] CustomAlpha = { 0.925f, 0.243f, 0.549f };
+        public float[] CustomBravo = { 0.196f, 0.855f, 0.302f };
+        public float[] CustomCharlie = { 0.980f, 0.769f, 0.196f };
+    }
+
+
     /// <summary>
     /// Persisted app configuration (romfs path etc). Stored next to the executable.
     /// </summary>
@@ -15,6 +46,8 @@ namespace PlayerViewer.Core
         public bool UseLayeredFs = false;
         public int WindowWidth = 1600;
         public int WindowHeight = 900;
+
+        public PlayerConfig Player = new();
 
         static string FilePath => Path.Combine(AppContext.BaseDirectory, "playerviewer_config.json");
 

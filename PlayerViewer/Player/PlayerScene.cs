@@ -77,51 +77,9 @@ namespace PlayerViewer.Player
                 return null;
             }
             var bfres = LoadModelData(data, Path.Combine(Romfs.Root, "Model", modelName + ".bfres"));
-
-            //Variant weapons (Wmn_X_Cstm01) only embed their re-authored textures;
-            //everything else (textures AND the fold/carry skeletal anims) resolves
-            //from the base weapon's archive.
-            int cstm = modelName.IndexOf("_Cstm", StringComparison.Ordinal);
-            if (bfres != null && cstm > 0)
-                MergeBaseAssets(bfres, modelName.Substring(0, cstm));
+            if (bfres != null)
+                BfresHelpers.ResolveSharedAssets(bfres, data, Romfs);
             return bfres;
-        }
-
-        void MergeBaseAssets(BFRES bfres, string baseModelName)
-        {
-            try
-            {
-                var baseData = Romfs.ReadModel(baseModelName);
-                if (baseData == null)
-                    return;
-                var render = (BfresRender)bfres.Renderer;
-                var res = new BfresLibrary.ResFile(new MemoryStream(baseData));
-                int added = 0;
-                foreach (var tex in res.Textures.Values)
-                {
-                    if (render.Textures.ContainsKey(tex.Name))
-                        continue;
-                    if (tex is BfresLibrary.Switch.SwitchTexture st)
-                    {
-                        render.Textures.Add(tex.Name, new BntxTexture(st.BntxFile, st.Texture));
-                        added++;
-                    }
-                }
-                int anims = 0;
-                foreach (var anim in res.SkeletalAnims.Values)
-                {
-                    if (bfres.SkeletalAnimations.Any(a => a.Name == anim.Name))
-                        continue;
-                    bfres.SkeletalAnimations.Add(new BfresSkeletalAnim(res, anim, anim.Name));
-                    anims++;
-                }
-                if (added > 0 || anims > 0)
-                    Console.WriteLine($"[Scene] Merged {added} textures, {anims} anims from {baseModelName}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Scene] Base asset merge failed ({baseModelName}): {ex.Message}");
-            }
         }
 
         /// <summary>
@@ -361,18 +319,6 @@ namespace PlayerViewer.Player
                 ? CreateCustomPart(PartKind.Hair, entry)
                 : CreatePart(PartKind.Hair, modelName);
             if (part == null) { OnPartsChanged?.Invoke(); return; }
-
-            //Side Order custom hairs (Har_XXX_SdodrCstmNN_F) only embed their own
-            //textures; merge from the base hair (Har_XXX_F) to fill gaps.
-            int sdIdx = modelName.IndexOf("_SdodrCstm", StringComparison.Ordinal);
-            if (!entry.IsCustom && sdIdx > 0)
-            {
-                int suffixStart = modelName.IndexOf('_', sdIdx + "_SdodrCstm".Length);
-                string baseName = suffixStart > 0
-                    ? modelName.Substring(0, sdIdx) + modelName.Substring(suffixStart)
-                    : modelName.Substring(0, sdIdx);
-                MergeBaseAssets(part.Bfres, baseName);
-            }
 
             part.ResolveWelds(Human.Skeleton, HeadBoneMap);
             part.AttachBone = part.Skeleton.SearchBone("Head_Root") ?? part.Skeleton.SearchBone("Root");
@@ -637,11 +583,22 @@ namespace PlayerViewer.Player
                 {
                     part.ResolveWelds(Human.Skeleton, new Dictionary<string, string> { { "Root", "Weapon_L" } }, mapOnly: true);
                     part.AttachBone = part.Skeleton.SearchBone("Root");
-                    //The _L fmdb is pre-mirrored geometry, so its intended world
-                    //transform is mirror(Weapon_R world). The player's Weapon_L bone
-                    //frame = mirror(Weapon_R) with an extra 180° local-X twist
-                    //(verified from bone dumps), so cancel that twist here.
-                    part.AttachOffset = Matrix4.CreateRotationX(MathHelper.Pi);
+
+                    bool isMirrorCopy = leftModel.file == mainModel.file &&
+                                        leftModel.model == mainModel.model;
+                    if (isMirrorCopy)
+                    {
+                        //Same model reused for both hands (dualies without a _L mesh).
+                        //NegateMatrix = scale(-1,1,1) * rot_x(Pi), which mirrors the
+                        //geometry and cancels the Weapon_L bone's 180deg X twist in one step.
+                        part.Mirror = true;
+                    }
+                    else
+                    {
+                        //Dedicated _L model with pre-mirrored geometry: just cancel the
+                        //180deg local-X twist in the Weapon_L bone frame.
+                        part.AttachOffset = Matrix4.CreateRotationX(MathHelper.Pi);
+                    }
                     Parts[PartKind.WeaponLeft] = part;
                 }
             }

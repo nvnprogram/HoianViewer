@@ -57,7 +57,7 @@ namespace PlayerViewer.Player
 
             //Fake path inside romfs Model so the shader archive lookup works.
             string fakePath = Path.Combine(romfs.Root, "Model", stem + ".bfres");
-            return Load(raw, fakePath, stem, filePath);
+            return Load(raw, fakePath, stem, filePath, romfs);
         }
 
         /// <summary>Loads a model from the (layered) romfs by model name.</summary>
@@ -67,10 +67,10 @@ namespace PlayerViewer.Player
             if (data == null)
                 return null;
             string fakePath = Path.Combine(romfs.Root, "Model", modelName + ".bfres");
-            return Load(data, fakePath, modelName, romfs.Resolve($"Model/{modelName}.bfres") ?? "");
+            return Load(data, fakePath, modelName, romfs.Resolve($"Model/{modelName}.bfres") ?? "", romfs);
         }
 
-        static StandaloneScene Load(byte[] data, string fakePath, string name, string sourcePath)
+        static StandaloneScene Load(byte[] data, string fakePath, string name, string sourcePath, Romfs romfs)
         {
             IFileFormat format;
             using (var ms = new MemoryStream(data))
@@ -91,6 +91,8 @@ namespace PlayerViewer.Player
             };
             scene.Render.ID = "standalone_" + name;
             DataCache.ModelCache[scene.Render.ID] = scene.Render;
+
+            BfresHelpers.ResolveSharedAssets(bfres, data, romfs);
 
             foreach (var anim in bfres.SkeletalAnimations)
                 scene.AnimNames.Add(anim.Name);

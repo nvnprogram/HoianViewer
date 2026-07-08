@@ -69,6 +69,7 @@ namespace BfresEditor
         public bool IsDepthShadow = false;
         public bool RenderInCubeMap = false;
         public bool IsSealPass = false;
+        public bool IsRefractionPass = false;
 
         public int LODMeshLevel = 0;
 

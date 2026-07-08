@@ -8,7 +8,6 @@ using Toolbox.Core;
 using Toolbox.Core.IO;
 using GLFrameworkEngine;
 using System.Text;
-
 namespace BfresEditor
 {
     public class TegraShaderDecoder
@@ -18,6 +17,9 @@ namespace BfresEditor
 
         public static readonly System.Diagnostics.Stopwatch TotalTime = new System.Diagnostics.Stopwatch();
         public static int LoadCount = 0;
+
+        const int CacheVersion = 3;
+        static bool _cacheVersionChecked;
 
         //Fine-grained profiling of a shader load (all on the render thread).
         public static readonly Stopwatch DataTime = new Stopwatch();       //bfsha bytecode access
@@ -80,15 +82,119 @@ namespace BfresEditor
         }
 
 
-        public static ShaderInfo LoadShaderProgram(BfshaLibrary.ShaderModel shaderModel, BfshaLibrary.ShaderVariation variation)
+        static void EnsureCacheVersion()
+        {
+            if (_cacheVersionChecked) return;
+            _cacheVersionChecked = true;
+
+            string versionPath = "ShaderCache/version.txt";
+
+            if (!Directory.Exists("ShaderCache"))
+            {
+                Directory.CreateDirectory("ShaderCache");
+                File.WriteAllText(versionPath, CacheVersion.ToString());
+                return;
+            }
+
+            int existing = 1;
+            if (File.Exists(versionPath))
+                int.TryParse(File.ReadAllText(versionPath).Trim(), out existing);
+
+            if (existing == CacheVersion)
+                return;
+
+            Console.WriteLine($"[ShaderCache] Version mismatch ({existing} -> {CacheVersion}), purging cache.");
+            foreach (var f in Directory.GetFiles("ShaderCache"))
+                try { File.Delete(f); } catch { }
+            File.WriteAllText(versionPath, CacheVersion.ToString());
+        }
+
+        /// <summary>
+        /// Patches the decompiled fragment shader for framebuffer samplers:
+        /// - Y-flip UV: UV -> UV * vec2(1,-1) + vec2(0,1)  (OpenGL bottom-up -> NX top-down)
+        /// </summary>
+        internal static string PatchFramebufferSamplers(string fragSource,
+            HashSet<string> yFlipSamplers)
+        {
+            if (yFlipSamplers == null || yFlipSamplers.Count == 0) return fragSource;
+
+            var sb = new StringBuilder();
+            foreach (var line in fragSource.Split('\n'))
+            {
+                string patched = line;
+                foreach (var sampler in yFlipSamplers)
+                    patched = PatchLineTexture(patched, sampler);
+                sb.AppendLine(patched);
+            }
+            return sb.ToString();
+        }
+
+        static string PatchLineTexture(string line, string samplerName)
+        {
+            int searchStart = 0;
+            while (true)
+            {
+                int texIdx = line.IndexOf("texture", searchStart, StringComparison.Ordinal);
+                if (texIdx < 0) break;
+
+                int parenIdx = line.IndexOf('(', texIdx);
+                if (parenIdx < 0) break;
+
+                int cursor = parenIdx + 1;
+                while (cursor < line.Length && char.IsWhiteSpace(line[cursor])) cursor++;
+
+                if (cursor + samplerName.Length > line.Length ||
+                    line.Substring(cursor, samplerName.Length) != samplerName)
+                {
+                    searchStart = texIdx + 7;
+                    continue;
+                }
+
+                int afterName = cursor + samplerName.Length;
+                while (afterName < line.Length && char.IsWhiteSpace(line[afterName])) afterName++;
+                if (afterName >= line.Length || line[afterName] != ',')
+                {
+                    searchStart = texIdx + 7;
+                    continue;
+                }
+
+                int uvStart = afterName + 1;
+                while (uvStart < line.Length && char.IsWhiteSpace(line[uvStart])) uvStart++;
+
+                int depth = 0;
+                int uvEnd = uvStart;
+                while (uvEnd < line.Length)
+                {
+                    char c = line[uvEnd];
+                    if (c == '(') depth++;
+                    else if (c == ')') { if (depth == 0) break; depth--; }
+                    else if (c == ',' && depth == 0) break;
+                    uvEnd++;
+                }
+
+                string uvExpr = line.Substring(uvStart, uvEnd - uvStart).Trim();
+                string flipped = $"({uvExpr}) * vec2(1.0, -1.0) + vec2(0.0, 1.0)";
+                line = line.Substring(0, uvStart) + flipped + line.Substring(uvEnd);
+                searchStart = uvStart + flipped.Length;
+            }
+            return line;
+        }
+
+        public static ShaderInfo LoadShaderProgram(BfshaLibrary.ShaderModel shaderModel,
+            BfshaLibrary.ShaderVariation variation,
+            HashSet<string> yFlipSamplers = null)
         {
             TotalTime.Start();
-            try { return LoadShaderProgramInternal(shaderModel, variation); }
+            try { return LoadShaderProgramInternal(shaderModel, variation, yFlipSamplers); }
             finally { TotalTime.Stop(); LoadCount++; }
         }
 
-        static ShaderInfo LoadShaderProgramInternal(BfshaLibrary.ShaderModel shaderModel, BfshaLibrary.ShaderVariation variation)
+        static ShaderInfo LoadShaderProgramInternal(BfshaLibrary.ShaderModel shaderModel,
+            BfshaLibrary.ShaderVariation variation,
+            HashSet<string> yFlipSamplers)
         {
+            EnsureCacheVersion();
+
             DataTime.Start();
             var shaderData = variation.BinaryProgram.ShaderInfoData;
 
@@ -100,7 +206,10 @@ namespace BfresEditor
             string vertHash = GetHashSHA1(vertexData);
             HashTime.Stop();
 
-            string key = $"{vertHash}_{fragHash}";
+            bool hasPatch = yFlipSamplers != null && yFlipSamplers.Count > 0;
+            string key = hasPatch
+                ? $"{vertHash}_{fragHash}_fbpatch"
+                : $"{vertHash}_{fragHash}";
 
             if (_shaderInfoCache.TryGetValue(key, out var cached))
                 return cached;
@@ -141,23 +250,27 @@ namespace BfresEditor
 
             if (program == null)
             {
+                string fragSource = File.ReadAllText($"ShaderCache/{fragHash}.frag");
+                string vertSource = File.ReadAllText($"ShaderCache/{vertHash}.vert");
+
+                if (hasPatch)
+                    fragSource = PatchFramebufferSamplers(fragSource, yFlipSamplers);
+
                 LinkTime.Start();
                 if (AllowDeferredCompile && ShaderProgram.SupportsParallelCompile)
                 {
-                    //Compile+link in driver threads; meshes poll readiness at draw.
                     program = ShaderProgram.CreateDeferred(new Shader[]
                     {
-                        new FragmentShader(File.ReadAllText($"ShaderCache/{fragHash}.frag")),
-                        new VertexShader(File.ReadAllText($"ShaderCache/{vertHash}.vert")),
+                        new FragmentShader(fragSource),
+                        new VertexShader(vertSource),
                     });
                     program.OnLinked = p => SaveProgramBinary(p, binaryPath);
                 }
                 else
                 {
-                    //Load the source to opengl
                     program = new ShaderProgram(
-                                    new FragmentShader(File.ReadAllText($"ShaderCache/{fragHash}.frag")),
-                                    new VertexShader(File.ReadAllText($"ShaderCache/{vertHash}.vert")));
+                        new FragmentShader(fragSource),
+                        new VertexShader(vertSource));
 
                     SaveProgramBinary(program, binaryPath);
                 }

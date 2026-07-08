@@ -74,6 +74,11 @@ namespace PlayerViewer.UI
         Framebuffer _final;     //RGBA8 (sRGB encoded by the gamma pass)
         FinalQuad _quad;
         SelfShadowRenderer _selfShadow;
+
+        //Half-res color copy for refraction (once per frame, between opaque/transparent).
+        int _refractionFbo;
+        GLTexture2D _refractionColor;
+        int _refractionW, _refractionH;
         /// <summary>Game-accurate self shadowing (shadow prepass). On by default.</summary>
         public bool EnableSelfShadow = true;
         const int SuperSample = 2;
@@ -111,6 +116,44 @@ namespace PlayerViewer.UI
             depth = new DepthTexture(width, height, PixelInternalFormat.DepthComponent24);
             fbo.AddAttachment(FramebufferAttachment.DepthAttachment, depth);
             return fbo;
+        }
+
+        /// <summary>
+        /// Blits the scene color at half resolution for refraction, and binds the live
+        /// scene depth texture directly. The shader handles the OpenGL <-> NX Y-flip via a
+        /// patched texture() call (see <see cref="TegraShaderDecoder.PatchSamplerYFlip"/>).
+        /// </summary>
+        void CaptureRefractionBuffers(Framebuffer screen, DepthTexture depth, int ssW, int ssH)
+        {
+            int halfW = ssW / 2, halfH = ssH / 2;
+            if (halfW < 1 || halfH < 1) return;
+
+            if (_refractionFbo == 0 || _refractionW != halfW || _refractionH != halfH)
+            {
+                if (_refractionFbo != 0) GL.DeleteFramebuffer(_refractionFbo);
+                _refractionColor = new GLTexture2D();
+                GL.BindTexture(TextureTarget.Texture2D, _refractionColor.ID);
+                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.R11fG11fB10f,
+                    halfW, halfH, 0, PixelFormat.Rgb, PixelType.Float, IntPtr.Zero);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+                _refractionFbo = GL.GenFramebuffer();
+                GL.BindFramebuffer(FramebufferTarget.Framebuffer, _refractionFbo);
+                GL.FramebufferTexture2D(FramebufferTarget.Framebuffer,
+                    FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _refractionColor.ID, 0);
+                _refractionW = halfW;
+                _refractionH = halfH;
+            }
+
+            GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, screen.ID);
+            GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _refractionFbo);
+            GL.BlitFramebuffer(0, 0, ssW, ssH, 0, 0, halfW, halfH,
+                ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+
+            BfresEditor.HoianNXRender.RefractionColorBuffer = _refractionColor;
+            BfresEditor.HoianNXRender.RefractionDepthBuffer = depth;
         }
 
         //Fallback self-shadow light bounds (player-sized), used when the scene has
@@ -250,11 +293,28 @@ namespace PlayerViewer.UI
                 if (scene != null)
                 {
                     scene.Draw(Context, Pass.OPAQUE);
+
+                    bool refract = screenDepth != null &&
+                                   BfresEditor.HoianNXRender.NeedsRefractionBuffers;
+                    if (refract)
+                    {
+                        CaptureRefractionBuffers(screen, screenDepth, ssWidth, ssHeight);
+                        screen.Bind();
+                        GL.Viewport(0, 0, ssWidth, ssHeight);
+                        GL.TextureBarrier();
+                    }
+
                     if (keepAlpha)
                         GL.ColorMask(true, true, true, false);
                     scene.Draw(Context, Pass.TRANSPARENT);
                     if (keepAlpha)
                         GL.ColorMask(true, true, true, true);
+
+                    if (refract)
+                    {
+                        BfresEditor.HoianNXRender.RefractionColorBuffer = null;
+                        BfresEditor.HoianNXRender.RefractionDepthBuffer = null;
+                    }
                 }
                 Context.CurrentShader = null;
                 screen.Unbind();
