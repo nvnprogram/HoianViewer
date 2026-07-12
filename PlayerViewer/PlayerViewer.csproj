@@ -76,10 +76,18 @@
     <Copy SourceFiles="$(OutDir)BfresEditor.dll" DestinationFolder="$(OutDir)Plugins" SkipUnchangedFiles="true" />
   </Target>
 
-  <!-- Publish drops files into $(PublishDir), which the Build-time target above doesn't
-       populate, so the plugin scan directory must be recreated there too. -->
+  <!-- Recreate the plugin scan directory in the publish output. Source BfresEditor.dll from the
+       loose build output ($(OutDir)) rather than $(PublishDir): under single-file publish the DLL
+       is bundled into the exe and no longer sits loose in $(PublishDir), but the pre-bundle build
+       copy in $(OutDir) is always present. -->
   <Target Name="CopyPluginDllsOnPublish" AfterTargets="Publish">
-    <Copy SourceFiles="$(PublishDir)BfresEditor.dll" DestinationFolder="$(PublishDir)Plugins" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(OutDir)BfresEditor.dll" DestinationFolder="$(PublishDir)Plugins" SkipUnchangedFiles="true"
+          Condition="Exists('$(OutDir)BfresEditor.dll')" />
+    <!-- PluginManager reads its own assembly from disk (ExecutableDir\Toolbox.Core.dll) to scan
+         built-in formats. Single-file bundles it into the exe, so drop a loose copy beside the exe;
+         the runtime still loads the bundled one, this is only for the scanner. -->
+    <Copy SourceFiles="$(OutDir)Toolbox.Core.dll" DestinationFiles="$(PublishDir)Toolbox.Core.dll" SkipUnchangedFiles="true"
+          Condition="Exists('$(OutDir)Toolbox.Core.dll') And !Exists('$(PublishDir)Toolbox.Core.dll')" />
   </Target>
 
   <!-- Also drop cimgui under the lib-prefixed name in case the loader probes libcimgui.so

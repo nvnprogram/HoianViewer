@@ -111,6 +111,12 @@ namespace PlayerViewer.UI
         {
             base.OnLoad(e);
 
+            //Anchor Toolbox's Shaders/Plugins/Hashes lookups to the exe directory. Its default
+            //comes from Assembly.Location, which is empty under single-file publish and would null
+            //those paths (crashing the plugin scan). AppContext.BaseDirectory is always correct.
+            Toolbox.Core.Runtime.ExecutableDir =
+                AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
             _imgui = new ImGuiController(Width, Height);
             Theme.Apply();
             ImGui.GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
