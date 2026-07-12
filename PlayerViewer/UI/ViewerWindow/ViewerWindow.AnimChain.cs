@@ -99,9 +99,9 @@ namespace PlayerViewer.UI
         void DrawModeTabs()
         {
             Widgets.SectionHeader("Animation source");
-            if (ImGui.RadioButton("Single", _animMode == 0)) _animMode = 0;
+            if (ImGui.RadioButton("Single", _animMode == 0)) { _animMode = 0; SaveCaptureSettings(); }
             ImGui.SameLine();
-            if (ImGui.RadioButton("Sequence", _animMode == 1)) _animMode = 1;
+            if (ImGui.RadioButton("Sequence", _animMode == 1)) { _animMode = 1; SaveCaptureSettings(); }
         }
 
         void DrawSequencePanel()

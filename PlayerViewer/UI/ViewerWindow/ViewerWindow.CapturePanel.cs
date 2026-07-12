@@ -130,6 +130,19 @@ namespace PlayerViewer.UI
             ImGui.PopStyleColor(2);
         }
 
+        //Mirrors the capture-panel selections into the config and persists them; called whenever
+        //one changes so they stick between runs.
+        void SaveCaptureSettings()
+        {
+            _config.CaptureResIndex = _captureRes;
+            _config.ExportFormat = _exportFormat;
+            _config.ExportFps = _exportFps;
+            _config.CaptureTransparent = _captureTransparent;
+            _config.RecordGreenscreen = _recordGreenscreen;
+            _config.AnimMode = _animMode;
+            _config.Save();
+        }
+
         void DrawCapturePanel()
         {
             Widgets.SectionHeader("Capture");
@@ -174,12 +187,13 @@ namespace PlayerViewer.UI
             {
                 for (int i = 0; i < CaptureSizes.Length; i++)
                     if (ImGui.Selectable(CaptureSizes[i].Label, i == _captureRes))
-                        _captureRes = i;
+                        { _captureRes = i; SaveCaptureSettings(); }
                 ImGui.EndCombo();
             }
 
             ImGui.SetNextItemWidth(-1);
-            ImGui.Combo("##exportformat", ref _exportFormat, ExportFormatLabels, ExportFormatLabels.Length);
+            if (ImGui.Combo("##exportformat", ref _exportFormat, ExportFormatLabels, ExportFormatLabels.Length))
+                SaveCaptureSettings();
 
             bool isPng = _exportFormat == 0;
             bool isRecord = _exportFormat == 3;
@@ -187,18 +201,22 @@ namespace PlayerViewer.UI
 
             //Format-specific option row.
             if (isPng)
-                ImGui.Checkbox("Transparent background", ref _captureTransparent);
+            {
+                if (ImGui.Checkbox("Transparent background", ref _captureTransparent)) SaveCaptureSettings();
+            }
             else if (isRecord)
-                ImGui.Checkbox("Greenscreen", ref _recordGreenscreen);
+            {
+                if (ImGui.Checkbox("Greenscreen", ref _recordGreenscreen)) SaveCaptureSettings();
+            }
 
             if (isAnim)
             {
                 ImGui.AlignTextToFramePadding();
                 ImGui.TextColored(Theme.TextDim, "FPS");
                 ImGui.SameLine();
-                if (ImGui.RadioButton("30", _exportFps == 30)) _exportFps = 30;
+                if (ImGui.RadioButton("30", _exportFps == 30)) { _exportFps = 30; SaveCaptureSettings(); }
                 ImGui.SameLine();
-                if (ImGui.RadioButton("60", _exportFps == 60)) _exportFps = 60;
+                if (ImGui.RadioButton("60", _exportFps == 60)) { _exportFps = 60; SaveCaptureSettings(); }
             }
 
             //Trim only applies where we have alpha to detect emptiness (not real-time record).
@@ -214,7 +232,7 @@ namespace PlayerViewer.UI
             Widgets.DisabledButton(ExportButtonLabel(exportChain), canExport, DoExport);
 
             if (needFfmpeg && !haveFfmpeg)
-                ImGui.TextColored(Theme.TextDim, "ffmpeg not found (app folder or PATH)");
+                ImGui.TextColored(Theme.TextDim, "ffmpeg not found (data folder or PATH)");
             else if (isAnim && !animReady)
                 ImGui.TextColored(Theme.TextDim,
                     exportChain ? "add animations to the sequence" : "select an animation to export");

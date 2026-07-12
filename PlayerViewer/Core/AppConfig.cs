@@ -36,7 +36,7 @@ namespace PlayerViewer.Core
 
 
     /// <summary>
-    /// Persisted app configuration (romfs path etc). Stored next to the executable.
+    /// Persisted app configuration (romfs paths etc). Stored in the per-user data folder.
     /// </summary>
     public class AppConfig
     {
@@ -60,9 +60,17 @@ namespace PlayerViewer.Core
         //framed subject still exports sharp. VRAM and temp-disk use scale with the square.
         public int ExportSupersample = 1;
 
+        //--- Capture-panel selections (persisted so they stick between runs)
+        public int CaptureResIndex = 2;    //index into the resolution dropdown
+        public int ExportFormat = 0;       //0 PNG, 1 MP4, 2 WebP, 3 Record
+        public int ExportFps = 60;
+        public bool CaptureTransparent = true;
+        public bool RecordGreenscreen = true;
+        public int AnimMode = 0;           //0 Single, 1 Sequence
+
         public PlayerConfig Player = new();
 
-        static string FilePath => Path.Combine(AppContext.BaseDirectory, "playerviewer_config.json");
+        static string FilePath => Path.Combine(AppPaths.DataDir, "settings.json");
 
         public static AppConfig Load()
         {

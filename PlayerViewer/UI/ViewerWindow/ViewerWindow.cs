@@ -101,6 +101,14 @@ namespace PlayerViewer.UI
             _romfsInput = config.RomfsPath ?? "";
             _sdodrInput = config.SdodrRomfsPath ?? "";
             _layeredInput = config.LayeredFsPath ?? "";
+
+            //Restore persisted capture-panel selections (clamped in case ranges changed).
+            _captureRes = Math.Clamp(config.CaptureResIndex, 0, CaptureSizes.Length - 1);
+            _exportFormat = Math.Clamp(config.ExportFormat, 0, 3);
+            _exportFps = config.ExportFps == 30 ? 30 : 60;
+            _captureTransparent = config.CaptureTransparent;
+            _recordGreenscreen = config.RecordGreenscreen;
+            _animMode = config.AnimMode == 1 ? 1 : 0;
         }
 
         protected override void OnLoad(EventArgs e)

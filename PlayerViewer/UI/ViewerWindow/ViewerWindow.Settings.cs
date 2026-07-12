@@ -2,6 +2,7 @@ using System;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
 using ImGuiNET;
+using PlayerViewer.Core;
 
 namespace PlayerViewer.UI
 {
@@ -94,6 +95,13 @@ namespace PlayerViewer.UI
             else if (ss > 4)
                 ImGui.TextColored(Theme.Gold,
                     "High supersample: large GPU memory & temp-disk use (grows with the square of the factor)");
+
+            Widgets.SectionHeader("Data folder");
+            ImGui.TextWrapped("settings.json lives here. Drop an ffmpeg binary here to use it " +
+                "instead of one on PATH.");
+            ImGui.TextColored(Theme.TextDim, AppPaths.DataDir);
+            if (ImGui.Button("Open data folder"))
+                AppPaths.OpenDataDir();
 
             if (dirty)
                 _config.Save();

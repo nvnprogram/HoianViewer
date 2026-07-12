@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using PlayerViewer.Core;
 
 namespace PlayerViewer.UI
 {
@@ -10,9 +11,11 @@ namespace PlayerViewer.UI
     /// </summary>
     public static class ExportUtil
     {
+        //Prefer an ffmpeg dropped in the per-user data folder; otherwise fall back to PATH.
         public static string ResolveFfmpeg()
         {
-            string local = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
+            string name = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+            string local = Path.Combine(AppPaths.DataDir, name);
             return File.Exists(local) ? local : "ffmpeg";
         }
 
