@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime;
-using Vector2 = System.Numerics.Vector2;
-using Vector4 = System.Numerics.Vector4;
 using CafeStudio.UI;
 using GLFrameworkEngine;
 using ImGuiNET;
@@ -76,14 +74,26 @@ namespace PlayerViewer.UI
         //(ignoring wall clock) so every animation frame lands exactly once. Reuses the
         //current camera and the chosen background (greenscreen for MP4, alpha for WebP).
         bool _animExporting;
-        int _animExportIndex;    //current animation frame being captured
-        int _animExportTotal;    //frame count of the animation
-        int _animExportStep;     //animation frames advanced per output frame (60 / fps)
-        int _exportFps = 60;     //two-tick control: 30 or 60
+        float _animExportIndex;    //current animation-frame position being captured
+        int _animExportTotal;      //frame count of the animation
+        float _animExportAdvance;  //animation frames advanced per output frame ((60/fps) * speed)
+        int _exportFps = 60;       //two-tick control: 30 or 60
         bool _animExportTransparent;
+        bool _animExportTrim;      //snapshot of TrimDeadspace taken at export start
+        VideoRecorder.OutputFormat _animExportFormat;
+        System.Numerics.Vector3 _animExportGreen;
         bool _animExportPrevPaused;
         float _animExportPrevFrame;
         System.Numerics.Vector3 _animExportPrevBg;
+        BufferedAnimExporter _bufferedExporter;   //non-null during the trim (buffered) export
+
+        //--- Unified capture UI
+        int _exportFormat;   //0 = PNG, 1 = MP4, 2 = WebP, 3 = Record (real-time)
+        bool _showSettings;
+        //Self-correcting layout: capture controls stay pinned, the animation list absorbs
+        //slack. We size the list from last frame's measured control height.
+        float _measuredCaptureHeight = 220;
+        float _measuredStandaloneTailHeight = 160;
 
         public ViewerWindow(AppConfig config)
             : base(config.WindowWidth, config.WindowHeight,
@@ -302,6 +312,8 @@ namespace PlayerViewer.UI
         protected override void OnClosed(EventArgs e)
         {
             _recorder.Dispose();
+            //Aborts any in-flight capture/encode and deletes the temp raw buffer.
+            _bufferedExporter?.Dispose();
             //Width/Height are 0 when closed while minimized; don't persist that.
             if (WindowState == WindowState.Normal && Width > 0 && Height > 0)
             {
@@ -332,7 +344,10 @@ namespace PlayerViewer.UI
             if (_animExporting)
             {
                 PlaybackSetFrame(_animExportIndex);
-                PlaybackUpdate(_animExportStep / 60f);
+                //Cloth dt is wall-clock per output frame (1/fps), independent of playback
+                //speed; matches the viewport, where the sim advances in real time and the
+                //speed slider only scales how fast the animation cursor moves.
+                PlaybackUpdate(1f / _exportFps);
                 _uiFrame = PlaybackAnimFrame;
             }
             else if (_standalone != null)
@@ -374,14 +389,14 @@ namespace PlayerViewer.UI
                 if (ActiveScene != null)
                 {
                     using var dbg = _pipeline.Capture(ActiveScene, 512, 512, _pipeline.BackgroundColor, _captureTransparent);
-                    dbg.Save(AutoScreenshotPath + ".capture.png");
+                    SixLabors.ImageSharp.ImageExtensions.SaveAsPng(dbg, AutoScreenshotPath + ".capture.png");
                 }
                 var pixels = new byte[Width * Height * 4];
                 GL.ReadBuffer(ReadBufferMode.Back);
-                GL.ReadPixels(0, 0, Width, Height, OpenTK.Graphics.OpenGL.PixelFormat.Bgra, PixelType.UnsignedByte, pixels);
-                var bmp = Framebuffer.GetBitmap(Width, Height, pixels);
-                bmp.RotateFlip(System.Drawing.RotateFlipType.RotateNoneFlipY);
-                bmp.Save(AutoScreenshotPath);
+                GL.ReadPixels(0, 0, Width, Height, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+                FlipRowsVertical(pixels, Width, Height);
+                using var img = SixLabors.ImageSharp.Image.LoadPixelData<SixLabors.ImageSharp.PixelFormats.Rgba32>(pixels, Width, Height);
+                SixLabors.ImageSharp.ImageExtensions.SaveAsPng(img, AutoScreenshotPath);
                 Console.WriteLine($"[UI] Screenshot saved {AutoScreenshotPath}");
                 Close();
             }
@@ -401,6 +416,20 @@ namespace PlayerViewer.UI
                 var pixels = _pipeline.ReadFinalPixelsAsync(out _);
                 if (pixels != null)
                     _recorder.PushFrame(pixels, _pipeline.Width, _pipeline.Height);
+            }
+        }
+
+        //Flips RGBA8 rows in place (OpenGL's bottom-up readback -> top-down image order).
+        static void FlipRowsVertical(byte[] pixels, int width, int height)
+        {
+            int stride = width * 4;
+            byte[] tmp = new byte[stride];
+            for (int y = 0; y < height / 2; y++)
+            {
+                int top = y * stride, bot = (height - 1 - y) * stride;
+                Array.Copy(pixels, top, tmp, 0, stride);
+                Array.Copy(pixels, bot, pixels, top, stride);
+                Array.Copy(tmp, 0, pixels, bot, stride);
             }
         }
     }

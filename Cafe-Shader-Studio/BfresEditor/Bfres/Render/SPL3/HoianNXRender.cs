@@ -448,7 +448,7 @@ namespace BfresEditor
                 mesh.Pass = Pass.TRANSPARENT;
 
             //Materials that sample the game framebuffer (gsys_enable_color_buffer=1)
-            //must render in the transparent pass so the pipeline can capture the 
+            //must render in the transparent pass so the pipeline can capture the
             //framebuffer between passes.
             bool usesFramebuffer =
                 (mat.ShaderOptions.TryGetValue("gsys_enable_color_buffer", out string ecb) && ecb == "1");
@@ -967,9 +967,9 @@ namespace BfresEditor
             if (WhiteTexture != null)
                 return;
 
-            WhiteTexture = GLTexture2D.FromBitmap(Resources.white);
-            BlackTexture = GLTexture2D.FromBitmap(Resources.black);
-            WhiteArrayTexture = GLTexture2DArray.FromBitmap(Resources.white);
+            WhiteTexture = GLTexture2D.FromRgba(new byte[] { 255, 255, 255, 255 }, 1, 1);
+            BlackTexture = GLTexture2D.FromRgba(new byte[] { 0, 0, 0, 255 }, 1, 1);
+            WhiteArrayTexture = GLTexture2DArray.FromRgba(new byte[] { 255, 255, 255, 255 }, 1, 1);
             CubemapTexture = GLTextureCube.FromDDS(new DDS(new MemoryStream(Resources.CubemapLightmap)));
             BrdfTexture = GLTexture2D.FromGeneric(new DDS(new MemoryStream(Resources.brdf)), new ImageParameters());
             FlipTextureY(BrdfTexture);

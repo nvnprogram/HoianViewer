@@ -46,9 +46,10 @@ namespace PlayerViewer.UI
 
             ImGui.SameLine();
             ImGui.BeginChild("##right", new Vector2(0, 0), true);
-            DrawAnimationPanel();
-            DrawCapturePanel();
+            DrawRightSidebar();
             ImGui.EndChild();
+
+            DrawSettingsWindow();
 
             ImGui.End();
         }
@@ -85,6 +86,9 @@ namespace PlayerViewer.UI
                     Close();
                 ImGui.EndMenu();
             }
+
+            if (ImGui.MenuItem("Settings"))
+                _showSettings = true;
 
             if (_romfs != null)
             {

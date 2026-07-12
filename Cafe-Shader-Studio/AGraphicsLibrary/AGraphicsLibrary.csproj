@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Platforms>AnyCPU;x86</Platforms>
   </PropertyGroup>
 
@@ -22,13 +22,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Drawing.Common" Version="5.0.2" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\GLFrameworkEngine\GLFrameworkEngine.csproj" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <Reference Include="AampLibraryCSharp">
       <HintPath>..\CafeShaderStudio\Lib\AampLibraryCSharp.dll</HintPath>
@@ -49,5 +49,5 @@
       <HintPath>..\CafeShaderStudio\Lib\Toolbox.Core.dll</HintPath>
     </Reference>
   </ItemGroup>
- 
+
 </Project>

@@ -45,11 +45,7 @@ namespace PlayerViewer.UI
         public int FrameCount { get; private set; }
         public string OutputPath { get; private set; }
 
-        static string ResolveFfmpeg()
-        {
-            string local = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe");
-            return File.Exists(local) ? local : "ffmpeg";
-        }
+        static string ResolveFfmpeg() => ExportUtil.ResolveFfmpeg();
 
         static bool? _ffmpegAvailable;
         public static bool FfmpegAvailable
@@ -82,7 +78,7 @@ namespace PlayerViewer.UI
         }
 
         public bool Start(int width, int height, string outputPath, int fps = 60,
-            bool lockstep = false, OutputFormat format = OutputFormat.Mp4)
+            bool lockstep = false, OutputFormat format = OutputFormat.Mp4, int webpQuality = 100)
         {
             if (IsRecording || !FfmpegAvailable)
                 return false;
@@ -98,18 +94,10 @@ namespace PlayerViewer.UI
             //All formats consume the same raw RGBA stream; only the output codec
             //differs. WebP keeps the alpha channel for a transparent background;
             //MP4 flattens it. -vf vflip corrects OpenGL's bottom-up row order.
-            string input = $"-y -f rawvideo -pixel_format rgba -video_size {_width}x{_height} " +
-                           $"-framerate {fps} -i pipe:0 -vf vflip ";
-            //Use libwebp_anim, not libwebp: the plain encoder blends each frame over the
-            //previous canvas, so transparent pixels ghost the old frame; libwebp_anim
-            //replaces the canvas per frame. Under -lossless 1 the output is bit-identical
-            //regardless of the effort knobs, which only trade encode SPEED for file size:
-            //compression_level stays at the default 4 (level 6 is ~7x slower), and q:v is
-            //the entropy-search effort (NOT quality) — q=100 roughly doubled encode time for
-            //a <0.5% smaller file and stalled exports once the queue filled, so use 75.
-            string codec = format == OutputFormat.WebpTransparent
-                ? $"-c:v libwebp_anim -lossless 1 -compression_level 4 -q:v 75 -loop 0 -an \"{outputPath}\""
-                : $"-c:v libx264 -preset veryfast -pix_fmt yuv420p -crf 16 \"{outputPath}\"";
+            //Codec args (incl. the lossless/lossy WebP split) live in ExportUtil so the
+            //streaming and buffered-trim exporters stay in sync.
+            string input = ExportUtil.RawInputArgs(_width, _height, fps);
+            string codec = ExportUtil.CodecArgs(format, webpQuality, outputPath);
 
             try
             {

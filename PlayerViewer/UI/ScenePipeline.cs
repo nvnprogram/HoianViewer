@@ -1,9 +1,11 @@
 using System;
-using System.Drawing;
 using OpenTK;
 using OpenTK.Graphics.OpenGL;
 using GLFrameworkEngine;
 using PlayerViewer.Player;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace PlayerViewer.UI
 {
@@ -130,7 +132,7 @@ namespace PlayerViewer.UI
 
             if (_refractionFbo == 0 || _refractionW != halfW || _refractionH != halfH)
             {
-                if (_refractionFbo != 0) GL.DeleteFramebuffer(_refractionFbo);
+                DisposeRefraction();   //frees the previous-size fbo + color texture
                 _refractionColor = new GLTexture2D();
                 GL.BindTexture(TextureTarget.Texture2D, _refractionColor.ID);
                 GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.R11fG11fB10f,
@@ -154,6 +156,16 @@ namespace PlayerViewer.UI
 
             BfresEditor.HoianNXRender.RefractionColorBuffer = _refractionColor;
             BfresEditor.HoianNXRender.RefractionDepthBuffer = depth;
+        }
+
+        void DisposeRefraction()
+        {
+            if (_refractionFbo != 0)
+                GL.DeleteFramebuffer(_refractionFbo);
+            _refractionFbo = 0;
+            _refractionColor?.Dispose();
+            _refractionColor = null;
+            _refractionW = _refractionH = 0;
         }
 
         //Fallback self-shadow light bounds (player-sized), used when the scene has
@@ -357,7 +369,7 @@ namespace PlayerViewer.UI
         /// alpha 0 and keeps coverage in the output (background rgb still applies to
         /// semi-transparent edges).
         /// </summary>
-        public Bitmap Capture(IViewScene scene, int width, int height, System.Numerics.Vector3 background, bool transparent)
+        public Image<Rgba32> Capture(IViewScene scene, int width, int height, System.Numerics.Vector3 background, bool transparent)
         {
             int scale = ScaleFor(width, height);
             var screen = CreateScreenBuffer(width * scale, height * scale, out var screenDepth);
@@ -368,9 +380,11 @@ namespace PlayerViewer.UI
                     new System.Numerics.Vector4(background.X, background.Y, background.Z, transparent ? 0 : 1), transparent,
                     screenDepth);
                 final.Bind();
-                var bitmap = final.ReadImagePixels(transparent);
+                byte[] pixels = new byte[width * height * 4];
+                GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
+                GL.ReadPixels(0, 0, width, height, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
                 final.Unbind();
-                return bitmap;
+                return ToImage(pixels, width, height, transparent);
             }
             finally
             {
@@ -379,6 +393,18 @@ namespace PlayerViewer.UI
                 final.Dispoe();
                 Camera.UpdateMatrices();
             }
+        }
+
+        //Wraps bottom-up RGBA8 bytes (OpenGL row order) into a top-down ImageSharp image.
+        //When not transparent the alpha channel is forced opaque.
+        static Image<Rgba32> ToImage(byte[] rgba, int width, int height, bool transparent)
+        {
+            if (!transparent)
+                for (int i = 3; i < rgba.Length; i += 4)
+                    rgba[i] = 255;
+            var image = Image.LoadPixelData<Rgba32>(rgba, width, height);
+            image.Mutate(x => x.Flip(FlipMode.Vertical));
+            return image;
         }
 
         /// <summary>
@@ -505,6 +531,7 @@ namespace PlayerViewer.UI
         public void Dispose()
         {
             DisposePBOs();
+            DisposeRefraction();
             _screen?.Dispoe();
             _final?.Dispoe();
             _selfShadow?.Dispose();

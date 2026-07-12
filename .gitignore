@@ -1,5 +1,12 @@
 bin/
 obj/
+# nix
+result
+result-*
+.direnv/
+# dotnet publish output / local nuget cache
+publish/
+.nuget/
 .vs/
 .vscode/
 .cursor/

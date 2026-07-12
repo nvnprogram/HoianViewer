@@ -3,11 +3,12 @@ using System.Collections.Generic;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
 using ImGuiNET;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace PlayerViewer.UI
 {
-    // Right-hand animation + capture panel: playback, screenshots, video recording,
-    // and the deterministic full-animation MP4/WebP export.
     public partial class ViewerWindow
     {
         static readonly (string Label, int W, int H)[] CaptureSizes =
@@ -18,7 +19,29 @@ namespace PlayerViewer.UI
             ("2160 x 3840 (4K portrait)", 2160, 3840),
         };
 
-        void DrawAnimationPanel()
+        static readonly string[] ExportFormatLabels =
+        {
+            "PNG (current frame)",
+            "MP4 (greenscreen)",
+            "WebP (transparent)",
+            "Record (real-time)",
+        };
+
+        void DrawRightSidebar()
+        {
+            DrawPlaybackControls();
+
+            float spacing = ImGui.GetStyle().ItemSpacing.Y;
+            float avail = ImGui.GetContentRegionAvail().Y;
+            float listH = Math.Max(avail - _measuredCaptureHeight - spacing, 90);
+            DrawAnimList(listH);
+
+            float y0 = ImGui.GetCursorPosY();
+            DrawCapturePanel();
+            _measuredCaptureHeight = ImGui.GetCursorPosY() - y0;
+        }
+
+        void DrawPlaybackControls()
         {
             Widgets.SectionHeader("Animation");
 
@@ -30,12 +53,10 @@ namespace PlayerViewer.UI
             float rawFrameCount = standalone
                 ? _standalone.CurrentSkeletal?.FrameCount ?? 1
                 : _scene.CurrentSkeletal?.FrameCount ?? 1;
-            List<string> animNames = standalone ? _standalone.AnimNames : _scene.Anims.AnimNames;
 
             void SetPaused(bool value) { if (standalone) _standalone.AnimPaused = value; else _scene.AnimPaused = value; }
             void SetSpeed(float value) { if (standalone) _standalone.AnimSpeed = value; else _scene.AnimSpeed = value; }
             void SetFrame(float value) { if (standalone) _standalone.SetAnimFrame(value); else _scene.SetAnimFrame(value); }
-            void Play(string name) { if (standalone) _standalone.PlayAnim(name); else _scene.PlayAnim(name); }
 
             ImGui.TextColored(Theme.GoldBright, currentAnim ?? "(none)");
 
@@ -60,9 +81,18 @@ namespace PlayerViewer.UI
             ImGui.SameLine();
             ImGui.SetNextItemWidth(-1);
             ImGui.InputText("##animsearch", ref _animSearch, 64);
+        }
 
-            var avail = ImGui.GetContentRegionAvail();
-            ImGui.BeginChild("##animlist", new Vector2(0, Math.Max(avail.Y - 205, 120)), true);
+        void DrawAnimList(float height)
+        {
+            bool standalone = _standalone != null;
+            string currentAnim = standalone ? _standalone.CurrentAnimName : _scene.CurrentAnimName;
+            List<string> animNames = standalone ? _standalone.AnimNames : _scene.Anims.AnimNames;
+
+            void SetPaused(bool value) { if (standalone) _standalone.AnimPaused = value; else _scene.AnimPaused = value; }
+            void Play(string name) { if (standalone) _standalone.PlayAnim(name); else _scene.PlayAnim(name); }
+
+            ImGui.BeginChild("##animlist", new Vector2(0, height), true);
             if (animNames.Count == 0)
                 ImGui.TextColored(Theme.TextDim, "no skeletal animations");
             if (standalone && animNames.Count > 0)
@@ -88,10 +118,54 @@ namespace PlayerViewer.UI
             ImGui.EndChild();
         }
 
+        void RedButton(string label, Action onClick)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.55f, 0.12f, 0.10f, 1));
+            ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.70f, 0.16f, 0.13f, 1));
+            if (ImGui.Button(label, new Vector2(-1, 0)))
+                onClick();
+            ImGui.PopStyleColor(2);
+        }
+
         void DrawCapturePanel()
         {
             Widgets.SectionHeader("Capture");
 
+            bool haveFfmpeg = VideoRecorder.FfmpegAvailable;
+
+            //--- Busy states: render phase, buffered encode phase, or a
+            // real-time recording. Each shows its own progress/stop control.
+            if (_animExporting)
+            {
+                float progress = _animExportTotal > 0
+                    ? Math.Min(_animExportIndex / _animExportTotal, 1f) : 0f;
+                int shown = (int)Math.Min(_animExportIndex + 1, _animExportTotal);
+                ImGui.ProgressBar(progress, new Vector2(-1, 0), $"Rendering {shown}/{_animExportTotal}");
+                RedButton("Cancel export", AbortAnimExport);
+                return;
+            }
+            if (_bufferedExporter != null)
+            {
+                if (_bufferedExporter.IsEncoding)
+                {
+                    var ex = _bufferedExporter;
+                    float p = ex.EncodeTotal > 0
+                        ? Math.Min(ex.EncodeProgress / (float)ex.EncodeTotal, 1f) : 0f;
+                    ImGui.ProgressBar(p, new Vector2(-1, 0), $"Encoding {ex.EncodeProgress}/{ex.EncodeTotal}");
+                    return;
+                }
+                //Encode finished on the worker thread: log and clear.
+                FinishBufferedExport();
+            }
+            if (_recorder.IsRecording)
+            {
+                //"###" keeps the widget ID stable while the timer in the label changes,
+                //otherwise the click never registers (ID differs between press/release).
+                RedButton($"Stop recording ({_recorder.FrameCount / 60.0f:F1}s)###stoprec", StopRecording);
+                return;
+            }
+
+            //--- Idle: resolution + format options, then one Export button.
             ImGui.SetNextItemWidth(-1);
             if (ImGui.BeginCombo("##capres", CaptureSizes[_captureRes].Label))
             {
@@ -100,76 +174,106 @@ namespace PlayerViewer.UI
                         _captureRes = i;
                 ImGui.EndCombo();
             }
-            ImGui.Checkbox("Transparent background", ref _captureTransparent);
 
-            if (ImGui.Button("Screenshot (PNG)", new Vector2(-1, 0)))
-                SaveScreenshot();
+            ImGui.SetNextItemWidth(-1);
+            ImGui.Combo("##exportformat", ref _exportFormat, ExportFormatLabels, ExportFormatLabels.Length);
 
-            ImGui.Spacing();
-            bool haveFfmpeg = VideoRecorder.FfmpegAvailable;
+            bool isPng = _exportFormat == 0;
+            bool isRecord = _exportFormat == 3;
+            bool isAnim = _exportFormat == 1 || _exportFormat == 2;
 
-            if (_animExporting)
+            //Format-specific option row.
+            if (isPng)
+                ImGui.Checkbox("Transparent background", ref _captureTransparent);
+            else if (isRecord)
+                ImGui.Checkbox("Greenscreen", ref _recordGreenscreen);
+
+            if (isAnim)
             {
-                float progress = _animExportTotal > 0
-                    ? Math.Min(_animExportIndex / (float)_animExportTotal, 1f) : 0f;
-                ImGui.ProgressBar(progress, new Vector2(-1, 0),
-                    $"Exporting {Math.Min(_animExportIndex + 1, _animExportTotal)}/{_animExportTotal}");
-                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.55f, 0.12f, 0.10f, 1));
-                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.70f, 0.16f, 0.13f, 1));
-                if (ImGui.Button("Cancel export", new Vector2(-1, 0)))
-                    FinishAnimExport();
-                ImGui.PopStyleColor(2);
-            }
-            else if (_recorder.IsRecording)
-            {
-                ImGui.PushStyleColor(ImGuiCol.Button, new Vector4(0.55f, 0.12f, 0.10f, 1));
-                ImGui.PushStyleColor(ImGuiCol.ButtonHovered, new Vector4(0.70f, 0.16f, 0.13f, 1));
-                //"###" keeps the widget ID stable while the timer in the label changes,
-                //otherwise the click never registers (ID differs between press/release).
-                if (ImGui.Button($"Stop recording ({_recorder.FrameCount / 60.0f:F1}s)###stoprec", new Vector2(-1, 0)))
-                    StopRecording();
-                ImGui.PopStyleColor(2);
-            }
-            else
-            {
-                ImGui.Checkbox("Video greenscreen", ref _recordGreenscreen);
-                Widgets.DisabledButton("Record video (real-time)", haveFfmpeg, StartRecording);
-
-                //Frame-exact export of the whole selected animation, at the chosen fps.
-                ImGui.Spacing();
-                ImGui.TextColored(Theme.TextDim, "Export full animation");
                 ImGui.AlignTextToFramePadding();
                 ImGui.TextColored(Theme.TextDim, "FPS");
                 ImGui.SameLine();
                 if (ImGui.RadioButton("30", _exportFps == 30)) _exportFps = 30;
                 ImGui.SameLine();
                 if (ImGui.RadioButton("60", _exportFps == 60)) _exportFps = 60;
+            }
 
-                bool canExport = haveFfmpeg && PlaybackHasAnim;
-                Widgets.DisabledButton("MP4 (greenscreen)", canExport,
-                    () => StartAnimExport(VideoRecorder.OutputFormat.Mp4, transparent: false));
-                Widgets.DisabledButton("WebP (transparent)", canExport,
-                    () => StartAnimExport(VideoRecorder.OutputFormat.WebpTransparent, transparent: true));
+            //Trim only applies where we have alpha to detect emptiness (not real-time record).
+            bool trimApplies = _config.TrimDeadspace && !isRecord && (!isPng || _captureTransparent);
+            if (trimApplies)
+                ImGui.TextColored(Theme.TextDim, $"Trim deadspace on (+{_config.TrimMarginPx}px)");
 
-                if (!haveFfmpeg)
-                    ImGui.TextColored(Theme.TextDim, "ffmpeg not found (exe folder or PATH)");
-                else if (!PlaybackHasAnim)
-                    ImGui.TextColored(Theme.TextDim, "select an animation to export");
+            bool needFfmpeg = !isPng;
+            bool canExport = (!needFfmpeg || haveFfmpeg) && (!isAnim || PlaybackHasAnim);
+            Widgets.DisabledButton(ExportButtonLabel(), canExport, DoExport);
+
+            if (needFfmpeg && !haveFfmpeg)
+                ImGui.TextColored(Theme.TextDim, "ffmpeg not found (app folder or PATH)");
+            else if (isAnim && !PlaybackHasAnim)
+                ImGui.TextColored(Theme.TextDim, "select an animation to export");
+        }
+
+        string ExportButtonLabel() => _exportFormat switch
+        {
+            0 => "Export PNG",
+            1 => "Export MP4",
+            2 => "Export WebP",
+            _ => "Start recording",
+        };
+
+        void DoExport()
+        {
+            switch (_exportFormat)
+            {
+                case 0: SaveScreenshot(); break;
+                case 1: StartAnimExport(VideoRecorder.OutputFormat.Mp4, transparent: false); break;
+                case 2: StartAnimExport(VideoRecorder.OutputFormat.WebpTransparent, transparent: true); break;
+                case 3: StartRecording(); break;
             }
         }
 
         void SaveScreenshot()
         {
-            string path = NativeFolderPicker.SaveFile("Save Screenshot", "player.png", "PNG image (*.png)", "*.png");
+            string def = ExportUtil.Timestamped("player", ".png");
+            string path = NativeFolderPicker.SaveFile("Save Screenshot", def, "PNG image (*.png)", "*.png");
             if (string.IsNullOrEmpty(path))
                 return;
             if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
                 path += ".png";
 
             var (_, w, h) = CaptureSizes[_captureRes];
-            using var bmp = _pipeline.Capture(ActiveScene, w, h, _pipeline.BackgroundColor, _captureTransparent);
-            bmp.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+            using var img = _pipeline.Capture(ActiveScene, w, h, _pipeline.BackgroundColor, _captureTransparent);
+
+            if (_config.TrimDeadspace && _captureTransparent)
+                TrimImage(img, _config.TrimMarginPx);
+            img.SaveAsPng(path);
             Console.WriteLine($"[UI] Saved {path}");
+        }
+
+        //Crops fully-transparent (alpha==0) deadspace off a captured image in place, keeping
+        //a margin. No-op if the frame is entirely transparent or nothing would be trimmed.
+        static void TrimImage(Image<Rgba32> img, int margin)
+        {
+            int w = img.Width, h = img.Height;
+            int minX = w, minY = h, maxX = -1, maxY = -1;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++)
+                    if (img[x, y].A != 0)
+                    {
+                        if (x < minX) minX = x;
+                        if (x > maxX) maxX = x;
+                        if (y < minY) minY = y;
+                        if (y > maxY) maxY = y;
+                    }
+
+            if (maxX < 0)
+                return;
+            int x0 = Math.Max(0, minX - margin), y0 = Math.Max(0, minY - margin);
+            int x1 = Math.Min(w - 1, maxX + margin), y1 = Math.Min(h - 1, maxY + margin);
+            int cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+            if (cw >= w && ch >= h)
+                return;
+            img.Mutate(c => c.Crop(new Rectangle(x0, y0, cw, ch)));
         }
 
         bool _recordGreenscreen = true;
@@ -177,7 +281,8 @@ namespace PlayerViewer.UI
 
         void StartRecording()
         {
-            string path = NativeFolderPicker.SaveFile("Save Video", "player.mp4", "MP4 video (*.mp4)", "*.mp4");
+            string def = ExportUtil.Timestamped("player", ".mp4");
+            string path = NativeFolderPicker.SaveFile("Save Video", def, "MP4 video (*.mp4)", "*.mp4");
             if (string.IsNullOrEmpty(path))
                 return;
             if (!path.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase))
@@ -213,29 +318,31 @@ namespace PlayerViewer.UI
             : (_scene?.CurrentSkeletal?.FrameCount ?? 0f));
         float PlaybackAnimFrame => _standalone != null ? _standalone.AnimFrame : (_scene?.AnimFrame ?? 0f);
         bool PlaybackPaused => _standalone != null ? _standalone.AnimPaused : (_scene?.AnimPaused ?? true);
+        float PlaybackSpeed => _standalone != null ? _standalone.AnimSpeed : (_scene?.AnimSpeed ?? 1f);
         void PlaybackSetPaused(bool v) { if (_standalone != null) _standalone.AnimPaused = v; else if (_scene != null) _scene.AnimPaused = v; }
         void PlaybackSetFrame(float f) { if (_standalone != null) _standalone.SetAnimFrame(f); else _scene?.SetAnimFrame(f); }
         void PlaybackUpdate(float dt) { if (_standalone != null) _standalone.Update(dt); else _scene?.Update(dt); }
 
         void StartAnimExport(VideoRecorder.OutputFormat format, bool transparent)
         {
-            if (_animExporting || _recorder.IsRecording || !PlaybackHasAnim)
+            if (_animExporting || _recorder.IsRecording || _bufferedExporter != null || !PlaybackHasAnim)
                 return;
             int total = PlaybackFrameCount;
             if (total < 1)
                 return;
 
             string ext = transparent ? ".webp" : ".mp4";
+            string def = ExportUtil.Timestamped("animation", ext);
             string path = transparent
-                ? NativeFolderPicker.SaveFile("Export Animation", "animation.webp", "WebP image (*.webp)", "*.webp")
-                : NativeFolderPicker.SaveFile("Export Animation", "animation.mp4", "MP4 video (*.mp4)", "*.mp4");
+                ? NativeFolderPicker.SaveFile("Export Animation", def, "WebP image (*.webp)", "*.webp")
+                : NativeFolderPicker.SaveFile("Export Animation", def, "MP4 video (*.mp4)", "*.mp4");
             if (string.IsNullOrEmpty(path))
                 return;
             if (!path.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
                 path += ext;
 
             //Force even dimensions so the raw RGBA stride matches ffmpeg's -video_size.
-            //Resize is frozen for the duration because the recorder is "recording".
+            //Resize is frozen for the duration because an export is in progress.
             int w = _pipeline.Width & ~1, h = _pipeline.Height & ~1;
             _pipeline.Resize(w, h);
 
@@ -243,19 +350,42 @@ namespace PlayerViewer.UI
             _animExportPrevPaused = PlaybackPaused;
             _animExportPrevFrame = PlaybackAnimFrame;
 
-            if (!transparent)
-                _pipeline.BackgroundColor = new System.Numerics.Vector3(0, 1, 0);
+            //Respect the speed slider by up/downsampling: at 2x we advance the animation
+            //cursor twice as far per output frame (fewer frames, shorter clip); at 0.5x,
+            //half as far (more frames). Snapshotted so mid-export slider moves don't matter.
+            float speed = PlaybackSpeed;
+            _animExportAdvance = Math.Max(0.0001f, (60f / _exportFps) * speed);
+            _animExportTotal = total;
+            _animExportIndex = 0f;
+            _animExportTransparent = transparent;
+            _animExportFormat = format;
+            _animExportGreen = new System.Numerics.Vector3(0, 1, 0);
+            _animExportTrim = _config.TrimDeadspace;
 
-            if (!_recorder.Start(w, h, path, _exportFps, lockstep: true, format))
+            if (_animExportTrim)
             {
-                _pipeline.BackgroundColor = _animExportPrevBg;
-                return;
+                //Buffered/trim path: always render transparent (alpha oracle for the crop);
+                //the greenscreen for MP4 is composited during the encode pass.
+                _bufferedExporter = new BufferedAnimExporter();
+                if (!_bufferedExporter.StartCapture(w, h, _exportFps, path))
+                {
+                    Console.WriteLine($"[UI] Export failed: {_bufferedExporter.Error}");
+                    _bufferedExporter.Dispose();
+                    _bufferedExporter = null;
+                    return;
+                }
+            }
+            else
+            {
+                if (!transparent)
+                    _pipeline.BackgroundColor = _animExportGreen;
+                if (!_recorder.Start(w, h, path, _exportFps, lockstep: true, format, _config.WebpQuality))
+                {
+                    _pipeline.BackgroundColor = _animExportPrevBg;
+                    return;
+                }
             }
 
-            _animExportTransparent = transparent;
-            _animExportStep = Math.Max(1, 60 / _exportFps);
-            _animExportIndex = 0;
-            _animExportTotal = total;
             _animExporting = true;
             PlaybackSetPaused(true);
             //Restart cloth from rest so the first exported frame is reproducible.
@@ -265,23 +395,80 @@ namespace PlayerViewer.UI
 
         void CaptureAnimExportFrame()
         {
-            var bytes = _pipeline.CaptureFrameBytes(ActiveScene, _pipeline.BackgroundColor,
-                _animExportTransparent, out int w, out int h);
-            _recorder.PushFrame(bytes, w, h);
+            if (_animExportTrim)
+            {
+                //Always render transparent (alpha oracle for the crop), but match the edge
+                //matte to the output: WebP keeps this RGB against straight alpha, so a green
+                //matte would fringe the cutout; matte it against the viewport background like
+                //the PNG path. MP4 composites over green in the encode pass, so green edges
+                //there key cleanly.
+                var matte = _animExportTransparent ? _pipeline.BackgroundColor : _animExportGreen;
+                var bytes = _pipeline.CaptureFrameBytes(ActiveScene, matte,
+                    transparent: true, out _, out _);
+                _bufferedExporter.PushFrame(bytes);
+            }
+            else
+            {
+                var bytes = _pipeline.CaptureFrameBytes(ActiveScene, _pipeline.BackgroundColor,
+                    _animExportTransparent, out int w, out int h);
+                _recorder.PushFrame(bytes, w, h);
+            }
 
-            _animExportIndex += _animExportStep;
+            _animExportIndex += _animExportAdvance;
             if (_animExportIndex >= _animExportTotal)
                 FinishAnimExport();
         }
 
+        //Natural completion: the render/capture phase is done
         void FinishAnimExport()
         {
-            _recorder.Stop();
+            if (_animExportTrim)
+            {
+                //Kick off the encode pass on a worker; the panel polls _bufferedExporter for
+                //progress and clears it via FinishBufferedExport when encoding completes.
+                _bufferedExporter.FinishCapture(_animExportFormat, _animExportGreen,
+                    _config.WebpQuality, _config.TrimMarginPx);
+            }
+            else
+            {
+                _recorder.Stop();
+                Console.WriteLine($"[UI] Exported {_recorder.OutputPath}");
+            }
             _pipeline.BackgroundColor = _animExportPrevBg;
             PlaybackSetPaused(_animExportPrevPaused);
             PlaybackSetFrame(_animExportPrevFrame);
             _animExporting = false;
-            Console.WriteLine($"[UI] Exported {_recorder.OutputPath}");
+        }
+
+        //Cancel button: abort without finishing the encode
+        void AbortAnimExport()
+        {
+            if (_animExportTrim && _bufferedExporter != null)
+            {
+                _bufferedExporter.Abort();
+                _bufferedExporter.Dispose();
+                _bufferedExporter = null;
+            }
+            else
+            {
+                _recorder.Stop();
+            }
+            _pipeline.BackgroundColor = _animExportPrevBg;
+            PlaybackSetPaused(_animExportPrevPaused);
+            PlaybackSetFrame(_animExportPrevFrame);
+            _animExporting = false;
+        }
+
+        void FinishBufferedExport()
+        {
+            if (_bufferedExporter == null)
+                return;
+            if (_bufferedExporter.Error != null)
+                Console.WriteLine($"[UI] Export failed: {_bufferedExporter.Error}");
+            else
+                Console.WriteLine($"[UI] Exported {_bufferedExporter.OutputPath}");
+            _bufferedExporter.Dispose();
+            _bufferedExporter = null;
         }
     }
 }

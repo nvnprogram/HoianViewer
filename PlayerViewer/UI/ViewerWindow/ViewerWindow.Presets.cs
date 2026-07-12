@@ -15,7 +15,8 @@ namespace PlayerViewer.UI
         {
             if (_scene == null)
                 return;
-            string path = NativeFolderPicker.SaveFile("Save Preset", "player-preset.json",
+            string def = ExportUtil.Timestamped("player-preset", ".json");
+            string path = NativeFolderPicker.SaveFile("Save Preset", def,
                 "Player preset (*.json)", "*.json");
             if (string.IsNullOrEmpty(path))
                 return;

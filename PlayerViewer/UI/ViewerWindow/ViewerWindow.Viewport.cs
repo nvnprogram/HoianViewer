@@ -20,7 +20,10 @@ namespace PlayerViewer.UI
         void DrawViewport()
         {
             var size = ImGui.GetContentRegionAvail();
-            if (!_recorder.IsRecording)
+
+            //Freeze the render size while recording OR exporting: the deterministic export
+            //(and the trim path's temp buffer) assume every frame shares fixed dimensions.
+            if (!_recorder.IsRecording && !_animExporting)
                 _pipeline.Resize((int)size.X, (int)size.Y);
 
             _pipeline.Render(ActiveScene);

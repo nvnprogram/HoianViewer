@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using BfresEditor;
@@ -23,7 +21,10 @@ namespace PlayerViewer.Player
     {
         public const string CompositeTextureName = "__BodyAlphaMask";
 
-        readonly Dictionary<string, Bitmap> _masks = new(StringComparer.OrdinalIgnoreCase);
+        //A decoded mask as tightly-packed RGBA8 bytes (the BC4 value lands in R/G/B).
+        readonly record struct MaskImage(byte[] Rgba, int Width, int Height);
+
+        readonly Dictionary<string, MaskImage> _masks = new(StringComparer.OrdinalIgnoreCase);
         bool _loaded;
 
         RuntimeTexture _composite;
@@ -54,7 +55,8 @@ namespace PlayerViewer.Player
                 {
                     //Texture names carry an _Opa suffix; RSDB mask names do not.
                     string name = tex.Name.EndsWith("_Opa") ? tex.Name[..^4] : tex.Name;
-                    _masks[name] = new BntxTexture(bntx, tex).GetBitmap();
+                    var bt = new BntxTexture(bntx, tex);
+                    _masks[name] = new MaskImage(bt.GetDecodedSurface(0, 0), (int)bt.Width, (int)bt.Height);
                 }
                 catch (Exception ex)
                 {
@@ -95,64 +97,58 @@ namespace PlayerViewer.Player
             _lastKey = key;
 
             //Start from the body's own opacity texture so authored holes survive.
-            Bitmap result = null;
+            byte[] result = null;
+            int rw = 256, rh = 256;
             if (human.Render.Textures.TryGetValue("M_Body_Opa", out var bodyOpa))
             {
-                try { result = ((BntxTexture)bodyOpa).GetBitmap(); }
+                try
+                {
+                    var bt = (BntxTexture)bodyOpa;
+                    result = bt.GetDecodedSurface(0, 0);
+                    rw = (int)bt.Width; rh = (int)bt.Height;
+                }
                 catch { }
             }
-            result ??= FilledBitmap(256, 256, 255);
+            result ??= Filled(rw, rh, 255);
 
             foreach (var name in active)
-                MinBlend(result, _masks[name]);
+                MinBlend(result, rw, rh, _masks[name]);
 
             _composite?.Dispose();
-            _composite = new RuntimeTexture(CompositeTextureName, result);
+            _composite = new RuntimeTexture(CompositeTextureName, result, rw, rh);
             human.Render.Textures[CompositeTextureName] = _composite;
-            result.Dispose();
             return true;
         }
 
-        static Bitmap FilledBitmap(int w, int h, byte value)
+        static byte[] Filled(int w, int h, byte value)
         {
-            var bmp = new Bitmap(w, h);
-            using var g = Graphics.FromImage(bmp);
-            g.Clear(Color.FromArgb(255, value, value, value));
-            return bmp;
+            var buf = new byte[w * h * 4];
+            Array.Fill(buf, value);
+            return buf;
         }
 
-        /// <summary>dst = min(dst, mask) per pixel (mask scaled to dst size).</summary>
-        static void MinBlend(Bitmap dst, Bitmap mask)
+        /// <summary>dst = min(dst, mask) per pixel (mask nearest-sampled to dst size).</summary>
+        static void MinBlend(byte[] dst, int dw, int dh, MaskImage mask)
         {
-            using Bitmap scaled = mask.Width == dst.Width && mask.Height == dst.Height
-                ? new Bitmap(mask)
-                : new Bitmap(mask, dst.Width, dst.Height);
-
-            var rect = new Rectangle(0, 0, dst.Width, dst.Height);
-            var d = dst.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
-            var s = scaled.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
-            unsafe
+            for (int y = 0; y < dh; y++)
             {
-                byte* dp = (byte*)d.Scan0;
-                byte* sp = (byte*)s.Scan0;
-                int count = dst.Width * dst.Height;
-                for (int i = 0; i < count; i++, dp += 4, sp += 4)
+                int my = mask.Height == dh ? y : y * mask.Height / dh;
+                for (int x = 0; x < dw; x++)
                 {
-                    //BC4 masks decode with the value in the color channels; take red.
-                    byte v = Math.Min(dp[2], sp[2]);
-                    dp[0] = dp[1] = dp[2] = dp[3] = v;
+                    int mx = mask.Width == dw ? x : x * mask.Width / dw;
+                    //BC4 masks decode with the value in the color channels; take red (RGBA index 0).
+                    byte mv = mask.Rgba[(my * mask.Width + mx) * 4];
+                    int di = (y * dw + x) * 4;
+                    byte v = Math.Min(dst[di], mv);
+                    dst[di] = dst[di + 1] = dst[di + 2] = dst[di + 3] = v;
                 }
             }
-            dst.UnlockBits(d);
-            scaled.UnlockBits(s);
         }
 
         public void Dispose()
         {
             _composite?.Dispose();
             _composite = null;
-            foreach (var bmp in _masks.Values)
-                bmp.Dispose();
             _masks.Clear();
             _loaded = false;
         }
@@ -164,13 +160,13 @@ namespace PlayerViewer.Player
     /// </summary>
     class RuntimeTexture : STGenericTexture, IDisposable
     {
-        public RuntimeTexture(string name, Bitmap bitmap)
+        public RuntimeTexture(string name, byte[] rgba, int width, int height)
         {
             Name = name;
-            Width = (uint)bitmap.Width;
-            Height = (uint)bitmap.Height;
+            Width = (uint)width;
+            Height = (uint)height;
             MipCount = 1;
-            RenderableTex = GLTexture2D.FromBitmap(bitmap);
+            RenderableTex = GLTexture2D.FromRgba(rgba, width, height);
         }
 
         public override void SetImageData(List<byte[]> imageData, uint width, uint height, int arrayLevel = 0) { }

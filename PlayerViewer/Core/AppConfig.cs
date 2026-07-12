@@ -47,6 +47,15 @@ namespace PlayerViewer.Core
         public int WindowWidth = 1600;
         public int WindowHeight = 900;
 
+        //--- Export/capture settings (configured in the Settings window)
+        //Trim fully-transparent deadspace off exported frames. Uses the transparent
+        //render as an alpha oracle, so it also crops greenscreen MP4s.
+        public bool TrimDeadspace = false;
+        //Extra pixels of transparent margin kept around the content bounding box.
+        public int TrimMarginPx = 0;
+        //WebP encode quality: 100 = lossless (bit-exact), below = lossy (smaller/faster).
+        public int WebpQuality = 100;
+
         public PlayerConfig Player = new();
 
         static string FilePath => Path.Combine(AppContext.BaseDirectory, "playerviewer_config.json");

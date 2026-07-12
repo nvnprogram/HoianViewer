@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using OpenTK.Graphics.OpenGL;
 using System.Drawing;
 using Toolbox.Core;
@@ -133,30 +131,6 @@ namespace GLFrameworkEngine
             return FlippedOutput;
         }
 
-        private static byte[] FlipVertical(int Width, int Height, byte[] Input)
-        {
-            byte[] FlippedOutput = new byte[Width * Height * 4];
-
-            int Stride = Width * 4;
-            for (int Y = 0; Y < Height; Y++)
-            {
-                int IOffs = Stride * Y;
-                int OOffs = Stride * (Height - 1 - Y);
-
-                for (int X = 0; X < Width; X++)
-                {
-                    FlippedOutput[OOffs + 0] = Input[IOffs + 0];
-                    FlippedOutput[OOffs + 1] = Input[IOffs + 1];
-                    FlippedOutput[OOffs + 2] = Input[IOffs + 2];
-                    FlippedOutput[OOffs + 3] = Input[IOffs + 3];
-
-                    IOffs += 4;
-                    OOffs += 4;
-                }
-            }
-            return FlippedOutput;
-        }
-
         public static GLTexture2DArray FromDDS(DDS[] dds, bool flipY = false)
         {
             GLTexture2DArray texture = new GLTexture2DArray();
@@ -214,6 +188,18 @@ namespace GLFrameworkEngine
             GLTexture2DArray texture = new GLTexture2DArray();
             texture.Width = image.Width; texture.Height = image.Height;
             texture.LoadImage(image);
+            return texture;
+        }
+
+        public static GLTexture2DArray FromRgba(byte[] rgba, int width, int height)
+        {
+            GLTexture2DArray texture = new GLTexture2DArray();
+            texture.Width = width; texture.Height = height;
+            texture.Bind();
+            GL.TexImage3D(texture.Target, 0, PixelInternalFormat.Rgba, width, height, 1, 0,
+                OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, rgba);
+            GL.GenerateMipmap(GenerateMipmapTarget.Texture2DArray);
+            texture.Unbind();
             return texture;
         }
 

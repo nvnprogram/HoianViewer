@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
@@ -30,6 +31,11 @@ namespace PlayerViewer.UI
 
             var models = _standalone.Render.Models.OfType<BfresEditor.BfresModelAsset>().ToList();
             Widgets.SectionHeader("Models");
+
+            float spacing = ImGui.GetStyle().ItemSpacing.Y;
+            float avail = ImGui.GetContentRegionAvail().Y;
+            float listH = Math.Max(avail - _measuredStandaloneTailHeight - spacing, 90);
+            ImGui.BeginChild("##models", new Vector2(0, listH), true);
             for (int mi = 0; mi < models.Count; mi++)
             {
                 var model = models[mi];
@@ -48,10 +54,13 @@ namespace PlayerViewer.UI
                     ImGui.TreePop();
                 }
             }
+            ImGui.EndChild();
 
+            float tailY0 = ImGui.GetCursorPosY();
             DrawLightingSection();
             DrawTeamColorSection();
             DrawViewSection();
+            _measuredStandaloneTailHeight = ImGui.GetCursorPosY() - tailY0;
         }
     }
 }
