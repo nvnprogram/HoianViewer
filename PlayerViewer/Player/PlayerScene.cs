@@ -1093,7 +1093,11 @@ namespace PlayerViewer.Player
 
         #region Animation
 
-        public void PlayAnim(string name)
+        public void PlayAnim(string name) => PlayAnim(name, resetHair: true);
+
+        //resetHair=false keeps the cloth sim running across the switch, so an animation chain
+        //plays as one continuous take instead of snapping hair back to rest each step.
+        public void PlayAnim(string name, bool resetHair)
         {
             CurrentAnimName = name;
             AnimFrame = 0;
@@ -1123,8 +1127,10 @@ namespace PlayerViewer.Player
                 ApplySkinTone(SkinTone);
             }
 
-            //Pose jumps on anim switch; restart the cloth from the new pose.
-            ResetHairPhysics();
+            //Pose jumps on anim switch; restart the cloth from the new pose (unless a chain is
+            //driving continuous playback).
+            if (resetHair)
+                ResetHairPhysics();
         }
 
         //Mouth01..04 etc default hidden; captured at load time from the bfres bone data.
@@ -1235,6 +1241,13 @@ namespace PlayerViewer.Player
         public void SetAnimFrame(float frame)
         {
             AnimFrame = frame;
+        }
+
+        /// <summary>Frame count of a skeletal animation by name (0 if unknown), for the chain timeline.</summary>
+        public int SkeletalFrameCount(string name)
+        {
+            var anim = name != null ? Anims.GetSkeletal(name) : null;
+            return anim != null ? Math.Max((int)Math.Round((float)anim.FrameCount), 1) : 0;
         }
 
         #endregion

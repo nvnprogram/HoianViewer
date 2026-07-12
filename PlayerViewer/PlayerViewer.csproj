@@ -29,14 +29,12 @@
     <Reference Include="Toolbox.Core">
       <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Toolbox.Core.dll</HintPath>
     </Reference>
-    <Reference Include="ZstdNet">
-      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\ZstdNet.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
@@ -59,7 +57,6 @@
     <Content Include="$(CssRoot)\CafeShaderStudio\Lib\Font.ttf" Link="Lib\Font.ttf" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(CssRoot)\CafeShaderStudio\Lib\OpenFontIcons.ttf" Link="Lib\OpenFontIcons.ttf" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="$(CssRoot)\CafeShaderStudio\cimgui.dll" Link="cimgui.dll" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\x64\libzstd.dll" Link="libzstd.dll" CopyToOutputDirectory="PreserveNewest" />
     <!-- Cross-platform ImGui natives (repo ships .so/.dylib). Copied under both the plain and
          lib-prefixed names so the .NET loader finds cimgui however it probes. -->
     <Content Include="$(CssRoot)\CafeShaderStudio\cimgui.so" Link="cimgui.so" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')" />

@@ -1,5 +1,6 @@
 using System;
 using Vector2 = System.Numerics.Vector2;
+using Vector4 = System.Numerics.Vector4;
 using ImGuiNET;
 
 namespace PlayerViewer.UI
@@ -46,9 +47,9 @@ namespace PlayerViewer.UI
             ImGui.TextColored(Theme.TextDim, "transparent padding kept around the content");
 
             if (trim)
-                ImGui.TextColored(Theme.Gold, "Note: trimmed animation export buffers every " +
-                    "frame to a temp file on disk first; transiently uses ~width×height×4×frames " +
-                    "of space (several GB at 4K for long clips).");
+                ImGui.TextColored(Theme.Gold, "Note: trimmed animation export buffers every frame " +
+                    "to a temp file on disk first; transiently uses ~width×height×4×frames of space, " +
+                    "times the supersample factor squared (several GB at 4K, tens of GB with high supersample).");
 
             Widgets.SectionHeader("WebP quality");
             ImGui.TextWrapped("100 = lossless (bit-exact, largest). Lower = lossy: much faster " +
@@ -69,6 +70,30 @@ namespace PlayerViewer.UI
             if (ImGui.Button("Near-lossless")) { _config.WebpQuality = 90; dirty = true; }
             ImGui.SameLine();
             if (ImGui.Button("Lossy")) { _config.WebpQuality = 75; dirty = true; }
+
+            Widgets.SectionHeader("Supersample (export quality)");
+            ImGui.TextWrapped("Renders exports at this multiple of the capture size. With trim on, " +
+                "the crop keeps that full internal resolution, so you only need the camera angle " +
+                "right; a small or loosely-framed subject still exports sharp.");
+            ImGui.Spacing();
+
+            int ss = _config.ExportSupersample;
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.SliderInt("##supersample", ref ss, 1, 8, "%dx"))
+            {
+                _config.ExportSupersample = Math.Clamp(ss, 1, 8);
+                dirty = true;
+            }
+
+            ss = _config.ExportSupersample;
+            ImGui.TextColored(Theme.TextDim,
+                $"A 1080p export renders {1920 * ss}x{1080 * ss} internally ({ss * ss}x the pixels).");
+            if (ss >= 8)
+                ImGui.TextColored(new Vector4(0.95f, 0.35f, 0.3f, 1),
+                    "8x is extreme: may exhaust GPU memory at 4K");
+            else if (ss > 4)
+                ImGui.TextColored(Theme.Gold,
+                    "High supersample: large GPU memory & temp-disk use (grows with the square of the factor)");
 
             if (dirty)
                 _config.Save();

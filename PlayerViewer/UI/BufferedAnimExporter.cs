@@ -42,11 +42,14 @@ namespace PlayerViewer.UI
 
         //Content bounding box in buffer (bottom-up) coordinates; expanded by the writer.
         int _minX, _minY, _maxX, _maxY;
+        bool _trim;
 
-        public bool StartCapture(int width, int height, int fps, string outputPath)
+        public bool StartCapture(int width, int height, int fps, string outputPath, bool trim)
         {
             if (IsCapturing || IsEncoding)
                 return false;
+
+            _trim = trim;
 
             _width = width;
             _height = height;
@@ -97,7 +100,8 @@ namespace PlayerViewer.UI
             {
                 foreach (var buf in _writeQueue.GetConsumingEnumerable())
                 {
-                    ScanBbox(buf);
+                    if (_trim)
+                        ScanBbox(buf);
                     _tempWrite.Write(buf, 0, frameBytes);
                     ArrayPool<byte>.Shared.Return(buf);
                 }
@@ -170,9 +174,10 @@ namespace PlayerViewer.UI
                 long total = new FileInfo(_tempPath).Length / frameBytes;
                 EncodeTotal = (int)total;
 
-                //Compute crop rect (buffer coords). Empty box (nothing drawn) = whole frame.
+                //Compute crop rect (buffer coords). No trim, or an empty box (nothing drawn),
+                //keeps the whole frame.
                 int x0, y0, cw, ch;
-                if (_maxX < 0)
+                if (!_trim || _maxX < 0)
                 {
                     x0 = 0; y0 = 0; cw = _width; ch = _height;
                 }

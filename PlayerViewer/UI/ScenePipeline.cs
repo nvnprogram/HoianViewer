@@ -90,6 +90,14 @@ namespace PlayerViewer.UI
         static int ScaleFor(int width, int height) =>
             (long)width * height > SuperSampleBudget ? 1 : SuperSample;
 
+        //When >0, export/capture renders use this supersample scale instead of the auto
+        //budget above (set from the Settings factor); reset to 0 for interactive sizing.
+        public int ExportScaleOverride;
+        int _screenScale = SuperSample;
+
+        int EffectiveScale(int width, int height) =>
+            ExportScaleOverride > 0 ? ExportScaleOverride : ScaleFor(width, height);
+
         public void Init()
         {
             Context = new GLContext();
@@ -216,11 +224,12 @@ namespace PlayerViewer.UI
         {
             width = Math.Max(width, 1);
             height = Math.Max(height, 1);
-            if (width == Width && height == Height)
+            int scale = EffectiveScale(width, height);
+            if (width == Width && height == Height && scale == _screenScale)
                 return;
             Width = width;
             Height = height;
-            int scale = ScaleFor(width, height);
+            _screenScale = scale;
             _screen.Resize(width * scale, height * scale);
             _final.Resize(width, height);
             Context.Width = width;
@@ -235,7 +244,7 @@ namespace PlayerViewer.UI
         /// <summary>Renders the scene into the final displayable texture.</summary>
         public void Render(IViewScene scene)
         {
-            RenderInternal(scene, _screen, _final, Width, Height, ScaleFor(Width, Height),
+            RenderInternal(scene, _screen, _final, Width, Height, EffectiveScale(Width, Height),
                 new System.Numerics.Vector4(BackgroundColor.X, BackgroundColor.Y, BackgroundColor.Z, 1), false,
                 _screenDepth);
         }
@@ -369,9 +378,10 @@ namespace PlayerViewer.UI
         /// alpha 0 and keeps coverage in the output (background rgb still applies to
         /// semi-transparent edges).
         /// </summary>
-        public Image<Rgba32> Capture(IViewScene scene, int width, int height, System.Numerics.Vector3 background, bool transparent)
+        public Image<Rgba32> Capture(IViewScene scene, int width, int height, System.Numerics.Vector3 background,
+            bool transparent, int scaleOverride = 0)
         {
-            int scale = ScaleFor(width, height);
+            int scale = scaleOverride > 0 ? scaleOverride : ScaleFor(width, height);
             var screen = CreateScreenBuffer(width * scale, height * scale, out var screenDepth);
             var final = new Framebuffer(FramebufferTarget.Framebuffer, width, height, PixelInternalFormat.Rgba8, 1);
             try
@@ -420,7 +430,7 @@ namespace PlayerViewer.UI
         {
             width = Width;
             height = Height;
-            RenderInternal(scene, _screen, _final, Width, Height, ScaleFor(Width, Height),
+            RenderInternal(scene, _screen, _final, Width, Height, EffectiveScale(Width, Height),
                 new System.Numerics.Vector4(background.X, background.Y, background.Z, transparent ? 0 : 1),
                 transparent, _screenDepth);
 

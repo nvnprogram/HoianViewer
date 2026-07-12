@@ -56,9 +56,6 @@
     <Reference Include="TrackStudioLibrary">
       <HintPath>Lib\TrackStudioLibrary.dll</HintPath>
     </Reference>
-    <Reference Include="ZstdNet">
-      <HintPath>Lib\ZstdNet.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
   <ItemGroup>
@@ -420,12 +417,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="tinyfiledialogs.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="x64\libzstd.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="x86\libzstd.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

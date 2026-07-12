@@ -40,23 +40,23 @@ namespace CompressionLibrary
 
         public static byte[] SDecompress(byte[] b)
         {
-            using (var decompressor = new ZstdNet.Decompressor())
+            using (var decompressor = new ZstdSharp.Decompressor())
             {
-                return decompressor.Unwrap(b);
+                return decompressor.Unwrap(b).ToArray();
             }
         }
         public static byte[] SDecompress(byte[] b, int MaxDecompressedSize)
         {
-            using (var decompressor = new ZstdNet.Decompressor())
+            using (var decompressor = new ZstdSharp.Decompressor())
             {
-                return decompressor.Unwrap(b, MaxDecompressedSize);
+                return decompressor.Unwrap(b, MaxDecompressedSize).ToArray();
             }
         }
         public static byte[] SCompress(byte[] b)
         {
-            using (var compressor = new ZstdNet.Compressor())
+            using (var compressor = new ZstdSharp.Compressor())
             {
-                return compressor.Wrap(b);
+                return compressor.Wrap(b).ToArray();
             }
         }
     }

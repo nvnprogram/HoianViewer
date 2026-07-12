@@ -157,6 +157,13 @@ namespace PlayerViewer.Player
 
         public void SetAnimFrame(float frame) => AnimFrame = frame;
 
+        /// <summary>Frame count of a skeletal animation by name (0 if unknown), for the chain timeline.</summary>
+        public int SkeletalFrameCount(string name)
+        {
+            var anim = name != null ? Bfres.SkeletalAnimations.FirstOrDefault(x => x.Name == name) : null;
+            return anim != null ? Math.Max((int)Math.Round((float)anim.FrameCount), 1) : 0;
+        }
+
         public void Update(float deltaSeconds)
         {
             if (CurrentSkeletal == null)

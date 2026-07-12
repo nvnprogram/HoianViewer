@@ -37,6 +37,9 @@ namespace PlayerViewer.UI
             DrawAnimList(listH);
 
             float y0 = ImGui.GetCursorPosY();
+            DrawModeTabs();
+            if (_animMode == 1)
+                DrawSequencePanel();
             DrawCapturePanel();
             _measuredCaptureHeight = ImGui.GetCursorPosY() - y0;
         }
@@ -90,7 +93,7 @@ namespace PlayerViewer.UI
             List<string> animNames = standalone ? _standalone.AnimNames : _scene.Anims.AnimNames;
 
             void SetPaused(bool value) { if (standalone) _standalone.AnimPaused = value; else _scene.AnimPaused = value; }
-            void Play(string name) { if (standalone) _standalone.PlayAnim(name); else _scene.PlayAnim(name); }
+            void Play(string name) { StopAnimChain(); if (standalone) _standalone.PlayAnim(name); else _scene.PlayAnim(name); }
 
             ImGui.BeginChild("##animlist", new Vector2(0, height), true);
             if (animNames.Count == 0)
@@ -203,21 +206,25 @@ namespace PlayerViewer.UI
             if (trimApplies)
                 ImGui.TextColored(Theme.TextDim, $"Trim deadspace on (+{_config.TrimMarginPx}px)");
 
+            //In Sequence mode an animation export runs the whole chain instead of the current anim.
+            bool exportChain = _animMode == 1 && isAnim;
+            bool animReady = exportChain ? _animChain.Count > 0 : PlaybackHasAnim;
             bool needFfmpeg = !isPng;
-            bool canExport = (!needFfmpeg || haveFfmpeg) && (!isAnim || PlaybackHasAnim);
-            Widgets.DisabledButton(ExportButtonLabel(), canExport, DoExport);
+            bool canExport = (!needFfmpeg || haveFfmpeg) && (!isAnim || animReady);
+            Widgets.DisabledButton(ExportButtonLabel(exportChain), canExport, DoExport);
 
             if (needFfmpeg && !haveFfmpeg)
                 ImGui.TextColored(Theme.TextDim, "ffmpeg not found (app folder or PATH)");
-            else if (isAnim && !PlaybackHasAnim)
-                ImGui.TextColored(Theme.TextDim, "select an animation to export");
+            else if (isAnim && !animReady)
+                ImGui.TextColored(Theme.TextDim,
+                    exportChain ? "add animations to the sequence" : "select an animation to export");
         }
 
-        string ExportButtonLabel() => _exportFormat switch
+        string ExportButtonLabel(bool sequence) => _exportFormat switch
         {
             0 => "Export PNG",
-            1 => "Export MP4",
-            2 => "Export WebP",
+            1 => sequence ? "Export MP4 (sequence)" : "Export MP4",
+            2 => sequence ? "Export WebP (sequence)" : "Export WebP",
             _ => "Start recording",
         };
 
@@ -240,12 +247,22 @@ namespace PlayerViewer.UI
                 return;
             if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
                 path += ".png";
+            WriteScreenshot(path);
+        }
 
+        //Renders and saves a still at the chosen capture size (no dialog). With trim, renders at
+        //the internal (supersampled) resolution and crops from it so a loosely-framed subject
+        //stays sharp; otherwise supersamples for anti-aliasing and downsamples to the capture size.
+        void WriteScreenshot(string path)
+        {
             var (_, w, h) = CaptureSizes[_captureRes];
-            using var img = _pipeline.Capture(ActiveScene, w, h, _pipeline.BackgroundColor, _captureTransparent);
-
-            if (_config.TrimDeadspace && _captureTransparent)
-                TrimImage(img, _config.TrimMarginPx);
+            int ss = Math.Clamp(_config.ExportSupersample, 1, 8);
+            bool trim = _config.TrimDeadspace && _captureTransparent;
+            using var img = trim
+                ? _pipeline.Capture(ActiveScene, w * ss, h * ss, _pipeline.BackgroundColor, _captureTransparent, 1)
+                : _pipeline.Capture(ActiveScene, w, h, _pipeline.BackgroundColor, _captureTransparent, ss);
+            if (trim)
+                TrimImage(img, _config.TrimMarginPx * ss);
             img.SaveAsPng(path);
             Console.WriteLine($"[UI] Saved {path}");
         }
@@ -322,12 +339,21 @@ namespace PlayerViewer.UI
         void PlaybackSetPaused(bool v) { if (_standalone != null) _standalone.AnimPaused = v; else if (_scene != null) _scene.AnimPaused = v; }
         void PlaybackSetFrame(float f) { if (_standalone != null) _standalone.SetAnimFrame(f); else _scene?.SetAnimFrame(f); }
         void PlaybackUpdate(float dt) { if (_standalone != null) _standalone.Update(dt); else _scene?.Update(dt); }
+        void PlaybackPlay(string name, bool resetHair) { if (_standalone != null) _standalone.PlayAnim(name); else _scene?.PlayAnim(name, resetHair); }
+        void PlaybackResetHair() { if (_standalone == null) _scene?.ResetHairPhysics(); }
+        string PlaybackCurrentAnim => _standalone != null ? _standalone.CurrentAnimName : _scene?.CurrentAnimName;
+        List<string> PlaybackAnimNames => _standalone != null ? _standalone.AnimNames : (_scene?.Anims.AnimNames ?? new List<string>());
+        int PlaybackFrameCountOf(string name) => _standalone != null ? _standalone.SkeletalFrameCount(name) : (_scene?.SkeletalFrameCount(name) ?? 0);
 
         void StartAnimExport(VideoRecorder.OutputFormat format, bool transparent)
         {
-            if (_animExporting || _recorder.IsRecording || _bufferedExporter != null || !PlaybackHasAnim)
+            bool chain = _animMode == 1 && _animChain.Count > 0;
+            if (_animExporting || _recorder.IsRecording || _bufferedExporter != null)
                 return;
-            int total = PlaybackFrameCount;
+            if (!chain && !PlaybackHasAnim)
+                return;
+            StopAnimChain();   //deterministic export drives frames itself; don't let the preview fight it
+            int total = chain ? (int)Math.Round(ChainTotalFrames()) : PlaybackFrameCount;
             if (total < 1)
                 return;
 
@@ -340,11 +366,6 @@ namespace PlayerViewer.UI
                 return;
             if (!path.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
                 path += ext;
-
-            //Force even dimensions so the raw RGBA stride matches ffmpeg's -video_size.
-            //Resize is frozen for the duration because an export is in progress.
-            int w = _pipeline.Width & ~1, h = _pipeline.Height & ~1;
-            _pipeline.Resize(w, h);
 
             _animExportPrevBg = _pipeline.BackgroundColor;
             _animExportPrevPaused = PlaybackPaused;
@@ -361,79 +382,70 @@ namespace PlayerViewer.UI
             _animExportFormat = format;
             _animExportGreen = new System.Numerics.Vector3(0, 1, 0);
             _animExportTrim = _config.TrimDeadspace;
+            _animExportSupersample = Math.Clamp(_config.ExportSupersample, 1, 8);
+            _animExportChain = chain;
 
-            if (_animExportTrim)
+            //Supersample the render. With trim on, the crop keeps the full internal resolution
+            //(scale 1, larger frame) so a loosely-framed subject stays sharp; without trim, the
+            //factor becomes anti-alias supersampling downsampled back to the capture size. Even
+            //dimensions keep the raw RGBA stride aligned with ffmpeg's -video_size. Resize is
+            //frozen elsewhere for the duration because an export is in progress.
+            int ss = _animExportSupersample;
+            int bw = _pipeline.Width & ~1, bh = _pipeline.Height & ~1;
+            int outW, outH, scale;
+            if (_animExportTrim) { outW = (bw * ss) & ~1; outH = (bh * ss) & ~1; scale = 1; }
+            else { outW = bw; outH = bh; scale = ss; }
+            _pipeline.ExportScaleOverride = scale;
+            _pipeline.Resize(outW, outH);
+
+            //Buffer raw frames to disk then encode: faster than piping to ffmpeg live (the
+            //render loop never stalls on the encoder). Always render transparent (alpha oracle
+            //for the crop); the greenscreen for MP4 is composited during the encode pass.
+            _bufferedExporter = new BufferedAnimExporter();
+            if (!_bufferedExporter.StartCapture(outW, outH, _exportFps, path, _animExportTrim))
             {
-                //Buffered/trim path: always render transparent (alpha oracle for the crop);
-                //the greenscreen for MP4 is composited during the encode pass.
-                _bufferedExporter = new BufferedAnimExporter();
-                if (!_bufferedExporter.StartCapture(w, h, _exportFps, path))
-                {
-                    Console.WriteLine($"[UI] Export failed: {_bufferedExporter.Error}");
-                    _bufferedExporter.Dispose();
-                    _bufferedExporter = null;
-                    return;
-                }
-            }
-            else
-            {
-                if (!transparent)
-                    _pipeline.BackgroundColor = _animExportGreen;
-                if (!_recorder.Start(w, h, path, _exportFps, lockstep: true, format, _config.WebpQuality))
-                {
-                    _pipeline.BackgroundColor = _animExportPrevBg;
-                    return;
-                }
+                Console.WriteLine($"[UI] Export failed: {_bufferedExporter.Error}");
+                _bufferedExporter.Dispose();
+                _bufferedExporter = null;
+                _pipeline.ExportScaleOverride = 0;
+                return;
             }
 
             _animExporting = true;
             PlaybackSetPaused(true);
-            //Restart cloth from rest so the first exported frame is reproducible.
-            if (_standalone == null)
+            //Restart cloth from rest so the first exported frame is reproducible; a chain resets
+            //once here then runs continuously across steps (ChainSeek rebinds without a reset).
+            if (_animExportChain)
+                BeginChain();
+            else if (_standalone == null)
                 _scene?.ResetHairPhysics();
         }
 
         void CaptureAnimExportFrame()
         {
-            if (_animExportTrim)
-            {
-                //Always render transparent (alpha oracle for the crop), but match the edge
-                //matte to the output: WebP keeps this RGB against straight alpha, so a green
-                //matte would fringe the cutout; matte it against the viewport background like
-                //the PNG path. MP4 composites over green in the encode pass, so green edges
-                //there key cleanly.
-                var matte = _animExportTransparent ? _pipeline.BackgroundColor : _animExportGreen;
-                var bytes = _pipeline.CaptureFrameBytes(ActiveScene, matte,
-                    transparent: true, out _, out _);
-                _bufferedExporter.PushFrame(bytes);
-            }
-            else
-            {
-                var bytes = _pipeline.CaptureFrameBytes(ActiveScene, _pipeline.BackgroundColor,
-                    _animExportTransparent, out int w, out int h);
-                _recorder.PushFrame(bytes, w, h);
-            }
+            //Always render transparent (alpha oracle for the crop), matching the edge matte to
+            //the output: WebP keeps this RGB against straight alpha, so a green matte would
+            //fringe the cutout; matte it against the viewport background like the PNG path. MP4
+            //composites over green in the encode pass, so green edges there key cleanly.
+            var matte = _animExportTransparent ? _pipeline.BackgroundColor : _animExportGreen;
+            var bytes = _pipeline.CaptureFrameBytes(ActiveScene, matte, transparent: true, out _, out _);
+            _bufferedExporter.PushFrame(bytes);
 
             _animExportIndex += _animExportAdvance;
             if (_animExportIndex >= _animExportTotal)
                 FinishAnimExport();
         }
 
-        //Natural completion: the render/capture phase is done
+        //Natural completion: the render/capture phase is done. Kick off the encode pass on a
+        //worker; the panel polls _bufferedExporter for progress and clears it via
+        //FinishBufferedExport when encoding completes.
         void FinishAnimExport()
         {
-            if (_animExportTrim)
-            {
-                //Kick off the encode pass on a worker; the panel polls _bufferedExporter for
-                //progress and clears it via FinishBufferedExport when encoding completes.
-                _bufferedExporter.FinishCapture(_animExportFormat, _animExportGreen,
-                    _config.WebpQuality, _config.TrimMarginPx);
-            }
-            else
-            {
-                _recorder.Stop();
-                Console.WriteLine($"[UI] Exported {_recorder.OutputPath}");
-            }
+            //Margin is applied at the crop's (internal) resolution, so scale it with the
+            //supersample factor to keep the visual padding consistent.
+            _bufferedExporter.FinishCapture(_animExportFormat, _animExportGreen,
+                _config.WebpQuality, _config.TrimMarginPx * _animExportSupersample);
+            _pipeline.ExportScaleOverride = 0;
             _pipeline.BackgroundColor = _animExportPrevBg;
             PlaybackSetPaused(_animExportPrevPaused);
             PlaybackSetFrame(_animExportPrevFrame);
@@ -443,16 +455,10 @@ namespace PlayerViewer.UI
         //Cancel button: abort without finishing the encode
         void AbortAnimExport()
         {
-            if (_animExportTrim && _bufferedExporter != null)
-            {
-                _bufferedExporter.Abort();
-                _bufferedExporter.Dispose();
-                _bufferedExporter = null;
-            }
-            else
-            {
-                _recorder.Stop();
-            }
+            _bufferedExporter?.Abort();
+            _bufferedExporter?.Dispose();
+            _bufferedExporter = null;
+            _pipeline.ExportScaleOverride = 0;
             _pipeline.BackgroundColor = _animExportPrevBg;
             PlaybackSetPaused(_animExportPrevPaused);
             PlaybackSetFrame(_animExportPrevFrame);

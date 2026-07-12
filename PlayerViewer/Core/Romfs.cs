@@ -96,8 +96,8 @@ namespace PlayerViewer.Core
             //zstd magic
             if (data.Length >= 4 && data[0] == 0x28 && data[1] == 0xB5 && data[2] == 0x2F && data[3] == 0xFD)
             {
-                using var decompressor = new ZstdNet.Decompressor();
-                return decompressor.Unwrap(data);
+                using var decompressor = new ZstdSharp.Decompressor();
+                return decompressor.Unwrap(data).ToArray();
             }
             return data;
         }

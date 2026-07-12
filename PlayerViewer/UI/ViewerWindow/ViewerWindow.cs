@@ -62,13 +62,7 @@ namespace PlayerViewer.UI
         StandaloneScene _standalone;
         string _standaloneError;
 
-        //--- dev self-test: save a window screenshot after N frames and exit
-        public string AutoScreenshotPath;
-        public int AutoScreenshotFrame = 40;
-        public string AutoOpenFile;   //opens a standalone model right after load
-        public string AutoRecordPath; //records N frames of video then exits
-        public int AutoRecordFrames = 120;
-        int _frameCounter;
+        public string AutoOpenFile;   //--open <file>: opens a standalone model right after load
 
         //--- Deterministic full-animation export: drives the timeline frame-by-frame
         //(ignoring wall clock) so every animation frame lands exactly once. Reuses the
@@ -80,6 +74,8 @@ namespace PlayerViewer.UI
         int _exportFps = 60;       //two-tick control: 30 or 60
         bool _animExportTransparent;
         bool _animExportTrim;      //snapshot of TrimDeadspace taken at export start
+        int _animExportSupersample;//snapshot of ExportSupersample taken at export start
+        bool _animExportChain;     //exporting the whole sequence (Sequence mode) vs a single anim
         VideoRecorder.OutputFormat _animExportFormat;
         System.Numerics.Vector3 _animExportGreen;
         bool _animExportPrevPaused;
@@ -349,11 +345,20 @@ namespace PlayerViewer.UI
             //deterministically (fixed frame + fixed dt) instead of by real time.
             if (_animExporting)
             {
-                PlaybackSetFrame(_animExportIndex);
+                //Chain export walks the concatenated sequence; single export scrubs one anim.
+                if (_animExportChain)
+                    ChainSeek(_animExportIndex);
+                else
+                    PlaybackSetFrame(_animExportIndex);
                 //Cloth dt is wall-clock per output frame (1/fps), independent of playback
                 //speed; matches the viewport, where the sim advances in real time and the
                 //speed slider only scales how fast the animation cursor moves.
                 PlaybackUpdate(1f / _exportFps);
+                _uiFrame = PlaybackAnimFrame;
+            }
+            else if (_chainActive)
+            {
+                UpdateAnimChain((float)e.Time);
                 _uiFrame = PlaybackAnimFrame;
             }
             else if (_standalone != null)
@@ -376,37 +381,6 @@ namespace PlayerViewer.UI
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
             _imgui.Render();
 
-            if (AutoRecordPath != null && _scene != null)
-            {
-                if (!_recorder.IsRecording && _frameCounter < AutoRecordFrames)
-                    StartRecording(AutoRecordPath);
-                else if (_recorder.IsRecording && _recorder.FrameCount >= AutoRecordFrames)
-                {
-                    StopRecording();
-                    Console.WriteLine($"[UI] Recorded {AutoRecordPath}");
-                    AutoRecordPath = null;
-                    if (AutoScreenshotPath == null)
-                        Close();
-                }
-            }
-
-            if (AutoScreenshotPath != null && ++_frameCounter >= AutoScreenshotFrame)
-            {
-                if (ActiveScene != null)
-                {
-                    using var dbg = _pipeline.Capture(ActiveScene, 512, 512, _pipeline.BackgroundColor, _captureTransparent);
-                    SixLabors.ImageSharp.ImageExtensions.SaveAsPng(dbg, AutoScreenshotPath + ".capture.png");
-                }
-                var pixels = new byte[Width * Height * 4];
-                GL.ReadBuffer(ReadBufferMode.Back);
-                GL.ReadPixels(0, 0, Width, Height, OpenTK.Graphics.OpenGL.PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
-                FlipRowsVertical(pixels, Width, Height);
-                using var img = SixLabors.ImageSharp.Image.LoadPixelData<SixLabors.ImageSharp.PixelFormats.Rgba32>(pixels, Width, Height);
-                SixLabors.ImageSharp.ImageExtensions.SaveAsPng(img, AutoScreenshotPath);
-                Console.WriteLine($"[UI] Screenshot saved {AutoScreenshotPath}");
-                Close();
-            }
-
             SwapBuffers();
 
             //Frame-exact export: render this frame with the chosen background and push
@@ -422,20 +396,6 @@ namespace PlayerViewer.UI
                 var pixels = _pipeline.ReadFinalPixelsAsync(out _);
                 if (pixels != null)
                     _recorder.PushFrame(pixels, _pipeline.Width, _pipeline.Height);
-            }
-        }
-
-        //Flips RGBA8 rows in place (OpenGL's bottom-up readback -> top-down image order).
-        static void FlipRowsVertical(byte[] pixels, int width, int height)
-        {
-            int stride = width * 4;
-            byte[] tmp = new byte[stride];
-            for (int y = 0; y < height / 2; y++)
-            {
-                int top = y * stride, bot = (height - 1 - y) * stride;
-                Array.Copy(pixels, top, tmp, 0, stride);
-                Array.Copy(pixels, bot, pixels, top, stride);
-                Array.Copy(tmp, 0, pixels, bot, stride);
             }
         }
     }

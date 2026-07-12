@@ -26,11 +26,18 @@ namespace PlayerViewer.UI
             if (!_recorder.IsRecording && !_animExporting)
                 _pipeline.Resize((int)size.X, (int)size.Y);
 
-            _pipeline.Render(ActiveScene);
+            //During an export the capture pass already renders each frame (often supersampled),
+            // so skip the redundant viewport render and just preview the last captured frame.
+            if (!_animExporting)
+                _pipeline.Render(ActiveScene);
 
             var pos = ImGui.GetCursorScreenPos();
-            ImGui.Image((IntPtr)_pipeline.ViewportTextureId, new Vector2(_pipeline.Width, _pipeline.Height),
-                new Vector2(0, 1), new Vector2(1, 0));
+            //Fit the render texture into the region, preserving aspect. Normally its already
+            //region-sized (1:1); during a supersampled export its larger, so scale it down
+            //instead of overflowing the region so it doesn't "zoom"
+            float fit = Math.Min(size.X / _pipeline.Width, size.Y / _pipeline.Height);
+            var imgSize = new Vector2(_pipeline.Width * fit, _pipeline.Height * fit);
+            ImGui.Image((IntPtr)_pipeline.ViewportTextureId, imgSize, new Vector2(0, 1), new Vector2(1, 0));
 
             _viewportHovered = ImGui.IsItemHovered();
             //Freeze the camera during a full-animation export so every frame shares

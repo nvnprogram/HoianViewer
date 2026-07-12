@@ -33,6 +33,8 @@
     <!-- Cold in PlayerViewer; PrivateAssets stops SDC flowing to its output (CSS refs it directly). -->
     <PackageReference Include="System.Drawing.Common" Version="8.0.0" PrivateAssets="all" />
     <PackageReference Include="System.Resources.Extensions" Version="6.0.0-preview.1.21102.12" />
+    <!-- Managed zstd (ZSTB.cs); replaces ZstdNet + its libzstd native. Flows to consumers. -->
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
   </ItemGroup>
 
   <ItemGroup>
@@ -78,9 +80,6 @@
     </Reference>
     <Reference Include="TrackStudioLibrary">
       <HintPath>..\CafeShaderStudio\Lib\TrackStudioLibrary.dll</HintPath>
-    </Reference>
-    <Reference Include="ZstdNet">
-      <HintPath>..\CafeShaderStudio\Lib\ZstdNet.dll</HintPath>
     </Reference>
   </ItemGroup>
 

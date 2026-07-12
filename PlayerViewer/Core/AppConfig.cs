@@ -55,6 +55,10 @@ namespace PlayerViewer.Core
         public int TrimMarginPx = 0;
         //WebP encode quality: 100 = lossless (bit-exact), below = lossy (smaller/faster).
         public int WebpQuality = 100;
+        //Export supersample factor (1-8). Exports render internally at this multiple of the
+        //capture size; with trim on, the crop keeps that internal resolution so a loosely
+        //framed subject still exports sharp. VRAM and temp-disk use scale with the square.
+        public int ExportSupersample = 1;
 
         public PlayerConfig Player = new();
 
