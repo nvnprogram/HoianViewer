@@ -1,0 +1,30 @@
+# autonormalize, and checkout as native
+* text=auto
+
+# these will break with crlf
+*.sh   text eol=lf
+*.nix  text eol=lf
+*.lock text eol=lf
+
+# These are binaries
+*.dll   binary
+*.exe   binary
+*.pdb   binary
+*.so    binary
+*.dylib binary
+*.zip   binary
+*.dds   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.bmp   binary
+*.tif   binary
+*.ico   binary
+*.ttf   binary
+*.otf   binary
+*.wav   binary
+*.ogg   binary
+*.bin   binary
+*.bfres binary
+*.szs   binary
+*.sarc  binary

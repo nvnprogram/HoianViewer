@@ -1,13 +1,13 @@
-﻿using BfshaLibrary.WiiU;
-using ShaderLibrary.Common;
-using ShaderLibrary.IO;
-using Silk.NET.OpenGL;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using BfshaLibrary.WiiU;
+using ShaderLibrary.Common;
+using ShaderLibrary.IO;
+using Silk.NET.OpenGL;
 
 namespace ShaderLibrary.WiiU
 {
@@ -38,11 +38,13 @@ namespace ShaderLibrary.WiiU
         public List<GX2Block> Blocks = new List<GX2Block>();
         public List<GX2Shader> Shaders = new List<GX2Shader>();
 
-        public GSHFile(string path) {
+        public GSHFile(string path)
+        {
             Read(new BinaryDataReader(File.OpenRead(path), true));
         }
 
-        public GSHFile(Stream stream) {
+        public GSHFile(Stream stream)
+        {
             Read(new BinaryDataReader(stream, true));
         }
 
@@ -79,7 +81,9 @@ namespace ShaderLibrary.WiiU
                 if (block.BlockType == BlockType.PixelShaderHeader)
                     currentShader.PixelHeader = new GX2PixelHeader(new MemoryStream(data));
                 if (block.BlockType == BlockType.GeometryShaderHeader)
-                    currentShader.GeometryHeader = new GX2GeometryShaderHeader(new MemoryStream(data));
+                    currentShader.GeometryHeader = new GX2GeometryShaderHeader(
+                        new MemoryStream(data)
+                    );
 
                 if (block.BlockType == BlockType.VertexShaderProgram)
                     currentShader.VertexData = data;
@@ -88,11 +92,7 @@ namespace ShaderLibrary.WiiU
                 if (block.BlockType == BlockType.GeometryShaderProgram)
                     currentShader.GeometryShData = data;
 
-                Blocks.Add(new GX2Block()
-                {
-                    Header = block,
-                    Data = data,
-                });
+                Blocks.Add(new GX2Block() { Header = block, Data = data });
             }
         }
 
@@ -134,7 +134,8 @@ namespace ShaderLibrary.WiiU
             public byte[] GetRegs()
             {
                 var mem = new MemoryStream();
-                using (var writer = new BinaryDataWriter(mem, true)) {
+                using (var writer = new BinaryDataWriter(mem, true))
+                {
                     writer.WriteStruct(ShaderRegsHeader);
                 }
                 return mem.ToArray();
@@ -204,7 +205,7 @@ namespace ShaderLibrary.WiiU
                 writer.Write(0); //offset for later
 
                 writer.Write(0);
-                writer.Write(0); 
+                writer.Write(0);
 
                 writer.Write(Loops.Count);
                 writer.Write(0); //offset for later
@@ -312,7 +313,7 @@ namespace ShaderLibrary.WiiU
                 writer.Write(0); //offset for later
 
                 writer.Write(0);
-                writer.Write(0); 
+                writer.Write(0);
 
                 writer.Write(Loops.Count);
                 writer.Write(0); //offset for later
@@ -342,7 +343,8 @@ namespace ShaderLibrary.WiiU
             public byte[] GetRegs()
             {
                 var mem = new MemoryStream();
-                using (var writer = new BinaryDataWriter(mem, true)) {
+                using (var writer = new BinaryDataWriter(mem, true))
+                {
                     writer.WriteStruct(ShaderRegsHeader);
                 }
                 return mem.ToArray();
@@ -413,12 +415,14 @@ namespace ShaderLibrary.WiiU
             public uint vgt_primitiveid_en;
             public uint spi_vs_out_config;
             public uint num_spi_vs_out_id;
+
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 10)]
             public uint[] spi_vs_out_id;
 
             public uint pa_cl_vs_out_cntl;
             public uint sq_vtx_semantic_clear;
             public uint num_sq_vtx_semantic;
+
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
             public uint[] sq_vtx_semantic;
 
@@ -435,6 +439,7 @@ namespace ShaderLibrary.WiiU
             public uint spi_ps_in_control_0;
             public uint spi_ps_in_control_1;
             public uint num_spi_ps_input_cntl;
+
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
             public uint[] spi_ps_input_cntls;
 
@@ -452,6 +457,7 @@ namespace ShaderLibrary.WiiU
             public uint spi_ps_in_control_0;
             public uint spi_ps_in_control_1;
             public uint num_spi_ps_input_cntl;
+
             [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
             public uint[] spi_ps_input_cntls;
 

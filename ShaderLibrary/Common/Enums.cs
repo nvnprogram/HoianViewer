@@ -11,7 +11,7 @@ namespace ShaderLibrary.Common
         TESSELLATION_NONE = 0,
         TESSELLATION_LINE = 1,
         TESSELLATION_TRIANGLE = 2,
-        TESSELLATION_QUAD = 3
+        TESSELLATION_QUAD = 3,
     }
 
     public enum GX2ShaderMode
@@ -19,7 +19,7 @@ namespace ShaderLibrary.Common
         UNIFORM_REGISTER = 0,
         UNIFORM_BLOCK = 1,
         GEOMETRY_SHADER = 2,
-        COMPUTE_SHADER = 3
+        COMPUTE_SHADER = 3,
     }
 
     public enum GX2SamplerVarType
@@ -74,7 +74,7 @@ namespace ShaderLibrary.Common
         DOUBLE3X4 = 35,
         DOUBLE4X2 = 36,
         DOUBLE4X3 = 37,
-        DOUBLE4X4 = 38
+        DOUBLE4X4 = 38,
     }
 
     /// <summary>
@@ -113,6 +113,6 @@ namespace ShaderLibrary.Common
         Srt2D,
         Srt3D,
         TexSrt,
-        TexSrtEx
+        TexSrtEx,
     }
 }

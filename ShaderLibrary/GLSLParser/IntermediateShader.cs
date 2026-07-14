@@ -1,7 +1,4 @@
-﻿using ShaderLibrary.Common;
-using ShaderLibrary.Helpers;
-using ShaderLibrary.WiiU;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Globalization;
@@ -11,6 +8,9 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using System.Xml.Serialization;
+using ShaderLibrary.Common;
+using ShaderLibrary.Helpers;
+using ShaderLibrary.WiiU;
 using static ShaderLibrary.IntermediateShader;
 
 namespace ShaderLibrary
@@ -82,7 +82,11 @@ namespace ShaderLibrary
 
         public static IntermediateShader LoadFromXml(string path)
         {
-            using var reader = new StreamReader(path, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+            using var reader = new StreamReader(
+                path,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: true
+            );
 
             var serializer = new XmlSerializer(typeof(IntermediateShader));
             return (IntermediateShader)serializer.Deserialize(reader);
@@ -159,7 +163,8 @@ namespace ShaderLibrary
             bfsha.BinHeader.VersionMinor = 0;
             bfsha.Flags = 0;
 
-            foreach (var model in ShaderModels) {
+            foreach (var model in ShaderModels)
+            {
                 ShaderModel shaderModel = CreateShaderModel(model);
                 bfsha.ShaderModels.Add(shaderModel.Name, shaderModel);
             }
@@ -181,7 +186,8 @@ namespace ShaderLibrary
             bfsha.BinHeader.VersionMinor = 2;
             bfsha.Flags = 4;
 
-            foreach (var model in ShaderModels) {
+            foreach (var model in ShaderModels)
+            {
                 ShaderModel shaderModel = CreateShaderModel(model);
                 bfsha.ShaderModels.Add(shaderModel.Name, shaderModel);
             }
@@ -223,22 +229,28 @@ namespace ShaderLibrary
             ShaderOptionCreator.SetupOptionKeyFlags(shaderModel);
 
             foreach (var samp in model.Samplers.OrderBy(x => x.ID))
-                shaderModel.Samplers.Add(samp.ID, new BfshaSampler()
-                {
-                    Index = (byte)shaderModel.Samplers.Count,
-                    Annotation = "", 
-                    GX2Type = (byte)GetGX2SamplerType(samp.Type),
-                    GX2Count = 1,
-                });
+                shaderModel.Samplers.Add(
+                    samp.ID,
+                    new BfshaSampler()
+                    {
+                        Index = (byte)shaderModel.Samplers.Count,
+                        Annotation = "",
+                        GX2Type = (byte)GetGX2SamplerType(samp.Type),
+                        GX2Count = 1,
+                    }
+                );
 
             foreach (var attr in model.Attributes)
-                shaderModel.Attributes.Add(attr.ID, new BfshaAttribute()
-                {
-                    Index = (byte)shaderModel.Attributes.Count,
-                    Location = (sbyte)attr.Location,
-                    GX2Count = (byte)attr.ArrayCount,
-                    GX2Type = (byte)GetValueType(attr.Type),
-                });
+                shaderModel.Attributes.Add(
+                    attr.ID,
+                    new BfshaAttribute()
+                    {
+                        Index = (byte)shaderModel.Attributes.Count,
+                        Location = (sbyte)attr.Location,
+                        GX2Count = (byte)attr.ArrayCount,
+                        GX2Type = (byte)GetValueType(attr.Type),
+                    }
+                );
 
             //unk
             shaderModel.UnknownIndices2[0] = 255;
@@ -263,36 +275,57 @@ namespace ShaderLibrary
                 //material, shape, skeleton, option block indices
                 switch (b.Type)
                 {
-                    case BlockType.Material: shaderModel.BlockIndices[0] = block.header.Index; break;
-                    case BlockType.Shape:    shaderModel.BlockIndices[1] = block.header.Index; break;
-                    case BlockType.Skeleton: shaderModel.BlockIndices[2] = block.header.Index; break;
-                    case BlockType.Option:   shaderModel.BlockIndices[3] = block.header.Index; break;
+                    case BlockType.Material:
+                        shaderModel.BlockIndices[0] = block.header.Index;
+                        break;
+                    case BlockType.Shape:
+                        shaderModel.BlockIndices[1] = block.header.Index;
+                        break;
+                    case BlockType.Skeleton:
+                        shaderModel.BlockIndices[2] = block.header.Index;
+                        break;
+                    case BlockType.Option:
+                        shaderModel.BlockIndices[3] = block.header.Index;
+                        break;
                 }
 
                 //block types
                 switch (b.Type)
                 {
-                    case BlockType.Material:    block.header.Type = 1; break;
-                    case BlockType.Shape:       block.header.Type = 2; break;
-                    case BlockType.Skeleton:    block.header.Type = 3; break;
-                    case BlockType.Option:      block.header.Type = 4; break;
-                    default:                    block.header.Type = 0; break;
+                    case BlockType.Material:
+                        block.header.Type = 1;
+                        break;
+                    case BlockType.Shape:
+                        block.header.Type = 2;
+                        break;
+                    case BlockType.Skeleton:
+                        block.header.Type = 3;
+                        break;
+                    case BlockType.Option:
+                        block.header.Type = 4;
+                        break;
+                    default:
+                        block.header.Type = 0;
+                        break;
                 }
 
                 if (block.DefaultBuffer?.Length > 0)
                 {
                     foreach (var u in b.Uniforms)
                     {
-                        block.Uniforms.Add(u.ID, new BfshaUniform()
-                        {
-                            BlockIndex = block.Index,
-                            DataOffset = (ushort)u.Offset,
-                            Index = block.Uniforms.Count,
-                            Name = u.ID,
-                            GX2Count = (ushort)u.ArrayCount,
-                            GX2Type = (byte)GetValueType(u.Type),
-                            GX2ParamType = (byte)GetParamType(u.Type, u.ArrayCount)
-                        });
+                        block.Uniforms.Add(
+                            u.ID,
+                            new BfshaUniform()
+                            {
+                                BlockIndex = block.Index,
+                                DataOffset = (ushort)u.Offset,
+                                Index = block.Uniforms.Count,
+                                Name = u.ID,
+                                GX2Count = (ushort)u.ArrayCount,
+                                GX2Type = (byte)GetValueType(u.Type),
+                                GX2ParamType = (byte)GetParamType(u.Type, u.ArrayCount),
+                            }
+                        );
                     }
                 }
 
@@ -306,19 +339,27 @@ namespace ShaderLibrary
         {
             switch (type)
             {
-                case ValueType.FLOAT: return ShaderParamType.Float;
-                case ValueType.FLOAT2: return ShaderParamType.Float2;
-                case ValueType.FLOAT3: return ShaderParamType.Float3;
+                case ValueType.FLOAT:
+                    return ShaderParamType.Float;
+                case ValueType.FLOAT2:
+                    return ShaderParamType.Float2;
+                case ValueType.FLOAT3:
+                    return ShaderParamType.Float3;
                 case ValueType.FLOAT4:
                     if (arrayCount == 2) //TEXSRT
                         return ShaderParamType.TexSrt;
 
                     return ShaderParamType.Float4;
-                case ValueType.INT: return ShaderParamType.Int;
-                case ValueType.INT2: return ShaderParamType.Int2;
-                case ValueType.INT3: return ShaderParamType.Int3;
-                case ValueType.INT4: return ShaderParamType.Int4;
-                case ValueType.BOOL: return ShaderParamType.Bool;
+                case ValueType.INT:
+                    return ShaderParamType.Int;
+                case ValueType.INT2:
+                    return ShaderParamType.Int2;
+                case ValueType.INT3:
+                    return ShaderParamType.Int3;
+                case ValueType.INT4:
+                    return ShaderParamType.Int4;
+                case ValueType.BOOL:
+                    return ShaderParamType.Bool;
             }
             throw new NotImplementedException($"{type} {arrayCount}");
         }
@@ -327,16 +368,26 @@ namespace ShaderLibrary
         {
             switch (type)
             {
-                case ValueType.FLOAT: return GX2ShaderVarType.FLOAT;
-                case ValueType.FLOAT2: return GX2ShaderVarType.FLOAT2;
-                case ValueType.FLOAT3: return GX2ShaderVarType.FLOAT3;
-                case ValueType.FLOAT4: return GX2ShaderVarType.FLOAT4;
-                case ValueType.INT: return GX2ShaderVarType.INT;
-                case ValueType.INT2: return GX2ShaderVarType.INT2;
-                case ValueType.INT3: return GX2ShaderVarType.UINT3;
-                case ValueType.INT4: return GX2ShaderVarType.INT4;
-                case ValueType.BOOL: return GX2ShaderVarType.BOOL;
-                case ValueType.MAT2x4: return GX2ShaderVarType.FLOAT2X4;
+                case ValueType.FLOAT:
+                    return GX2ShaderVarType.FLOAT;
+                case ValueType.FLOAT2:
+                    return GX2ShaderVarType.FLOAT2;
+                case ValueType.FLOAT3:
+                    return GX2ShaderVarType.FLOAT3;
+                case ValueType.FLOAT4:
+                    return GX2ShaderVarType.FLOAT4;
+                case ValueType.INT:
+                    return GX2ShaderVarType.INT;
+                case ValueType.INT2:
+                    return GX2ShaderVarType.INT2;
+                case ValueType.INT3:
+                    return GX2ShaderVarType.UINT3;
+                case ValueType.INT4:
+                    return GX2ShaderVarType.INT4;
+                case ValueType.BOOL:
+                    return GX2ShaderVarType.BOOL;
+                case ValueType.MAT2x4:
+                    return GX2ShaderVarType.FLOAT2X4;
             }
             throw new NotImplementedException($"{type}");
         }
@@ -345,12 +396,18 @@ namespace ShaderLibrary
         {
             switch (type)
             {
-                case Sampler.SamplerType.Sampler2D: return GX2SamplerVarType.SAMPLER_2D;
-                case Sampler.SamplerType.Sampler3D: return GX2SamplerVarType.SAMPLER_3D;
-                case Sampler.SamplerType.SamplerCube: return GX2SamplerVarType.SAMPLER_CUBE;
-                case Sampler.SamplerType.SamplerCubeArray: return GX2SamplerVarType.SAMPLER_CUBE_ARRAY;
-                case Sampler.SamplerType.Sampler2DArray: return GX2SamplerVarType.SAMPLER_2D_ARRAY;
-                case Sampler.SamplerType.Sampler1D: return GX2SamplerVarType.SAMPLER_1D;
+                case Sampler.SamplerType.Sampler2D:
+                    return GX2SamplerVarType.SAMPLER_2D;
+                case Sampler.SamplerType.Sampler3D:
+                    return GX2SamplerVarType.SAMPLER_3D;
+                case Sampler.SamplerType.SamplerCube:
+                    return GX2SamplerVarType.SAMPLER_CUBE;
+                case Sampler.SamplerType.SamplerCubeArray:
+                    return GX2SamplerVarType.SAMPLER_CUBE_ARRAY;
+                case Sampler.SamplerType.Sampler2DArray:
+                    return GX2SamplerVarType.SAMPLER_2D_ARRAY;
+                case Sampler.SamplerType.Sampler1D:
+                    return GX2SamplerVarType.SAMPLER_1D;
             }
             throw new NotImplementedException($"{type}");
         }
@@ -385,20 +442,32 @@ namespace ShaderLibrary
                 storageBlockLookup = StorageBlocks.ToDictionary(s => s.ID, s => s.Symbol);
             }
 
-            private static string Lookup(Dictionary<string, string> dict, string key)
-                => dict.TryGetValue(key, out var value) ? value : key;
-            private static string LookupReverse(Dictionary<string, string> dict, string value)
-                => dict.FirstOrDefault(x => x.Value == value).Key;
+            private static string Lookup(Dictionary<string, string> dict, string key) =>
+                dict.TryGetValue(key, out var value) ? value : key;
+
+            private static string LookupReverse(Dictionary<string, string> dict, string value) =>
+                dict.FirstOrDefault(x => x.Value == value).Key;
 
             public string GetSamplerSymbolName(string name) => Lookup(samplerLookup, name);
+
             public string GetAttributeSymbolName(string name) => Lookup(attributeLookup, name);
-            public string GetUniformBlockSymbolName(string name) => Lookup(uniformBlockLookup, name);
-            public string GetStorageBlockSymbolName(string name) => Lookup(storageBlockLookup, name);
+
+            public string GetUniformBlockSymbolName(string name) =>
+                Lookup(uniformBlockLookup, name);
+
+            public string GetStorageBlockSymbolName(string name) =>
+                Lookup(storageBlockLookup, name);
 
             public string GetSamplerBfshaName(string name) => LookupReverse(samplerLookup, name);
-            public string GetAttributeBfshaName(string name) => LookupReverse(attributeLookup, name);
-            public string GetUniformBlockBfshaName(string name) => LookupReverse(uniformBlockLookup, name);
-            public string GetStorageBlockBfshaName(string name) => LookupReverse(storageBlockLookup, name);
+
+            public string GetAttributeBfshaName(string name) =>
+                LookupReverse(attributeLookup, name);
+
+            public string GetUniformBlockBfshaName(string name) =>
+                LookupReverse(uniformBlockLookup, name);
+
+            public string GetStorageBlockBfshaName(string name) =>
+                LookupReverse(storageBlockLookup, name);
         }
 
         public class RenderInfo : UIElement
@@ -407,28 +476,33 @@ namespace ShaderLibrary
             /// Render info name.
             /// </summary>
             [XmlAttribute("name")]
-            public string Name { get; set;
-}            /// <summary>
+            public string Name { get; set; }
+
+            /// <summary>
             /// Render info type.
             /// </summary>
             [XmlAttribute("type")]
             public RenderInfoType Type { get; set; }
+
             /// <summary>
             /// Render info default choice/value.
             /// </summary>
             [XmlAttribute("default")]
             public string DefaultChoice { get; set; }
+
             /// <summary>
             /// Render info choices.
             /// </summary>
             [XmlAttribute("choices")]
             public List<string> Choices { get; set; } = new List<string>();
+
             /// <summary>
             /// Determines if the render info entry is necessary for materials.
             /// If set, the render info will be set with a default value in the material if not present.
             /// </summary>
             [XmlAttribute("optional")]
             public bool Optional { get; set; } = true;
+
             /// <summary>
             /// The type if render info. The data present in a material.
             /// </summary>
@@ -444,15 +518,19 @@ namespace ShaderLibrary
         {
             [XmlAttribute("name")]
             public string ID { get; set; }
+
             [XmlAttribute("symbol")]
             public string Symbol;
             public List<string> Choices { get; set; } = new List<string>();
+
             [XmlAttribute("default")]
             [DefaultValue(null)]
             public string DefaultChoice { get; set; }
+
             [XmlAttribute("branch")]
             [DefaultValue(false)]
             public bool Branch = false;
+
             [XmlAttribute("type")]
             public string Type { get; set; }
 
@@ -479,6 +557,7 @@ namespace ShaderLibrary
             }
 
             public string GetOptionChoice() => GetOptionChoice(DefaultChoice);
+
             public string GetOptionChoice(string choice)
             {
                 return choice.Split(":").FirstOrDefault();
@@ -489,10 +568,13 @@ namespace ShaderLibrary
         {
             [XmlAttribute("name")]
             public string ID { get; set; }
+
             [XmlAttribute("symbol")]
             public string Symbol { get; set; }
+
             [XmlAttribute("size")]
             public uint Size { get; set; }
+
             [XmlAttribute("index")]
             public int Location { get; set; }
         }
@@ -501,12 +583,16 @@ namespace ShaderLibrary
         {
             [XmlAttribute("name")]
             public string ID { get; set; }
+
             [XmlAttribute("symbol")]
             public string Symbol { get; set; }
+
             [XmlAttribute("type")]
             public BlockType Type { get; set; }
+
             [XmlAttribute("index")]
             public int Location { get; set; }
+
             [XmlElement("uniforms")]
             public List<Uniform> Uniforms { get; set; } = new();
 
@@ -527,7 +613,9 @@ namespace ShaderLibrary
 
                             string[] data_values = uniform.DefaultValue.Split(" ");
                             for (int i = 0; i < data_values.Length; i++)
-                                writer.Write(float.Parse(data_values[i], CultureInfo.InvariantCulture));
+                                writer.Write(
+                                    float.Parse(data_values[i], CultureInfo.InvariantCulture)
+                                );
                         }
                     }
                 }
@@ -539,12 +627,16 @@ namespace ShaderLibrary
         {
             [XmlAttribute("name")]
             public string ID { get; set; }
+
             [XmlIgnore()]
             public uint Offset { get; set; }
+
             [XmlAttribute("type")]
             public ValueType Type { get; set; }
+
             [XmlAttribute("count")]
             public uint ArrayCount { get; set; } = 1;
+
             [XmlAttribute("default")]
             public string DefaultValue { get; set; }
         }
@@ -553,10 +645,13 @@ namespace ShaderLibrary
         {
             [XmlAttribute("name")]
             public string ID { get; set; }
+
             [XmlAttribute("symbol")]
             public string Symbol { get; set; }
+
             [XmlAttribute("index")]
             public int Location { get; set; }
+
             [XmlAttribute("type")]
             public SamplerType Type { get; set; } = SamplerType.Sampler2D;
 
@@ -575,12 +670,16 @@ namespace ShaderLibrary
         {
             [XmlAttribute("name")]
             public string ID { get; set; }
+
             [XmlAttribute("symbol")]
             public string Symbol { get; set; }
+
             [XmlAttribute("index")]
             public int Location { get; set; }
+
             [XmlAttribute("type")]
             public ValueType Type { get; set; }
+
             [XmlAttribute("count")]
             public uint ArrayCount { get; set; } = 1;
         }
@@ -590,12 +689,15 @@ namespace ShaderLibrary
             [XmlAttribute("ui_label")]
             [DefaultValue(null)]
             public string Label { get; set; }
+
             [XmlAttribute("ui_group")]
             [DefaultValue(null)]
             public string Group { get; set; }
+
             [XmlAttribute("info")]
             [DefaultValue(null)]
             public string Description { get; set; }
+
             [XmlAttribute("ui_order")]
             [DefaultValue(-1)]
             public int Order { get; set; } = -1;

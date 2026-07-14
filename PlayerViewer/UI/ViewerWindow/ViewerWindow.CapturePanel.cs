@@ -1,11 +1,11 @@
 using System;
 using System.Collections.Generic;
-using Vector2 = System.Numerics.Vector2;
-using Vector4 = System.Numerics.Vector4;
 using ImGuiNET;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
+using Vector2 = System.Numerics.Vector2;
+using Vector4 = System.Numerics.Vector4;
 
 namespace PlayerViewer.UI
 {
@@ -60,9 +60,27 @@ namespace PlayerViewer.UI
                 ? _standalone.CurrentSkeletal?.FrameCount ?? 1
                 : _scene.CurrentSkeletal?.FrameCount ?? 1;
 
-            void SetPaused(bool value) { if (standalone) _standalone.AnimPaused = value; else _scene.AnimPaused = value; }
-            void SetSpeed(float value) { if (standalone) _standalone.AnimSpeed = value; else _scene.AnimSpeed = value; }
-            void SetFrame(float value) { if (standalone) _standalone.SetAnimFrame(value); else _scene.SetAnimFrame(value); }
+            void SetPaused(bool value)
+            {
+                if (standalone)
+                    _standalone.AnimPaused = value;
+                else
+                    _scene.AnimPaused = value;
+            }
+            void SetSpeed(float value)
+            {
+                if (standalone)
+                    _standalone.AnimSpeed = value;
+                else
+                    _scene.AnimSpeed = value;
+            }
+            void SetFrame(float value)
+            {
+                if (standalone)
+                    _standalone.SetAnimFrame(value);
+                else
+                    _scene.SetAnimFrame(value);
+            }
 
             ImGui.TextColored(Theme.GoldBright, currentAnim ?? "(none)");
 
@@ -95,8 +113,21 @@ namespace PlayerViewer.UI
             string currentAnim = standalone ? _standalone.CurrentAnimName : _scene.CurrentAnimName;
             List<string> animNames = standalone ? _standalone.AnimNames : _scene.Anims.AnimNames;
 
-            void SetPaused(bool value) { if (standalone) _standalone.AnimPaused = value; else _scene.AnimPaused = value; }
-            void Play(string name) { StopAnimChain(); if (standalone) _standalone.PlayAnim(name); else _scene.PlayAnim(name); }
+            void SetPaused(bool value)
+            {
+                if (standalone)
+                    _standalone.AnimPaused = value;
+                else
+                    _scene.AnimPaused = value;
+            }
+            void Play(string name)
+            {
+                StopAnimChain();
+                if (standalone)
+                    _standalone.PlayAnim(name);
+                else
+                    _scene.PlayAnim(name);
+            }
 
             ImGui.BeginChild("##animlist", new Vector2(0, height), true);
             if (animNames.Count == 0)
@@ -113,8 +144,10 @@ namespace PlayerViewer.UI
             }
             foreach (var name in animNames)
             {
-                if (!string.IsNullOrEmpty(_animSearch) &&
-                    !name.Contains(_animSearch, StringComparison.OrdinalIgnoreCase))
+                if (
+                    !string.IsNullOrEmpty(_animSearch)
+                    && !name.Contains(_animSearch, StringComparison.OrdinalIgnoreCase)
+                )
                     continue;
                 if (ImGui.Selectable(name, name == currentAnim))
                 {
@@ -138,7 +171,12 @@ namespace PlayerViewer.UI
 
         //Background lives on the preset (_config.Player.Background). Persist to settings.json and
         //flag the live viewport preview for a rebuild so it matches the exported composite.
-        void BackgroundChanged() { _bgDirty = true; _config.Save(); }
+        void BackgroundChanged()
+        {
+            _bgDirty = true;
+            _config.Save();
+        }
+
         System.Numerics.Vector3 BgColorVec => new(Bg.Color[0], Bg.Color[1], Bg.Color[2]);
 
         //Keeps the viewport's live background in sync with the settings (rebuilt only when the
@@ -154,7 +192,12 @@ namespace PlayerViewer.UI
             }
             if (_bgDirty || _bgPreviewW != _pipeline.Width || _bgPreviewH != _pipeline.Height)
             {
-                var buf = ExportUtil.BuildBackground(_pipeline.Width, _pipeline.Height, Bg, bottomUp: true);
+                var buf = ExportUtil.BuildBackground(
+                    _pipeline.Width,
+                    _pipeline.Height,
+                    Bg,
+                    bottomUp: true
+                );
                 _pipeline.SetBackgroundBuffer(buf, _pipeline.Width, _pipeline.Height);
                 _bgPreviewW = _pipeline.Width;
                 _bgPreviewH = _pipeline.Height;
@@ -178,16 +221,28 @@ namespace PlayerViewer.UI
             if (Bg.Mode == 1)
             {
                 ImGui.SetNextItemWidth(-1);
-                Widgets.ColorEdit3("##bgcolor", BgColorVec,
-                    v => Bg.Color = new[] { v.X, v.Y, v.Z }, ImGuiColorEditFlags.None, BackgroundChanged);
+                Widgets.ColorEdit3(
+                    "##bgcolor",
+                    BgColorVec,
+                    v => Bg.Color = new[] { v.X, v.Y, v.Z },
+                    ImGuiColorEditFlags.None,
+                    BackgroundChanged
+                );
             }
             else if (Bg.Mode == 2)
             {
                 if (ImGui.Button("Browse image..."))
                 {
-                    string p = NativeFolderPicker.OpenFile("Background image",
-                        "Images (*.png;*.jpg;*.jpeg)", "*.png;*.jpg;*.jpeg");
-                    if (!string.IsNullOrEmpty(p)) { Bg.ImagePath = p; BackgroundChanged(); }
+                    string p = NativeFolderPicker.OpenFile(
+                        "Background image",
+                        "Images (*.png;*.jpg;*.jpeg)",
+                        "*.png;*.jpg;*.jpeg"
+                    );
+                    if (!string.IsNullOrEmpty(p))
+                    {
+                        Bg.ImagePath = p;
+                        BackgroundChanged();
+                    }
                 }
                 if (!string.IsNullOrEmpty(Bg.ImagePath))
                 {
@@ -195,24 +250,50 @@ namespace PlayerViewer.UI
                     Widgets.DimText(System.IO.Path.GetFileName(Bg.ImagePath));
                 }
                 ImGui.SetNextItemWidth(-1);
-                Widgets.Combo("##bgscale", Bg.ScaleMode, BgScaleLabels, v => Bg.ScaleMode = v, BackgroundChanged);
+                Widgets.Combo(
+                    "##bgscale",
+                    Bg.ScaleMode,
+                    BgScaleLabels,
+                    v => Bg.ScaleMode = v,
+                    BackgroundChanged
+                );
                 ImGui.SetNextItemWidth(-1);
-                Widgets.SliderFloat("##bgzoom", Bg.Zoom, 0.1f, 4f, v => Bg.Zoom = v, BackgroundChanged, "zoom %.2f");
+                Widgets.SliderFloat(
+                    "##bgzoom",
+                    Bg.Zoom,
+                    0.1f,
+                    4f,
+                    v => Bg.Zoom = v,
+                    BackgroundChanged,
+                    "zoom %.2f"
+                );
                 var off = new Vector2(Bg.OffsetX, Bg.OffsetY);
                 ImGui.SetNextItemWidth(-1);
                 if (ImGui.SliderFloat2("##bgoff", ref off, -1f, 1f, "offset %.2f"))
                 {
-                    Bg.OffsetX = off.X; Bg.OffsetY = off.Y; BackgroundChanged();
+                    Bg.OffsetX = off.X;
+                    Bg.OffsetY = off.Y;
+                    BackgroundChanged();
                 }
                 Widgets.Checkbox("Tile", Bg.Tile, v => Bg.Tile = v, BackgroundChanged);
                 if (Bg.Tile)
                 {
                     ImGui.SameLine();
                     ImGui.SetNextItemWidth(70);
-                    Widgets.InputInt("##tilex", Bg.TileX, v => Bg.TileX = Math.Max(1, v), BackgroundChanged);
+                    Widgets.InputInt(
+                        "##tilex",
+                        Bg.TileX,
+                        v => Bg.TileX = Math.Max(1, v),
+                        BackgroundChanged
+                    );
                     ImGui.SameLine();
                     ImGui.SetNextItemWidth(70);
-                    Widgets.InputInt("##tiley", Bg.TileY, v => Bg.TileY = Math.Max(1, v), BackgroundChanged);
+                    Widgets.InputInt(
+                        "##tiley",
+                        Bg.TileY,
+                        v => Bg.TileY = Math.Max(1, v),
+                        BackgroundChanged
+                    );
                 }
             }
         }
@@ -226,10 +307,14 @@ namespace PlayerViewer.UI
             //--- Busy states: render phase or buffered encode phase, each with its own bar.
             if (_animExporting)
             {
-                float progress = _animExportTotal > 0
-                    ? Math.Min(_animExportIndex / _animExportTotal, 1f) : 0f;
+                float progress =
+                    _animExportTotal > 0 ? Math.Min(_animExportIndex / _animExportTotal, 1f) : 0f;
                 int shown = (int)Math.Min(_animExportIndex + 1, _animExportTotal);
-                ImGui.ProgressBar(progress, new Vector2(-1, 0), $"Rendering {shown}/{_animExportTotal}");
+                ImGui.ProgressBar(
+                    progress,
+                    new Vector2(-1, 0),
+                    $"Rendering {shown}/{_animExportTotal}"
+                );
                 Widgets.RedButton("Cancel export", AbortAnimExport);
                 return;
             }
@@ -238,9 +323,15 @@ namespace PlayerViewer.UI
                 if (_bufferedExporter.IsEncoding)
                 {
                     var ex = _bufferedExporter;
-                    float p = ex.EncodeTotal > 0
-                        ? Math.Min(ex.EncodeProgress / (float)ex.EncodeTotal, 1f) : 0f;
-                    ImGui.ProgressBar(p, new Vector2(-1, 0), $"Encoding {ex.EncodeProgress}/{ex.EncodeTotal}");
+                    float p =
+                        ex.EncodeTotal > 0
+                            ? Math.Min(ex.EncodeProgress / (float)ex.EncodeTotal, 1f)
+                            : 0f;
+                    ImGui.ProgressBar(
+                        p,
+                        new Vector2(-1, 0),
+                        $"Encoding {ex.EncodeProgress}/{ex.EncodeTotal}"
+                    );
                     return;
                 }
                 //Encode finished on the worker thread: log and clear.
@@ -253,12 +344,22 @@ namespace PlayerViewer.UI
             {
                 for (int i = 0; i < CaptureSizes.Length; i++)
                     if (ImGui.Selectable(CaptureSizes[i].Label, i == _captureRes))
-                        { _captureRes = i; SaveCaptureSettings(); }
+                    {
+                        _captureRes = i;
+                        SaveCaptureSettings();
+                    }
                 ImGui.EndCombo();
             }
 
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.Combo("##exportformat", ref _exportFormat, ExportFormatLabels, ExportFormatLabels.Length))
+            if (
+                ImGui.Combo(
+                    "##exportformat",
+                    ref _exportFormat,
+                    ExportFormatLabels,
+                    ExportFormatLabels.Length
+                )
+            )
                 SaveCaptureSettings();
 
             bool isPng = _exportFormat == 0;
@@ -269,9 +370,17 @@ namespace PlayerViewer.UI
                 ImGui.AlignTextToFramePadding();
                 Widgets.DimText("FPS");
                 ImGui.SameLine();
-                if (ImGui.RadioButton("30", _exportFps == 30)) { _exportFps = 30; SaveCaptureSettings(); }
+                if (ImGui.RadioButton("30", _exportFps == 30))
+                {
+                    _exportFps = 30;
+                    SaveCaptureSettings();
+                }
                 ImGui.SameLine();
-                if (ImGui.RadioButton("60", _exportFps == 60)) { _exportFps = 60; SaveCaptureSettings(); }
+                if (ImGui.RadioButton("60", _exportFps == 60))
+                {
+                    _exportFps = 60;
+                    SaveCaptureSettings();
+                }
             }
 
             //The render is always transparent (alpha oracle), so trim applies whenever it's on.
@@ -290,32 +399,47 @@ namespace PlayerViewer.UI
                 Widgets.DimText("ffmpeg not found (data folder or PATH)");
             else if (isAnim && !animReady)
                 Widgets.DimText(
-                    exportChain ? "add animations to the sequence" : "select an animation to export");
+                    exportChain ? "add animations to the sequence" : "select an animation to export"
+                );
         }
 
-        string ExportButtonLabel(bool sequence) => _exportFormat switch
-        {
-            0 => "Export PNG",
-            1 => sequence ? "Export MP4 (sequence)" : "Export MP4",
-            2 => sequence ? "Export WebP (sequence)" : "Export WebP",
-            _ => sequence ? "Export WebM (sequence)" : "Export WebM",
-        };
+        string ExportButtonLabel(bool sequence) =>
+            _exportFormat switch
+            {
+                0 => "Export PNG",
+                1 => sequence ? "Export MP4 (sequence)" : "Export MP4",
+                2 => sequence ? "Export WebP (sequence)" : "Export WebP",
+                _ => sequence ? "Export WebM (sequence)" : "Export WebM",
+            };
 
         void DoExport()
         {
             switch (_exportFormat)
             {
-                case 0: SaveScreenshot(); break;
-                case 1: StartAnimExport(OutputFormat.Mp4); break;
-                case 2: StartAnimExport(OutputFormat.WebpTransparent); break;
-                case 3: StartAnimExport(OutputFormat.WebmTransparent); break;
+                case 0:
+                    SaveScreenshot();
+                    break;
+                case 1:
+                    StartAnimExport(OutputFormat.Mp4);
+                    break;
+                case 2:
+                    StartAnimExport(OutputFormat.WebpTransparent);
+                    break;
+                case 3:
+                    StartAnimExport(OutputFormat.WebmTransparent);
+                    break;
             }
         }
 
         void SaveScreenshot()
         {
             string def = ExportUtil.Timestamped("player", ".png");
-            string path = NativeFolderPicker.SaveFile("Save Screenshot", def, "PNG image (*.png)", "*.png");
+            string path = NativeFolderPicker.SaveFile(
+                "Save Screenshot",
+                def,
+                "PNG image (*.png)",
+                "*.png"
+            );
             if (string.IsNullOrEmpty(path))
                 return;
             if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
@@ -332,16 +456,33 @@ namespace PlayerViewer.UI
             var (_, w, h) = CaptureSizes[_captureRes];
             int ss = Math.Clamp(_config.ExportSupersample, 1, 8);
             bool trim = _config.TrimDeadspace;
-            int renderedW = trim ? w * ss : w, renderedH = trim ? h * ss : h;
+            int renderedW = trim ? w * ss : w,
+                renderedH = trim ? h * ss : h;
             using var img = trim
-                ? _pipeline.Capture(ActiveScene, w * ss, h * ss, _pipeline.BackgroundColor, transparent: true, 1)
-                : _pipeline.Capture(ActiveScene, w, h, _pipeline.BackgroundColor, transparent: true, ss);
+                ? _pipeline.Capture(
+                    ActiveScene,
+                    w * ss,
+                    h * ss,
+                    _pipeline.BackgroundColor,
+                    transparent: true,
+                    1
+                )
+                : _pipeline.Capture(
+                    ActiveScene,
+                    w,
+                    h,
+                    _pipeline.BackgroundColor,
+                    transparent: true,
+                    ss
+                );
 
-            var rect = trim ? TrimImage(img, _config.TrimMarginPx * ss) : new Rectangle(0, 0, img.Width, img.Height);
+            var rect = trim
+                ? TrimImage(img, _config.TrimMarginPx * ss)
+                : new Rectangle(0, 0, img.Width, img.Height);
 
             if (Bg.Mode == 0)
             {
-                img.SaveAsPng(path);   //Transparent: keep alpha
+                img.SaveAsPng(path); //Transparent: keep alpha
             }
             else
             {
@@ -359,24 +500,35 @@ namespace PlayerViewer.UI
         //margin, and returns the crop rect it applied (full frame if nothing was cropped).
         static Rectangle TrimImage(Image<Rgba32> img, int margin)
         {
-            int w = img.Width, h = img.Height;
-            int minX = w, minY = h, maxX = -1, maxY = -1;
+            int w = img.Width,
+                h = img.Height;
+            int minX = w,
+                minY = h,
+                maxX = -1,
+                maxY = -1;
             for (int y = 0; y < h; y++)
-                for (int x = 0; x < w; x++)
-                    if (img[x, y].A != 0)
-                    {
-                        if (x < minX) minX = x;
-                        if (x > maxX) maxX = x;
-                        if (y < minY) minY = y;
-                        if (y > maxY) maxY = y;
-                    }
+            for (int x = 0; x < w; x++)
+                if (img[x, y].A != 0)
+                {
+                    if (x < minX)
+                        minX = x;
+                    if (x > maxX)
+                        maxX = x;
+                    if (y < minY)
+                        minY = y;
+                    if (y > maxY)
+                        maxY = y;
+                }
 
             var full = new Rectangle(0, 0, w, h);
             if (maxX < 0)
                 return full;
-            int x0 = Math.Max(0, minX - margin), y0 = Math.Max(0, minY - margin);
-            int x1 = Math.Min(w - 1, maxX + margin), y1 = Math.Min(h - 1, maxY + margin);
-            int cw = x1 - x0 + 1, ch = y1 - y0 + 1;
+            int x0 = Math.Max(0, minX - margin),
+                y0 = Math.Max(0, minY - margin);
+            int x1 = Math.Min(w - 1, maxX + margin),
+                y1 = Math.Min(h - 1, maxY + margin);
+            int cw = x1 - x0 + 1,
+                ch = y1 - y0 + 1;
             if (cw >= w && ch >= h)
                 return full;
             var rect = new Rectangle(x0, y0, cw, ch);
@@ -386,21 +538,71 @@ namespace PlayerViewer.UI
 
         //--- Playback bridge: both scene types expose the same animation surface but
         //share no interface for it, so route through the active one.
-        bool PlaybackHasAnim => (_standalone != null ? _standalone.CurrentSkeletal : _scene?.CurrentSkeletal) != null;
-        int PlaybackFrameCount => (int)Math.Round(_standalone != null
-            ? (_standalone.CurrentSkeletal?.FrameCount ?? 0f)
-            : (_scene?.CurrentSkeletal?.FrameCount ?? 0f));
-        float PlaybackAnimFrame => _standalone != null ? _standalone.AnimFrame : (_scene?.AnimFrame ?? 0f);
-        bool PlaybackPaused => _standalone != null ? _standalone.AnimPaused : (_scene?.AnimPaused ?? true);
-        float PlaybackSpeed => _standalone != null ? _standalone.AnimSpeed : (_scene?.AnimSpeed ?? 1f);
-        void PlaybackSetPaused(bool v) { if (_standalone != null) _standalone.AnimPaused = v; else if (_scene != null) _scene.AnimPaused = v; }
-        void PlaybackSetFrame(float f) { if (_standalone != null) _standalone.SetAnimFrame(f); else _scene?.SetAnimFrame(f); }
-        void PlaybackUpdate(float dt) { if (_standalone != null) _standalone.Update(dt); else _scene?.Update(dt); }
-        void PlaybackPlay(string name, bool resetHair) { if (_standalone != null) _standalone.PlayAnim(name); else _scene?.PlayAnim(name, resetHair); }
-        void PlaybackResetHair() { if (_standalone == null) _scene?.ResetHairPhysics(); }
-        string PlaybackCurrentAnim => _standalone != null ? _standalone.CurrentAnimName : _scene?.CurrentAnimName;
-        List<string> PlaybackAnimNames => _standalone != null ? _standalone.AnimNames : (_scene?.Anims.AnimNames ?? new List<string>());
-        int PlaybackFrameCountOf(string name) => _standalone != null ? _standalone.SkeletalFrameCount(name) : (_scene?.SkeletalFrameCount(name) ?? 0);
+        bool PlaybackHasAnim =>
+            (_standalone != null ? _standalone.CurrentSkeletal : _scene?.CurrentSkeletal) != null;
+        int PlaybackFrameCount =>
+            (int)
+                Math.Round(
+                    _standalone != null
+                        ? (_standalone.CurrentSkeletal?.FrameCount ?? 0f)
+                        : (_scene?.CurrentSkeletal?.FrameCount ?? 0f)
+                );
+        float PlaybackAnimFrame =>
+            _standalone != null ? _standalone.AnimFrame : (_scene?.AnimFrame ?? 0f);
+        bool PlaybackPaused =>
+            _standalone != null ? _standalone.AnimPaused : (_scene?.AnimPaused ?? true);
+        float PlaybackSpeed =>
+            _standalone != null ? _standalone.AnimSpeed : (_scene?.AnimSpeed ?? 1f);
+
+        void PlaybackSetPaused(bool v)
+        {
+            if (_standalone != null)
+                _standalone.AnimPaused = v;
+            else if (_scene != null)
+                _scene.AnimPaused = v;
+        }
+
+        void PlaybackSetFrame(float f)
+        {
+            if (_standalone != null)
+                _standalone.SetAnimFrame(f);
+            else
+                _scene?.SetAnimFrame(f);
+        }
+
+        void PlaybackUpdate(float dt)
+        {
+            if (_standalone != null)
+                _standalone.Update(dt);
+            else
+                _scene?.Update(dt);
+        }
+
+        void PlaybackPlay(string name, bool resetHair)
+        {
+            if (_standalone != null)
+                _standalone.PlayAnim(name);
+            else
+                _scene?.PlayAnim(name, resetHair);
+        }
+
+        void PlaybackResetHair()
+        {
+            if (_standalone == null)
+                _scene?.ResetHairPhysics();
+        }
+
+        string PlaybackCurrentAnim =>
+            _standalone != null ? _standalone.CurrentAnimName : _scene?.CurrentAnimName;
+        List<string> PlaybackAnimNames =>
+            _standalone != null
+                ? _standalone.AnimNames
+                : (_scene?.Anims.AnimNames ?? new List<string>());
+
+        int PlaybackFrameCountOf(string name) =>
+            _standalone != null
+                ? _standalone.SkeletalFrameCount(name)
+                : (_scene?.SkeletalFrameCount(name) ?? 0);
 
         void StartAnimExport(OutputFormat format)
         {
@@ -409,7 +611,7 @@ namespace PlayerViewer.UI
                 return;
             if (!chain && !PlaybackHasAnim)
                 return;
-            StopAnimChain();   //deterministic export drives frames itself; don't let the preview fight it
+            StopAnimChain(); //deterministic export drives frames itself; don't let the preview fight it
             int total = chain ? (int)Math.Round(ChainTotalFrames()) : PlaybackFrameCount;
             if (total < 1)
                 return;
@@ -421,7 +623,12 @@ namespace PlayerViewer.UI
                 _ => (".mp4", "MP4 video (*.mp4)", "*.mp4"),
             };
             string def = ExportUtil.Timestamped("animation", ext);
-            string path = NativeFolderPicker.SaveFile("Export Animation", def, filterName, filterExt);
+            string path = NativeFolderPicker.SaveFile(
+                "Export Animation",
+                def,
+                filterName,
+                filterExt
+            );
             if (string.IsNullOrEmpty(path))
                 return;
             if (!path.EndsWith(ext, StringComparison.OrdinalIgnoreCase))
@@ -439,8 +646,11 @@ namespace PlayerViewer.UI
             _animExportIndex = 0f;
             //Keep alpha only where the format supports it AND Transparent mode is selected;
             //otherwise the scene is composited over the background buffer.
-            bool keepAlpha = Bg.Mode == 0 &&
-                (format == OutputFormat.WebpTransparent || format == OutputFormat.WebmTransparent);
+            bool keepAlpha =
+                Bg.Mode == 0
+                && (
+                    format == OutputFormat.WebpTransparent || format == OutputFormat.WebmTransparent
+                );
             _animExportFormat = format;
             _animExportTrim = _config.TrimDeadspace;
             _animExportSupersample = Math.Clamp(_config.ExportSupersample, 1, 8);
@@ -452,16 +662,31 @@ namespace PlayerViewer.UI
             //dimensions keep the raw RGBA stride aligned with ffmpeg's -video_size. Resize is
             //frozen elsewhere for the duration because an export is in progress.
             int ss = _animExportSupersample;
-            int bw = _pipeline.Width & ~1, bh = _pipeline.Height & ~1;
-            int outW, outH, scale;
-            if (_animExportTrim) { outW = (bw * ss) & ~1; outH = (bh * ss) & ~1; scale = 1; }
-            else { outW = bw; outH = bh; scale = ss; }
+            int bw = _pipeline.Width & ~1,
+                bh = _pipeline.Height & ~1;
+            int outW,
+                outH,
+                scale;
+            if (_animExportTrim)
+            {
+                outW = (bw * ss) & ~1;
+                outH = (bh * ss) & ~1;
+                scale = 1;
+            }
+            else
+            {
+                outW = bw;
+                outH = bh;
+                scale = ss;
+            }
             _pipeline.ExportScaleOverride = scale;
             _pipeline.Resize(outW, outH);
 
             //Precompute the full-frame background to composite over (null = keep alpha). Built at
             //export resolution and bottom-up to match the OpenGL frames before ffmpeg's vflip.
-            _animExportBg = keepAlpha ? null : ExportUtil.BuildBackground(outW, outH, Bg, bottomUp: true);
+            _animExportBg = keepAlpha
+                ? null
+                : ExportUtil.BuildBackground(outW, outH, Bg, bottomUp: true);
 
             //Buffer raw frames to disk then encode: faster than piping to ffmpeg live (the render
             //loop never stalls on the encoder). Always render transparent (alpha oracle for the
@@ -508,16 +733,16 @@ namespace PlayerViewer.UI
 
             float dt = 1f / _exportFps;
             for (int loop = 0; loop < loops; loop++)
-                for (float idx = 0; idx < frames; idx += _animExportAdvance)
-                {
-                    //Bind+seek the first step without a hair reset (ChainSeek stays in step 0 for
-                    //idx < frames), or scrub the single anim; then advance pose + cloth one frame.
-                    if (_animExportChain)
-                        ChainSeek(idx);
-                    else
-                        PlaybackSetFrame(idx);
-                    PlaybackUpdate(dt);
-                }
+            for (float idx = 0; idx < frames; idx += _animExportAdvance)
+            {
+                //Bind+seek the first step without a hair reset (ChainSeek stays in step 0 for
+                //idx < frames), or scrub the single anim; then advance pose + cloth one frame.
+                if (_animExportChain)
+                    ChainSeek(idx);
+                else
+                    PlaybackSetFrame(idx);
+                PlaybackUpdate(dt);
+            }
         }
 
         void CaptureAnimExportFrame()
@@ -526,7 +751,13 @@ namespace PlayerViewer.UI
             //fringe against the solid background color in Color mode (keeps a green key clean),
             //otherwise a neutral color; the real background is composited during encode.
             var matte = Bg.Mode == 1 ? BgColorVec : _pipeline.BackgroundColor;
-            var bytes = _pipeline.CaptureFrameBytes(ActiveScene, matte, transparent: true, out _, out _);
+            var bytes = _pipeline.CaptureFrameBytes(
+                ActiveScene,
+                matte,
+                transparent: true,
+                out _,
+                out _
+            );
             _bufferedExporter.PushFrame(bytes);
 
             _animExportIndex += _animExportAdvance;
@@ -541,8 +772,12 @@ namespace PlayerViewer.UI
         {
             //Margin is applied at the crop's (internal) resolution, so scale it with the
             //supersample factor to keep the visual padding consistent.
-            _bufferedExporter.FinishCapture(_animExportFormat, _animExportBg,
-                _config.WebpQuality, _config.TrimMarginPx * _animExportSupersample);
+            _bufferedExporter.FinishCapture(
+                _animExportFormat,
+                _animExportBg,
+                _config.WebpQuality,
+                _config.TrimMarginPx * _animExportSupersample
+            );
             _pipeline.ExportScaleOverride = 0;
             PlaybackSetPaused(_animExportPrevPaused);
             PlaybackSetFrame(_animExportPrevFrame);

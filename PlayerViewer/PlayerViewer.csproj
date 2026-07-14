@@ -62,26 +62,75 @@
 
   <!-- Runtime content shared with Cafe Shader Studio (shaders, resources, natives). -->
   <ItemGroup>
-    <Content Include="$(CssRoot)\CafeShaderStudio\Shaders\**\*.*" LinkBase="Shaders" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\Resources\**\*.*" LinkBase="Resources" CopyToOutputDirectory="PreserveNewest" />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Shaders\**\*.*"
+      LinkBase="Shaders"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Resources\**\*.*"
+      LinkBase="Resources"
+      CopyToOutputDirectory="PreserveNewest"
+    />
     <!-- ImGuiController loads fonts from Lib/ relative to the exe. -->
-    <Content Include="$(CssRoot)\CafeShaderStudio\Lib\Font.ttf" Link="Lib\Font.ttf" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\Lib\OpenFontIcons.ttf" Link="Lib\OpenFontIcons.ttf" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\cimgui.dll" Link="cimgui.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Lib\Font.ttf"
+      Link="Lib\Font.ttf"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Lib\OpenFontIcons.ttf"
+      Link="Lib\OpenFontIcons.ttf"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\cimgui.dll"
+      Link="cimgui.dll"
+      CopyToOutputDirectory="PreserveNewest"
+    />
     <!-- Cross-platform ImGui natives (repo ships .so/.dylib). Copied under both the plain and
          lib-prefixed names so the .NET loader finds cimgui however it probes. -->
-    <Content Include="$(CssRoot)\CafeShaderStudio\cimgui.so" Link="cimgui.so" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\cimgui.dylib" Link="cimgui.dylib" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')" />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\cimgui.so"
+      Link="cimgui.so"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\cimgui.dylib"
+      Link="cimgui.dylib"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')"
+    />
     <!-- Native file dialogs (tinyfiledialogs.dll is the x64 build). -->
-    <Content Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dll" Link="tinyfiledialogs.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dll')" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.so" Link="tinyfiledialogs.so" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.so')" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dylib" Link="tinyfiledialogs.dylib" CopyToOutputDirectory="PreserveNewest" Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dylib')" />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dll"
+      Link="tinyfiledialogs.dll"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dll')"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.so"
+      Link="tinyfiledialogs.so"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.so')"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dylib"
+      Link="tinyfiledialogs.dylib"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dylib')"
+    />
   </ItemGroup>
 
   <!-- Toolbox.Core's PluginManager discovers file formats by scanning <exe>/Plugins/*.dll,
        so BfresEditor (which contains the BFRES IFileFormat + IPlugin) must be copied there. -->
   <Target Name="CopyPluginDlls" AfterTargets="Build">
-    <Copy SourceFiles="$(OutDir)BfresEditor.dll" DestinationFolder="$(OutDir)Plugins" SkipUnchangedFiles="true" />
+    <Copy
+      SourceFiles="$(OutDir)BfresEditor.dll"
+      DestinationFolder="$(OutDir)Plugins"
+      SkipUnchangedFiles="true"
+    />
   </Target>
 
   <!-- Recreate the plugin scan directory in the publish output. Source BfresEditor.dll from the
@@ -89,23 +138,51 @@
        is bundled into the exe and no longer sits loose in $(PublishDir), but the pre-bundle build
        copy in $(OutDir) is always present. -->
   <Target Name="CopyPluginDllsOnPublish" AfterTargets="Publish">
-    <Copy SourceFiles="$(OutDir)BfresEditor.dll" DestinationFolder="$(PublishDir)Plugins" SkipUnchangedFiles="true"
-          Condition="Exists('$(OutDir)BfresEditor.dll')" />
+    <Copy
+      SourceFiles="$(OutDir)BfresEditor.dll"
+      DestinationFolder="$(PublishDir)Plugins"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(OutDir)BfresEditor.dll')"
+    />
     <!-- PluginManager reads its own assembly from disk (ExecutableDir\Toolbox.Core.dll) to scan
          built-in formats. Single-file bundles it into the exe, so drop a loose copy beside the exe;
          the runtime still loads the bundled one, this is only for the scanner. -->
-    <Copy SourceFiles="$(OutDir)Toolbox.Core.dll" DestinationFiles="$(PublishDir)Toolbox.Core.dll" SkipUnchangedFiles="true"
-          Condition="Exists('$(OutDir)Toolbox.Core.dll') And !Exists('$(PublishDir)Toolbox.Core.dll')" />
+    <Copy
+      SourceFiles="$(OutDir)Toolbox.Core.dll"
+      DestinationFiles="$(PublishDir)Toolbox.Core.dll"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(OutDir)Toolbox.Core.dll') And !Exists('$(PublishDir)Toolbox.Core.dll')"
+    />
   </Target>
 
   <!-- Also drop cimgui under the lib-prefixed name in case the loader probes libcimgui.so
        (the plain-name copies above cover the other probe order). -->
   <Target Name="CopyNativeImGuiBuild" AfterTargets="Build">
-    <Copy Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')" SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.so" DestinationFiles="$(OutDir)libcimgui.so" SkipUnchangedFiles="true" />
-    <Copy Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')" SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.dylib" DestinationFiles="$(OutDir)libcimgui.dylib" SkipUnchangedFiles="true" />
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.so"
+      DestinationFiles="$(OutDir)libcimgui.so"
+      SkipUnchangedFiles="true"
+    />
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.dylib"
+      DestinationFiles="$(OutDir)libcimgui.dylib"
+      SkipUnchangedFiles="true"
+    />
   </Target>
   <Target Name="CopyNativeImGuiPublish" AfterTargets="Publish">
-    <Copy Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')" SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.so" DestinationFiles="$(PublishDir)libcimgui.so" SkipUnchangedFiles="true" />
-    <Copy Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')" SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.dylib" DestinationFiles="$(PublishDir)libcimgui.dylib" SkipUnchangedFiles="true" />
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.so"
+      DestinationFiles="$(PublishDir)libcimgui.so"
+      SkipUnchangedFiles="true"
+    />
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.dylib"
+      DestinationFiles="$(PublishDir)libcimgui.dylib"
+      SkipUnchangedFiles="true"
+    />
   </Target>
 </Project>

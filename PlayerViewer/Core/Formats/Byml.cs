@@ -36,7 +36,9 @@ namespace PlayerViewer.Core.Formats
         }
 
         uint ReadU32(int offset) => BitConverter.ToUInt32(_data, offset);
-        uint ReadU24(int offset) => (uint)(_data[offset] | (_data[offset + 1] << 8) | (_data[offset + 2] << 16));
+
+        uint ReadU24(int offset) =>
+            (uint)(_data[offset] | (_data[offset + 1] << 8) | (_data[offset + 2] << 16));
 
         string[] ReadStringTable(uint offset)
         {
@@ -47,7 +49,8 @@ namespace PlayerViewer.Core.Formats
             {
                 uint strOff = offset + ReadU32((int)(offset + 4 + i * 4));
                 int end = (int)strOff;
-                while (_data[end] != 0) end++;
+                while (_data[end] != 0)
+                    end++;
                 result[i] = Encoding.UTF8.GetString(_data, (int)strOff, end - (int)strOff);
             }
             return result;
@@ -57,17 +60,28 @@ namespace PlayerViewer.Core.Formats
         {
             switch (type)
             {
-                case 0xA0: return _strings[ReadU32((int)valueOrOffset)];
-                case 0xC0: return ReadArray(valueOrOffset);
-                case 0xC1: return ReadHash(valueOrOffset);
-                case 0xD0: return ReadU32((int)valueOrOffset) != 0;
-                case 0xD1: return BitConverter.ToInt32(_data, (int)valueOrOffset);
-                case 0xD2: return BitConverter.ToSingle(_data, (int)valueOrOffset);
-                case 0xD3: return ReadU32((int)valueOrOffset);
-                case 0xD4: return BitConverter.ToInt64(_data, (int)ReadU32((int)valueOrOffset));
-                case 0xD5: return BitConverter.ToUInt64(_data, (int)ReadU32((int)valueOrOffset));
-                case 0xD6: return BitConverter.ToDouble(_data, (int)ReadU32((int)valueOrOffset));
-                case 0xFF: return null;
+                case 0xA0:
+                    return _strings[ReadU32((int)valueOrOffset)];
+                case 0xC0:
+                    return ReadArray(valueOrOffset);
+                case 0xC1:
+                    return ReadHash(valueOrOffset);
+                case 0xD0:
+                    return ReadU32((int)valueOrOffset) != 0;
+                case 0xD1:
+                    return BitConverter.ToInt32(_data, (int)valueOrOffset);
+                case 0xD2:
+                    return BitConverter.ToSingle(_data, (int)valueOrOffset);
+                case 0xD3:
+                    return ReadU32((int)valueOrOffset);
+                case 0xD4:
+                    return BitConverter.ToInt64(_data, (int)ReadU32((int)valueOrOffset));
+                case 0xD5:
+                    return BitConverter.ToUInt64(_data, (int)ReadU32((int)valueOrOffset));
+                case 0xD6:
+                    return BitConverter.ToDouble(_data, (int)ReadU32((int)valueOrOffset));
+                case 0xFF:
+                    return null;
                 default:
                     throw new NotSupportedException($"BYML node type 0x{type:X2} not supported.");
             }
@@ -116,26 +130,53 @@ namespace PlayerViewer.Core.Formats
 
         #region typed access helpers
 
-        public static Dictionary<string, object> AsHash(object node) => node as Dictionary<string, object>;
+        public static Dictionary<string, object> AsHash(object node) =>
+            node as Dictionary<string, object>;
+
         public static List<object> AsArray(object node) => node as List<object>;
 
-        public static string GetString(Dictionary<string, object> hash, string key, string fallback = "")
-            => hash != null && hash.TryGetValue(key, out var v) && v is string s ? s : fallback;
+        public static string GetString(
+            Dictionary<string, object> hash,
+            string key,
+            string fallback = ""
+        ) => hash != null && hash.TryGetValue(key, out var v) && v is string s ? s : fallback;
 
         public static int GetInt(Dictionary<string, object> hash, string key, int fallback = 0)
         {
-            if (hash == null || !hash.TryGetValue(key, out var v)) return fallback;
-            return v switch { int i => i, uint u => (int)u, float f => (int)f, _ => fallback };
+            if (hash == null || !hash.TryGetValue(key, out var v))
+                return fallback;
+            return v switch
+            {
+                int i => i,
+                uint u => (int)u,
+                float f => (int)f,
+                _ => fallback,
+            };
         }
 
-        public static float GetFloat(Dictionary<string, object> hash, string key, float fallback = 0f)
+        public static float GetFloat(
+            Dictionary<string, object> hash,
+            string key,
+            float fallback = 0f
+        )
         {
-            if (hash == null || !hash.TryGetValue(key, out var v)) return fallback;
-            return v switch { float f => f, int i => i, uint u => u, double d => (float)d, _ => fallback };
+            if (hash == null || !hash.TryGetValue(key, out var v))
+                return fallback;
+            return v switch
+            {
+                float f => f,
+                int i => i,
+                uint u => u,
+                double d => (float)d,
+                _ => fallback,
+            };
         }
 
-        public static bool GetBool(Dictionary<string, object> hash, string key, bool fallback = false)
-            => hash != null && hash.TryGetValue(key, out var v) && v is bool b ? b : fallback;
+        public static bool GetBool(
+            Dictionary<string, object> hash,
+            string key,
+            bool fallback = false
+        ) => hash != null && hash.TryGetValue(key, out var v) && v is bool b ? b : fallback;
 
         #endregion
     }

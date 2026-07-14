@@ -1,12 +1,12 @@
-﻿using BfshaLibrary.WiiU;
-using Microsoft.VisualBasic.FileIO;
-using ShaderLibrary.IO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Threading.Tasks;
+using BfshaLibrary.WiiU;
+using Microsoft.VisualBasic.FileIO;
+using ShaderLibrary.IO;
 
 namespace ShaderLibrary.WiiU
 {
@@ -70,9 +70,13 @@ namespace ShaderLibrary.WiiU
                 foreach (var op in shaderModel.DynamicOptions.Values)
                     WriteShaderOption(writer, op);
 
-                foreach (var c in shaderModel.StaticOptions.Values.SelectMany(x => x.Choices.Values))
+                foreach (
+                    var c in shaderModel.StaticOptions.Values.SelectMany(x => x.Choices.Values)
+                )
                     WriteOptionValue(writer, c);
-                foreach (var c in shaderModel.DynamicOptions.Values.SelectMany(x => x.Choices.Values))
+                foreach (
+                    var c in shaderModel.DynamicOptions.Values.SelectMany(x => x.Choices.Values)
+                )
                     WriteOptionValue(writer, c);
 
                 foreach (var attr in shaderModel.Attributes.Values)
@@ -81,12 +85,16 @@ namespace ShaderLibrary.WiiU
                     WriteShaderSampler(writer, sampler);
                 foreach (var block in shaderModel.UniformBlocks.Values)
                     WriteShaderUniformBlock(writer, block);
-                foreach (var uniform in shaderModel.UniformBlocks.Values.SelectMany(x => x.Uniforms.Values))
+                foreach (
+                    var uniform in shaderModel.UniformBlocks.Values.SelectMany(x =>
+                        x.Uniforms.Values
+                    )
+                )
                     WriteShaderUniform(writer, uniform);
 
                 SaveReference(writer, shaderModel.Programs);
                 foreach (var prog in shaderModel.Programs)
-                    WriteShaderProgram(writer, shaderModel,  prog);
+                    WriteShaderProgram(writer, shaderModel, prog);
 
                 SaveReference(writer, shaderModel.KeyTable);
                 for (int i = 0; i < shaderModel.KeyTable.Length; i++)
@@ -94,7 +102,7 @@ namespace ShaderLibrary.WiiU
 
                 foreach (var block in shaderModel.UniformBlocks.Values)
                 {
-                    if (block.DefaultBuffer  != null)
+                    if (block.DefaultBuffer != null)
                     {
                         SaveReference(writer, block.DefaultBuffer);
                         writer.Write(block.DefaultBuffer);
@@ -107,7 +115,9 @@ namespace ShaderLibrary.WiiU
                 WriteDictionary(writer, shaderModel.Attributes);
                 WriteDictionary(writer, shaderModel.Samplers);
                 WriteDictionary(writer, shaderModel.UniformBlocks);
-                foreach (var block in shaderModel.UniformBlocks.Values.Where(x => x.Uniforms.Count > 0))
+                foreach (
+                    var block in shaderModel.UniformBlocks.Values.Where(x => x.Uniforms.Count > 0)
+                )
                     WriteDictionary(writer, block.Uniforms);
 
                 foreach (var op in shaderModel.StaticOptions.Values)
@@ -115,11 +125,13 @@ namespace ShaderLibrary.WiiU
                 foreach (var op in shaderModel.DynamicOptions.Values)
                     WriteDictionary(writer, op.Choices);
 
-                Dictionary<long, BfshaGX2Header> gx2HeaderLoopOffsets = new Dictionary<long, BfshaGX2Header>();
+                Dictionary<long, BfshaGX2Header> gx2HeaderLoopOffsets =
+                    new Dictionary<long, BfshaGX2Header>();
 
                 void WriteShaderHeader(BfshaGX2Header header)
                 {
-                    if (header == null) return;
+                    if (header == null)
+                        return;
 
                     writer.AlignBytes(4);
                     var pos = writer.BaseStream.Position;
@@ -180,7 +192,8 @@ namespace ShaderLibrary.WiiU
             writer.AlignBytes((int)bfsha.DataAlignment);
 
             //file size
-            using (writer.BaseStream.TemporarySeek(_fileSizePos, SeekOrigin.Begin)) {
+            using (writer.BaseStream.TemporarySeek(_fileSizePos, SeekOrigin.Begin))
+            {
                 writer.Write((uint)writer.BaseStream.Length);
             }
         }
@@ -232,7 +245,8 @@ namespace ShaderLibrary.WiiU
             writer.Write(0);
             writer.Write(0);
 
-            void WriteDictValueOffsets<T>(ResDict<T> value) where T : IResData, new()
+            void WriteDictValueOffsets<T>(ResDict<T> value)
+                where T : IResData, new()
             {
                 SaveDataPointer(writer, value.Values.FirstOrDefault()); //value offset
                 SaveDataPointer(writer, value); //dict offset
@@ -244,8 +258,12 @@ namespace ShaderLibrary.WiiU
             WriteDictValueOffsets(shaderModel.Samplers);
             WriteDictValueOffsets(shaderModel.UniformBlocks);
 
-            SaveDataPointer(writer, shaderModel.UniformBlocks.Values.FirstOrDefault(x
-                => x.Uniforms?.Count > 0).Uniforms.Values.FirstOrDefault()); //uniform start offset
+            SaveDataPointer(
+                writer,
+                shaderModel
+                    .UniformBlocks.Values.FirstOrDefault(x => x.Uniforms?.Count > 0)
+                    .Uniforms.Values.FirstOrDefault()
+            ); //uniform start offset
 
             SaveDataPointer(writer, shaderModel.Programs); //Program offset
             SaveDataPointer(writer, shaderModel.KeyTable); //KeyTable offset
@@ -333,7 +351,11 @@ namespace ShaderLibrary.WiiU
             writer.Write((byte)attr.Location);
         }
 
-        private void WriteShaderProgram(BinaryDataWriter writer, ShaderModel shaderModel, BfshaShaderProgram program)
+        private void WriteShaderProgram(
+            BinaryDataWriter writer,
+            ShaderModel shaderModel,
+            BfshaShaderProgram program
+        )
         {
             if (writer.Header.VersionMajor >= 4)
             {
@@ -361,7 +383,8 @@ namespace ShaderLibrary.WiiU
             }
         }
 
-        private void WriteDictionary<T>(BinaryDataWriter writer, ResDict<T> dict) where T : IResData, new()
+        private void WriteDictionary<T>(BinaryDataWriter writer, ResDict<T> dict)
+            where T : IResData, new()
         {
             if (dict.Count == 0)
                 return;
@@ -377,7 +400,7 @@ namespace ShaderLibrary.WiiU
             writer.Write(nodes.Count * 16 + 8); //size
             writer.Write(dict.Count); //count
 
-            for (int i = 0; i < nodes.Count; i++) 
+            for (int i = 0; i < nodes.Count; i++)
             {
                 writer.Write(nodes[i].Reference);
                 writer.Write(nodes[i].IdxLeft);
@@ -402,7 +425,7 @@ namespace ShaderLibrary.WiiU
             long table_start = writer.Position;
             writer.WriteOffset(_stringPoolOfsPos + 4);
 
-           // var ordered = _savedStrings.OrderBy(x => x.Key).ToList();
+            // var ordered = _savedStrings.OrderBy(x => x.Key).ToList();
 
             foreach (var str in _savedStrings)
             {
@@ -418,12 +441,14 @@ namespace ShaderLibrary.WiiU
 
             long table_size = writer.Position - table_start;
 
-            using (writer.BaseStream.TemporarySeek(_stringPoolOfsPos, SeekOrigin.Begin)) {
+            using (writer.BaseStream.TemporarySeek(_stringPoolOfsPos, SeekOrigin.Begin))
+            {
                 writer.Write((uint)table_size);
             }
         }
 
-        private void SaveDataPointer<T>(BinaryDataWriter writer, ResDict<T> value) where T : IResData, new()
+        private void SaveDataPointer<T>(BinaryDataWriter writer, ResDict<T> value)
+            where T : IResData, new()
         {
             var pos = writer.Position;
             writer.Write(0U);
@@ -474,7 +499,7 @@ namespace ShaderLibrary.WiiU
                 _savedRefs.Add(value, writer.Position);
         }
 
-        private void SaveString( BinaryDataWriter writer, string value)
+        private void SaveString(BinaryDataWriter writer, string value)
         {
             var pos = writer.Position;
             writer.Write(0U);
@@ -497,6 +522,7 @@ namespace ShaderLibrary.WiiU
                 }
                 return left.SequenceEqual(right);
             }
+
             public int GetHashCode(byte[] key)
             {
                 if (key == null)

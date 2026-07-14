@@ -1,15 +1,16 @@
-﻿using ShaderLibrary.IO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ShaderLibrary.IO;
 
 namespace ShaderLibrary.Common
 {
     public class StringTable
     {
-        private Dictionary<string, StringEntry> _savedStrings = new Dictionary<string, StringEntry>();
+        private Dictionary<string, StringEntry> _savedStrings =
+            new Dictionary<string, StringEntry>();
 
         private long _ofsStringTable;
         private long _ofsFileName;
@@ -35,10 +36,7 @@ namespace ShaderLibrary.Common
                 _savedStrings[str].Positions.Add(ofs);
             else
             {
-                _savedStrings.Add(str, new StringEntry()
-                {
-                    Positions = new List<long>() { ofs },
-                });
+                _savedStrings.Add(str, new StringEntry() { Positions = new List<long>() { ofs } });
             }
         }
 
@@ -47,7 +45,9 @@ namespace ShaderLibrary.Common
             writer.AlignBytes(8);
 
             // Sort the strings ordinally.
-            SortedList<string, StringEntry> sorted = new SortedList<string, StringEntry>(ResStringComparer.Instance);
+            SortedList<string, StringEntry> sorted = new SortedList<string, StringEntry>(
+                ResStringComparer.Instance
+            );
             foreach (KeyValuePair<string, StringEntry> entry in _savedStrings)
                 sorted.Add(entry.Key, entry.Value);
 
@@ -57,7 +57,7 @@ namespace ShaderLibrary.Common
             writer.SaveHeaderBlock();
             writer.Write(sorted.Count);
 
-            //save file name from binary header 
+            //save file name from binary header
             if (_ofsFileName != 0)
             {
                 writer.Write((short)fileName.Length);

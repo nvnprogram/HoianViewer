@@ -1,10 +1,10 @@
-﻿using Microsoft.VisualBasic;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.VisualBasic;
 
 namespace ShaderLibrary
 {
@@ -41,7 +41,7 @@ namespace ShaderLibrary
     [StructLayout(LayoutKind.Sequential, Size = 0x10)]
     public struct BfshaHeader
     {
-        public ulong ShaderArchiveOffset; 
+        public ulong ShaderArchiveOffset;
         public ulong StringPoolOffset;
         public uint StringPoolSize;
         public uint Padding;
@@ -76,6 +76,7 @@ namespace ShaderLibrary
         //
         public ulong ImageArrayOffset;
         public ulong ImageDictionaryOffset;
+
         //
 
         public ulong UniformBlockArrayOffset;
@@ -87,6 +88,7 @@ namespace ShaderLibrary
         public ulong StorageBlockArrayOffset;
         public ulong StorageBlockDictionaryOffset;
         public ulong Unknown0;
+
         //
 
         public ulong ShaderProgramArrayOffset;
@@ -105,6 +107,7 @@ namespace ShaderLibrary
         //
         public ulong Unknown5;
         public ulong Unknown6;
+
         //
 
         public uint NumUniforms;
@@ -323,9 +326,9 @@ namespace ShaderLibrary
         public ulong StorageBufferDictionaryOffset;
 
         public int OutputIdx; //id in slot list
-        public int SamplerIdx;//id in slot list
-        public int UniformBufferIdx;//id in slot list
-        public int StorageBufferIdx;//id in slot list
+        public int SamplerIdx; //id in slot list
+        public int UniformBufferIdx; //id in slot list
+        public int StorageBufferIdx; //id in slot list
 
         public int SlotOffset;
 

@@ -1,7 +1,7 @@
 using System;
+using GLFrameworkEngine;
 using OpenTK;
 using OpenTK.Graphics.OpenGL;
-using GLFrameworkEngine;
 using PlayerViewer.Player;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
@@ -28,17 +28,26 @@ namespace PlayerViewer.UI
         /// <summary>Main light shines from the camera when enabled.</summary>
         public bool LightFollowsCamera;
 
-        float _lightAzimuth = 100, _lightElevation = -55;
+        float _lightAzimuth = 100,
+            _lightElevation = -55;
         bool _lightCustomized;
         public float LightAzimuth
         {
             get => _lightAzimuth;
-            set { _lightAzimuth = value; _lightCustomized = true; }
+            set
+            {
+                _lightAzimuth = value;
+                _lightCustomized = true;
+            }
         }
         public float LightElevation
         {
             get => _lightElevation;
-            set { _lightElevation = value; _lightCustomized = true; }
+            set
+            {
+                _lightElevation = value;
+                _lightCustomized = true;
+            }
         }
 
         /// <summary>Restores the dumped default lighting (follow-cam off, no override).</summary>
@@ -47,7 +56,7 @@ namespace PlayerViewer.UI
             LightFollowsCamera = false;
             _lightAzimuth = 100;
             _lightElevation = -55;
-            _lightCustomized = false;   //fall back to the dumped default direction
+            _lightCustomized = false; //fall back to the dumped default direction
         }
 
         void UpdateLightOverride()
@@ -58,9 +67,12 @@ namespace PlayerViewer.UI
                 //azimuth/elevation sliders so disabling follow-cam keeps the light
                 //where it last was.
                 var forward = -Camera.InverseRotationMatrix.Row2;
-                _lightElevation = MathHelper.RadiansToDegrees((float)Math.Asin(
-                    MathHelper.Clamp(forward.Y, -1, 1)));
-                _lightAzimuth = MathHelper.RadiansToDegrees((float)Math.Atan2(forward.X, forward.Z));
+                _lightElevation = MathHelper.RadiansToDegrees(
+                    (float)Math.Asin(MathHelper.Clamp(forward.Y, -1, 1))
+                );
+                _lightAzimuth = MathHelper.RadiansToDegrees(
+                    (float)Math.Atan2(forward.X, forward.Z)
+                );
                 _lightCustomized = true;
                 BfresEditor.HoianNXRender.LightDirOverride = forward;
             }
@@ -71,18 +83,19 @@ namespace PlayerViewer.UI
                 BfresEditor.HoianNXRender.LightDirOverride = new Vector3(
                     (float)(Math.Cos(el) * Math.Sin(az)),
                     (float)Math.Sin(el),
-                    (float)(Math.Cos(el) * Math.Cos(az)));
+                    (float)(Math.Cos(el) * Math.Cos(az))
+                );
             }
             else
-                BfresEditor.HoianNXRender.LightDirOverride = null;   //dumped default
+                BfresEditor.HoianNXRender.LightDirOverride = null; //dumped default
         }
 
         //The framework's MSAA framebuffer path is broken (the color attachment ends
         //up non-multisampled and incomplete on strict drivers), so anti-alias by
         //supersampling: render 2x and downsample with linear filtering in the gamma pass.
-        Framebuffer _screen;    //RGBA16F (linear), supersampled
+        Framebuffer _screen; //RGBA16F (linear), supersampled
         DepthTexture _screenDepth;
-        Framebuffer _final;     //RGBA8 (sRGB encoded by the gamma pass)
+        Framebuffer _final; //RGBA8 (sRGB encoded by the gamma pass)
         FinalQuad _quad;
         SelfShadowRenderer _selfShadow;
 
@@ -95,10 +108,13 @@ namespace PlayerViewer.UI
         //Half-res color copy for refraction (once per frame, between opaque/transparent).
         int _refractionFbo;
         GLTexture2D _refractionColor;
-        int _refractionW, _refractionH;
+        int _refractionW,
+            _refractionH;
+
         /// <summary>Game-accurate self shadowing (shadow prepass). On by default.</summary>
         public bool EnableSelfShadow = true;
         const int SuperSample = 2;
+
         //Above this pixel count captures render at 1x (a 4K capture is sharp already).
         const long SuperSampleBudget = 2560L * 1440L;
 
@@ -118,7 +134,7 @@ namespace PlayerViewer.UI
             Context = new GLContext();
             Context.Camera = new Camera();
             Context.Camera.ZNear = 0.01f;
-            Context.Camera.Mode = Camera.CameraMode.Inspect;   //instantiates the controller
+            Context.Camera.Mode = Camera.CameraMode.Inspect; //instantiates the controller
             Context.UseSRBFrameBuffer = true;
             //Camera math needs a valid aspect ratio before framing (0x0 -> NaN distance).
             Context.Width = Width;
@@ -127,8 +143,18 @@ namespace PlayerViewer.UI
             Context.Camera.Height = Height;
             FramePlayer();
 
-            _screen = CreateScreenBuffer(Width * SuperSample, Height * SuperSample, out _screenDepth);
-            _final = new Framebuffer(FramebufferTarget.Framebuffer, Width, Height, PixelInternalFormat.Rgba8, 1);
+            _screen = CreateScreenBuffer(
+                Width * SuperSample,
+                Height * SuperSample,
+                out _screenDepth
+            );
+            _final = new Framebuffer(
+                FramebufferTarget.Framebuffer,
+                Width,
+                Height,
+                PixelInternalFormat.Rgba8,
+                1
+            );
             _quad = new FinalQuad();
         }
 
@@ -136,8 +162,14 @@ namespace PlayerViewer.UI
         //reconstructs world positions from it).
         static Framebuffer CreateScreenBuffer(int width, int height, out DepthTexture depth)
         {
-            var fbo = new Framebuffer(FramebufferTarget.Framebuffer,
-                width, height, PixelInternalFormat.Rgba16f, 1, useDepth: false);
+            var fbo = new Framebuffer(
+                FramebufferTarget.Framebuffer,
+                width,
+                height,
+                PixelInternalFormat.Rgba16f,
+                1,
+                useDepth: false
+            );
             depth = new DepthTexture(width, height, PixelInternalFormat.DepthComponent24);
             fbo.AddAttachment(FramebufferAttachment.DepthAttachment, depth);
             return fbo;
@@ -150,32 +182,74 @@ namespace PlayerViewer.UI
         /// </summary>
         void CaptureRefractionBuffers(Framebuffer screen, DepthTexture depth, int ssW, int ssH)
         {
-            int halfW = ssW / 2, halfH = ssH / 2;
-            if (halfW < 1 || halfH < 1) return;
+            int halfW = ssW / 2,
+                halfH = ssH / 2;
+            if (halfW < 1 || halfH < 1)
+                return;
 
             if (_refractionFbo == 0 || _refractionW != halfW || _refractionH != halfH)
             {
-                DisposeRefraction();   //frees the previous-size fbo + color texture
+                DisposeRefraction(); //frees the previous-size fbo + color texture
                 _refractionColor = new GLTexture2D();
                 GL.BindTexture(TextureTarget.Texture2D, _refractionColor.ID);
-                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.R11fG11fB10f,
-                    halfW, halfH, 0, PixelFormat.Rgb, PixelType.Float, IntPtr.Zero);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-                GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+                GL.TexImage2D(
+                    TextureTarget.Texture2D,
+                    0,
+                    PixelInternalFormat.R11fG11fB10f,
+                    halfW,
+                    halfH,
+                    0,
+                    PixelFormat.Rgb,
+                    PixelType.Float,
+                    IntPtr.Zero
+                );
+                GL.TexParameter(
+                    TextureTarget.Texture2D,
+                    TextureParameterName.TextureMinFilter,
+                    (int)TextureMinFilter.Linear
+                );
+                GL.TexParameter(
+                    TextureTarget.Texture2D,
+                    TextureParameterName.TextureMagFilter,
+                    (int)TextureMagFilter.Linear
+                );
+                GL.TexParameter(
+                    TextureTarget.Texture2D,
+                    TextureParameterName.TextureWrapS,
+                    (int)TextureWrapMode.ClampToEdge
+                );
+                GL.TexParameter(
+                    TextureTarget.Texture2D,
+                    TextureParameterName.TextureWrapT,
+                    (int)TextureWrapMode.ClampToEdge
+                );
                 _refractionFbo = GL.GenFramebuffer();
                 GL.BindFramebuffer(FramebufferTarget.Framebuffer, _refractionFbo);
-                GL.FramebufferTexture2D(FramebufferTarget.Framebuffer,
-                    FramebufferAttachment.ColorAttachment0, TextureTarget.Texture2D, _refractionColor.ID, 0);
+                GL.FramebufferTexture2D(
+                    FramebufferTarget.Framebuffer,
+                    FramebufferAttachment.ColorAttachment0,
+                    TextureTarget.Texture2D,
+                    _refractionColor.ID,
+                    0
+                );
                 _refractionW = halfW;
                 _refractionH = halfH;
             }
 
             GL.BindFramebuffer(FramebufferTarget.ReadFramebuffer, screen.ID);
             GL.BindFramebuffer(FramebufferTarget.DrawFramebuffer, _refractionFbo);
-            GL.BlitFramebuffer(0, 0, ssW, ssH, 0, 0, halfW, halfH,
-                ClearBufferMask.ColorBufferBit, BlitFramebufferFilter.Linear);
+            GL.BlitFramebuffer(
+                0,
+                0,
+                ssW,
+                ssH,
+                0,
+                0,
+                halfW,
+                halfH,
+                ClearBufferMask.ColorBufferBit,
+                BlitFramebufferFilter.Linear
+            );
 
             BfresEditor.HoianNXRender.RefractionColorBuffer = _refractionColor;
             BfresEditor.HoianNXRender.RefractionDepthBuffer = depth;
@@ -259,26 +333,51 @@ namespace PlayerViewer.UI
         /// <summary>Renders the scene into the final displayable texture.</summary>
         public void Render(IViewScene scene)
         {
-            RenderInternal(scene, _screen, _final, Width, Height, EffectiveScale(Width, Height),
-                new System.Numerics.Vector4(BackgroundColor.X, BackgroundColor.Y, BackgroundColor.Z, 1), false,
-                _screenDepth);
+            RenderInternal(
+                scene,
+                _screen,
+                _final,
+                Width,
+                Height,
+                EffectiveScale(Width, Height),
+                new System.Numerics.Vector4(
+                    BackgroundColor.X,
+                    BackgroundColor.Y,
+                    BackgroundColor.Z,
+                    1
+                ),
+                false,
+                _screenDepth
+            );
         }
 
         public static bool DebugTrace;
+
         void Trace(string stage, int w, int h)
         {
-            if (!DebugTrace) return;
+            if (!DebugTrace)
+                return;
             var err = GL.GetError();
             var status = GL.CheckFramebufferStatus(FramebufferTarget.Framebuffer);
             float[] px = new float[4];
             GL.ReadPixels(w / 2, h / 2, 1, 1, PixelFormat.Rgba, PixelType.Float, px);
-            Console.WriteLine($"[Pipeline] {stage}: err={err} fbo={status} center=({px[0]:F3},{px[1]:F3},{px[2]:F3},{px[3]:F3}) " +
-                $"camPos=({Camera.GetViewPostion().X:F2},{Camera.GetViewPostion().Y:F2},{Camera.GetViewPostion().Z:F2}) dist={Camera.TargetDistance:F2}");
+            Console.WriteLine(
+                $"[Pipeline] {stage}: err={err} fbo={status} center=({px[0]:F3},{px[1]:F3},{px[2]:F3},{px[3]:F3}) "
+                    + $"camPos=({Camera.GetViewPostion().X:F2},{Camera.GetViewPostion().Y:F2},{Camera.GetViewPostion().Z:F2}) dist={Camera.TargetDistance:F2}"
+            );
         }
 
-        void RenderInternal(IViewScene scene, Framebuffer screen, Framebuffer final,
-            int width, int height, int scale, System.Numerics.Vector4 background, bool keepAlpha,
-            DepthTexture screenDepth = null)
+        void RenderInternal(
+            IViewScene scene,
+            Framebuffer screen,
+            Framebuffer final,
+            int width,
+            int height,
+            int scale,
+            System.Numerics.Vector4 background,
+            bool keepAlpha,
+            DepthTexture screenDepth = null
+        )
         {
             int ssWidth = width * scale;
             int ssHeight = height * scale;
@@ -288,7 +387,7 @@ namespace PlayerViewer.UI
             //The scene renders at the supersampled size; aspect is unchanged.
             Context.Width = ssWidth;
             Context.Height = ssHeight;
-            Context.ScreenBuffer = screen;   //used by XLU/color-pass materials
+            Context.ScreenBuffer = screen; //used by XLU/color-pass materials
             Camera.Width = ssWidth;
             Camera.Height = ssHeight;
             Camera.UpdateMatrices();
@@ -322,8 +421,17 @@ namespace PlayerViewer.UI
             {
                 screen.Bind();
                 GL.Viewport(0, 0, ssWidth, ssHeight);
-                GL.ClearColor(Lin(background.X), Lin(background.Y), Lin(background.Z), background.W);
-                GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+                GL.ClearColor(
+                    Lin(background.X),
+                    Lin(background.Y),
+                    Lin(background.Z),
+                    background.W
+                );
+                GL.Clear(
+                    ClearBufferMask.ColorBufferBit
+                        | ClearBufferMask.DepthBufferBit
+                        | ClearBufferMask.StencilBufferBit
+                );
 
                 //Opaque (viewport / non-alpha) passes preview the export background behind the
                 //scene. Transparent capture (keepAlpha) skips it so the alpha oracle is intact.
@@ -336,8 +444,8 @@ namespace PlayerViewer.UI
                 {
                     scene.Draw(Context, Pass.OPAQUE);
 
-                    bool refract = screenDepth != null &&
-                                   BfresEditor.HoianNXRender.NeedsRefractionBuffers;
+                    bool refract =
+                        screenDepth != null && BfresEditor.HoianNXRender.NeedsRefractionBuffers;
                     if (refract)
                     {
                         CaptureRefractionBuffers(screen, screenDepth, ssWidth, ssHeight);
@@ -399,21 +507,54 @@ namespace PlayerViewer.UI
         /// alpha 0 and keeps coverage in the output (background rgb still applies to
         /// semi-transparent edges).
         /// </summary>
-        public Image<Rgba32> Capture(IViewScene scene, int width, int height, System.Numerics.Vector3 background,
-            bool transparent, int scaleOverride = 0)
+        public Image<Rgba32> Capture(
+            IViewScene scene,
+            int width,
+            int height,
+            System.Numerics.Vector3 background,
+            bool transparent,
+            int scaleOverride = 0
+        )
         {
             int scale = scaleOverride > 0 ? scaleOverride : ScaleFor(width, height);
             var screen = CreateScreenBuffer(width * scale, height * scale, out var screenDepth);
-            var final = new Framebuffer(FramebufferTarget.Framebuffer, width, height, PixelInternalFormat.Rgba8, 1);
+            var final = new Framebuffer(
+                FramebufferTarget.Framebuffer,
+                width,
+                height,
+                PixelInternalFormat.Rgba8,
+                1
+            );
             try
             {
-                RenderInternal(scene, screen, final, width, height, scale,
-                    new System.Numerics.Vector4(background.X, background.Y, background.Z, transparent ? 0 : 1), transparent,
-                    screenDepth);
+                RenderInternal(
+                    scene,
+                    screen,
+                    final,
+                    width,
+                    height,
+                    scale,
+                    new System.Numerics.Vector4(
+                        background.X,
+                        background.Y,
+                        background.Z,
+                        transparent ? 0 : 1
+                    ),
+                    transparent,
+                    screenDepth
+                );
                 final.Bind();
                 byte[] pixels = new byte[width * height * 4];
                 GL.ReadBuffer(ReadBufferMode.ColorAttachment0);
-                GL.ReadPixels(0, 0, width, height, PixelFormat.Rgba, PixelType.UnsignedByte, pixels);
+                GL.ReadPixels(
+                    0,
+                    0,
+                    width,
+                    height,
+                    PixelFormat.Rgba,
+                    PixelType.UnsignedByte,
+                    pixels
+                );
                 final.Unbind();
                 return ToImage(pixels, width, height, transparent);
             }
@@ -446,14 +587,32 @@ namespace PlayerViewer.UI
         /// from <see cref="System.Buffers.ArrayPool{T}"/>; ownership transfers to the caller.
         /// Synchronous, so every frame deterministically maps 1:1.
         /// </summary>
-        public byte[] CaptureFrameBytes(IViewScene scene, System.Numerics.Vector3 background,
-            bool transparent, out int width, out int height)
+        public byte[] CaptureFrameBytes(
+            IViewScene scene,
+            System.Numerics.Vector3 background,
+            bool transparent,
+            out int width,
+            out int height
+        )
         {
             width = Width;
             height = Height;
-            RenderInternal(scene, _screen, _final, Width, Height, EffectiveScale(Width, Height),
-                new System.Numerics.Vector4(background.X, background.Y, background.Z, transparent ? 0 : 1),
-                transparent, _screenDepth);
+            RenderInternal(
+                scene,
+                _screen,
+                _final,
+                Width,
+                Height,
+                EffectiveScale(Width, Height),
+                new System.Numerics.Vector4(
+                    background.X,
+                    background.Y,
+                    background.Z,
+                    transparent ? 0 : 1
+                ),
+                transparent,
+                _screenDepth
+            );
 
             int size = Width * Height * 4;
             var buf = System.Buffers.ArrayPool<byte>.Shared.Rent(size);
@@ -472,24 +631,58 @@ namespace PlayerViewer.UI
         {
             if (rgba == null || w <= 0 || h <= 0)
             {
-                if (_bgTex != 0) { GL.DeleteTexture(_bgTex); _bgTex = 0; }
+                if (_bgTex != 0)
+                {
+                    GL.DeleteTexture(_bgTex);
+                    _bgTex = 0;
+                }
                 return;
             }
-            if (_bgTex == 0) _bgTex = GL.GenTexture();
+            if (_bgTex == 0)
+                _bgTex = GL.GenTexture();
             GL.BindTexture(TextureTarget.Texture2D, _bgTex);
-            GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, w, h, 0,
-                PixelFormat.Rgba, PixelType.UnsignedByte, rgba);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            GL.TexImage2D(
+                TextureTarget.Texture2D,
+                0,
+                PixelInternalFormat.Rgba,
+                w,
+                h,
+                0,
+                PixelFormat.Rgba,
+                PixelType.UnsignedByte,
+                rgba
+            );
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMinFilter,
+                (int)TextureMinFilter.Linear
+            );
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMagFilter,
+                (int)TextureMagFilter.Linear
+            );
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureWrapS,
+                (int)TextureWrapMode.ClampToEdge
+            );
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureWrapT,
+                (int)TextureWrapMode.ClampToEdge
+            );
             GL.BindTexture(TextureTarget.Texture2D, 0);
         }
 
         public void Dispose()
         {
             DisposeRefraction();
-            if (_bgTex != 0) { GL.DeleteTexture(_bgTex); _bgTex = 0; }
+            if (_bgTex != 0)
+            {
+                GL.DeleteTexture(_bgTex);
+                _bgTex = 0;
+            }
             _screen?.Dispoe();
             _final?.Dispoe();
             _selfShadow?.Dispose();
@@ -505,23 +698,23 @@ namespace PlayerViewer.UI
         VertexBufferObject _vao;
 
         const string Vert =
-            "#version 330\n" +
-            "layout (location = 0) in vec2 aPos;\n" +
-            "layout (location = 1) in vec2 aTexCoords;\n" +
-            "out vec2 TexCoords;\n" +
-            "void main(){ gl_Position = vec4(aPos, 0.0, 1.0); TexCoords = aTexCoords; }\n";
+            "#version 330\n"
+            + "layout (location = 0) in vec2 aPos;\n"
+            + "layout (location = 1) in vec2 aTexCoords;\n"
+            + "out vec2 TexCoords;\n"
+            + "void main(){ gl_Position = vec4(aPos, 0.0, 1.0); TexCoords = aTexCoords; }\n";
 
         const string Frag =
-            "#version 330\n" +
-            "precision highp float;\n" +
-            "in vec2 TexCoords;\n" +
-            "uniform sampler2D uTex;\n" +
-            "out vec4 FragColor;\n" +
-            "void main(){\n" +
-            "  vec4 c = texture(uTex, TexCoords);\n" +
-            "  if (c.a < 0.004) discard;\n" +
-            "  FragColor = vec4(pow(c.rgb, vec3(2.2)), 1.0);\n" +
-            "}\n";
+            "#version 330\n"
+            + "precision highp float;\n"
+            + "in vec2 TexCoords;\n"
+            + "uniform sampler2D uTex;\n"
+            + "out vec4 FragColor;\n"
+            + "void main(){\n"
+            + "  vec4 c = texture(uTex, TexCoords);\n"
+            + "  if (c.a < 0.004) discard;\n"
+            + "  FragColor = vec4(pow(c.rgb, vec3(2.2)), 1.0);\n"
+            + "}\n";
 
         void Init()
         {
@@ -535,14 +728,13 @@ namespace PlayerViewer.UI
             _vao.AddAttribute(1, 2, VertexAttribPointerType.Float, false, 16, 8);
             _vao.Initialize();
 
-            float[] data =
-            {
-                -1,  1, 0, 1,
-                -1, -1, 0, 0,
-                 1,  1, 1, 1,
-                 1, -1, 1, 0,
-            };
-            GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * data.Length, data, BufferUsageHint.StaticDraw);
+            float[] data = { -1, 1, 0, 1, -1, -1, 0, 0, 1, 1, 1, 1, 1, -1, 1, 0 };
+            GL.BufferData(
+                BufferTarget.ArrayBuffer,
+                sizeof(float) * data.Length,
+                data,
+                BufferUsageHint.StaticDraw
+            );
         }
 
         public void Draw(GLContext context, int tex)
@@ -590,14 +782,13 @@ namespace PlayerViewer.UI
             _vao.AddAttribute(1, 2, VertexAttribPointerType.Float, false, 16, 8);
             _vao.Initialize();
 
-            float[] data =
-            {
-                -1,  1, 0, 1,
-                -1, -1, 0, 0,
-                 1,  1, 1, 1,
-                 1, -1, 1, 0,
-            };
-            GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * data.Length, data, BufferUsageHint.StaticDraw);
+            float[] data = { -1, 1, 0, 1, -1, -1, 0, 0, 1, 1, 1, 1, 1, -1, 1, 0 };
+            GL.BufferData(
+                BufferTarget.ArrayBuffer,
+                sizeof(float) * data.Length,
+                data,
+                BufferUsageHint.StaticDraw
+            );
         }
 
         public void Draw(GLContext context, GLTexture color, bool keepAlpha)
@@ -616,8 +807,16 @@ namespace PlayerViewer.UI
             GL.ActiveTexture(TextureUnit.Texture1);
             color.Bind();
             //Linear filtering does the supersample downsample.
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMinFilter,
+                (int)TextureMinFilter.Linear
+            );
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureMagFilter,
+                (int)TextureMagFilter.Linear
+            );
             _shader.SetInt("uColorTex", 1);
 
             _vao.Enable(_shader);

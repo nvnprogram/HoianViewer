@@ -15,7 +15,9 @@ namespace PlayerViewer.Core
         static string CreateDataDir()
         {
             string dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "PlayerViewer");
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "PlayerViewer"
+            );
             Directory.CreateDirectory(dir);
             return dir;
         }
@@ -26,7 +28,9 @@ namespace PlayerViewer.Core
             try
             {
                 if (OperatingSystem.IsWindows())
-                    Process.Start(new ProcessStartInfo { FileName = DataDir, UseShellExecute = true });
+                    Process.Start(
+                        new ProcessStartInfo { FileName = DataDir, UseShellExecute = true }
+                    );
                 else if (OperatingSystem.IsMacOS())
                     Process.Start("open", DataDir);
                 else

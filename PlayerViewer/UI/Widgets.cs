@@ -37,8 +37,14 @@ namespace PlayerViewer.UI
         /// Searchable combo for a gear list. Returns true when the selection changed
         /// (selected receives the new entry, null = none).
         /// </summary>
-        public static bool GearCombo(string label, List<GearEntry> entries, GearEntry current,
-            out GearEntry selected, bool allowNone = true, string noneLabel = "Blank")
+        public static bool GearCombo(
+            string label,
+            List<GearEntry> entries,
+            GearEntry current,
+            out GearEntry selected,
+            bool allowNone = true,
+            string noneLabel = "Blank"
+        )
         {
             selected = current;
             bool changed = false;
@@ -75,13 +81,21 @@ namespace PlayerViewer.UI
                     {
                         if (entry.IsCustom != group)
                             continue;
-                        if (!MatchesSearch(entry.DisplayName, search) && !MatchesSearch(entry.Label ?? "", search))
+                        if (
+                            !MatchesSearch(entry.DisplayName, search)
+                            && !MatchesSearch(entry.Label ?? "", search)
+                        )
                             continue;
 
                         if (entry.IsCustom)
                             ImGui.PushStyleColor(ImGuiCol.Text, Theme.GoldBright);
                         bool isSelected = entry == current;
-                        if (ImGui.Selectable($"{entry.DisplayName}##{entries.IndexOf(entry)}", isSelected))
+                        if (
+                            ImGui.Selectable(
+                                $"{entry.DisplayName}##{entries.IndexOf(entry)}",
+                                isSelected
+                            )
+                        )
                         {
                             selected = entry;
                             changed = true;
@@ -106,16 +120,19 @@ namespace PlayerViewer.UI
 
         static bool MatchesSearch(string text, string search)
         {
-            return string.IsNullOrEmpty(search) ||
-                text.Contains(search, StringComparison.OrdinalIgnoreCase);
+            return string.IsNullOrEmpty(search)
+                || text.Contains(search, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>Full-width button that dims and no-ops when disabled.</summary>
         public static void DisabledButton(string label, bool enabled, Action onClick)
         {
-            if (!enabled) ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.45f);
-            if (ImGui.Button(label, new Vector2(-1, 0)) && enabled) onClick();
-            if (!enabled) ImGui.PopStyleVar();
+            if (!enabled)
+                ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.45f);
+            if (ImGui.Button(label, new Vector2(-1, 0)) && enabled)
+                onClick();
+            if (!enabled)
+                ImGui.PopStyleVar();
         }
 
         /// <summary>Full-width red (destructive/cancel) button.</summary>
@@ -147,49 +164,102 @@ namespace PlayerViewer.UI
         //Read a value, draw the control, and on edit push the new value through <paramref name="set"/> then
         //run <paramref name="onChanged"/> (persist/side effects). Each returns true when the value changed.
 
-        public static bool Checkbox(string label, bool value, Action<bool> set, Action onChanged = null)
+        public static bool Checkbox(
+            string label,
+            bool value,
+            Action<bool> set,
+            Action onChanged = null
+        )
         {
             bool v = value;
-            if (!ImGui.Checkbox(label, ref v)) return false;
-            set(v); onChanged?.Invoke(); return true;
+            if (!ImGui.Checkbox(label, ref v))
+                return false;
+            set(v);
+            onChanged?.Invoke();
+            return true;
         }
 
-        public static bool SliderInt(string label, int value, int min, int max,
-            Action<int> set, Action onChanged = null, string format = "%d")
+        public static bool SliderInt(
+            string label,
+            int value,
+            int min,
+            int max,
+            Action<int> set,
+            Action onChanged = null,
+            string format = "%d"
+        )
         {
             int v = value;
-            if (!ImGui.SliderInt(label, ref v, min, max, format)) return false;
-            set(v); onChanged?.Invoke(); return true;
+            if (!ImGui.SliderInt(label, ref v, min, max, format))
+                return false;
+            set(v);
+            onChanged?.Invoke();
+            return true;
         }
 
-        public static bool SliderFloat(string label, float value, float min, float max,
-            Action<float> set, Action onChanged = null, string format = "%.2f")
+        public static bool SliderFloat(
+            string label,
+            float value,
+            float min,
+            float max,
+            Action<float> set,
+            Action onChanged = null,
+            string format = "%.2f"
+        )
         {
             float v = value;
-            if (!ImGui.SliderFloat(label, ref v, min, max, format)) return false;
-            set(v); onChanged?.Invoke(); return true;
+            if (!ImGui.SliderFloat(label, ref v, min, max, format))
+                return false;
+            set(v);
+            onChanged?.Invoke();
+            return true;
         }
 
-        public static bool InputInt(string label, int value, Action<int> set, Action onChanged = null)
+        public static bool InputInt(
+            string label,
+            int value,
+            Action<int> set,
+            Action onChanged = null
+        )
         {
             int v = value;
-            if (!ImGui.InputInt(label, ref v)) return false;
-            set(v); onChanged?.Invoke(); return true;
+            if (!ImGui.InputInt(label, ref v))
+                return false;
+            set(v);
+            onChanged?.Invoke();
+            return true;
         }
 
-        public static bool Combo(string label, int value, string[] items, Action<int> set, Action onChanged = null)
+        public static bool Combo(
+            string label,
+            int value,
+            string[] items,
+            Action<int> set,
+            Action onChanged = null
+        )
         {
             int v = value;
-            if (!ImGui.Combo(label, ref v, items, items.Length)) return false;
-            set(v); onChanged?.Invoke(); return true;
+            if (!ImGui.Combo(label, ref v, items, items.Length))
+                return false;
+            set(v);
+            onChanged?.Invoke();
+            return true;
         }
 
-        public static bool ColorEdit3(string label, Vector3 value, Action<Vector3> set,
-            ImGuiColorEditFlags flags = ImGuiColorEditFlags.None, Action onChanged = null)
+        public static bool ColorEdit3(
+            string label,
+            Vector3 value,
+            Action<Vector3> set,
+            ImGuiColorEditFlags flags = ImGuiColorEditFlags.None,
+            Action onChanged = null
+        )
         {
             Vector3 v = value;
-            if (!ImGui.ColorEdit3(label, ref v, flags)) return false;
-            set(v); onChanged?.Invoke(); return true;
+            if (!ImGui.ColorEdit3(label, ref v, flags))
+                return false;
+            set(v);
+            onChanged?.Invoke();
+            return true;
         }
     }
 }

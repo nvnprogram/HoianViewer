@@ -1,5 +1,4 @@
-﻿using Microsoft.VisualBasic.FileIO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.IO;
@@ -10,26 +9,36 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Microsoft.VisualBasic.FileIO;
 using static ShaderLibrary.IntermediateShader;
 
 namespace ShaderLibrary
 {
     public class GLSLParser
     {
-        public Dictionary<string, IntermediateShader.OptionMacro> StaticOptions { get; set; } = new();
-        public Dictionary<string, IntermediateShader.OptionMacro> DynamicOptions { get; set; } = new();
-        public Dictionary<string, IntermediateShader.UniformBlock> UniformBlocks { get; set; } = new();
-        public Dictionary<string, IntermediateShader.StorageBlock> StorageBlocks { get; set; } = new();
+        public Dictionary<string, IntermediateShader.OptionMacro> StaticOptions { get; set; } =
+            new();
+        public Dictionary<string, IntermediateShader.OptionMacro> DynamicOptions { get; set; } =
+            new();
+        public Dictionary<string, IntermediateShader.UniformBlock> UniformBlocks { get; set; } =
+            new();
+        public Dictionary<string, IntermediateShader.StorageBlock> StorageBlocks { get; set; } =
+            new();
         public Dictionary<string, IntermediateShader.Sampler> Samplers { get; set; } = new();
-        public Dictionary<string, IntermediateShader.Attribute> InputAttributes { get; set; } = new();
-        public Dictionary<string, IntermediateShader.Attribute> OutputAttributes { get; set; } = new();
+        public Dictionary<string, IntermediateShader.Attribute> InputAttributes { get; set; } =
+            new();
+        public Dictionary<string, IntermediateShader.Attribute> OutputAttributes { get; set; } =
+            new();
         public Dictionary<string, IntermediateShader.RenderInfo> RenderInfos { get; set; } = new();
 
         public string Source;
 
         public GLSLParser() { }
 
-        public GLSLParser(string glsl) { ParseGLSL(glsl); }
+        public GLSLParser(string glsl)
+        {
+            ParseGLSL(glsl);
+        }
 
         public void ParseGLSL(string glslSource)
         {
@@ -41,7 +50,7 @@ namespace ShaderLibrary
             ParseOptions(glslSource);
             ParseRenderInfo(glslSource);
             ParseStorageBuffers(glslSource);
-        //   File.WriteAllText("", jsocon.SerializeObject(Shader));
+            //   File.WriteAllText("", jsocon.SerializeObject(Shader));
         }
 
         public BnshFile.ShaderReflectionData GetBnshReflection()
@@ -63,40 +72,49 @@ namespace ShaderLibrary
         }
 
         private static readonly Regex AttributeUniformRegex = new Regex(
-    @"(?:layout\s*\(.*?location\s*=\s*(\d+).*?\)\s*)?(in|out|attribute)\s+([\w\d_]+)\s+([\w\d_]+)\s*;\s*(?://@.*)?",
-            RegexOptions.Compiled);
+            @"(?:layout\s*\(.*?location\s*=\s*(\d+).*?\)\s*)?(in|out|attribute)\s+([\w\d_]+)\s+([\w\d_]+)\s*;\s*(?://@.*)?",
+            RegexOptions.Compiled
+        );
 
         private static readonly Regex UniformBlockRegex = new Regex(
-        @"(layout\s*\(.*\)\s*uniform\s+\w+\s+\w+\s*{\s*(.*?)\s*};)\s*//\s*@\s*(.*)",
-            RegexOptions.Compiled | RegexOptions.Singleline);
+            @"(layout\s*\(.*\)\s*uniform\s+\w+\s+\w+\s*{\s*(.*?)\s*};)\s*//\s*@\s*(.*)",
+            RegexOptions.Compiled | RegexOptions.Singleline
+        );
 
         private static readonly Regex PropertyCommentRegex = new Regex(
             @"\/\/@\s*(\w+)\s*=\s*""([^""]+)""",
-            RegexOptions.Compiled);
+            RegexOptions.Compiled
+        );
 
         private static readonly Regex UniformSamplerRegex = new Regex(
-    @"(?:layout\s*\(\s*(?:location|binding)\s*=\s*(?<binding>\d+)\s*\)\s*)?uniform\s+(?<samplerType>sampler\w+)\s+(?<samplerName>\w+)\s*;\s*//\s*@\s*(?<properties>.*)",
-            RegexOptions.Compiled);
+            @"(?:layout\s*\(\s*(?:location|binding)\s*=\s*(?<binding>\d+)\s*\)\s*)?uniform\s+(?<samplerType>sampler\w+)\s+(?<samplerName>\w+)\s*;\s*//\s*@\s*(?<properties>.*)",
+            RegexOptions.Compiled
+        );
 
         private static readonly Regex MacrosRegex = new Regex(
-        @"#define\s+(?<name>\w+)\s+(?<value>\w+)\s*\/\/@\s*(?<macroProperties>(\w+\s*=\s*""[^""]+""\s*)*)(?:\s*flags\s*=\s*""(?<flags>[^""]+)""\s*)?",
-       RegexOptions.Compiled);
+            @"#define\s+(?<name>\w+)\s+(?<value>\w+)\s*\/\/@\s*(?<macroProperties>(\w+\s*=\s*""[^""]+""\s*)*)(?:\s*flags\s*=\s*""(?<flags>[^""]+)""\s*)?",
+            RegexOptions.Compiled
+        );
 
         private static readonly Regex StorageBufferRegex = new Regex(
             @"layout\s*\(\s*(?<layout>[^\)]+)\)\s*buffer\s+(?<blockName>\w+)\s*(\/\/@\s*(?<blockProperties>(\w+\s*=\s*""[^""]+""\s*)+))?\s*\{(?<blockContent>(.|\n)*?)\}\s*\w*\s*;",
-        RegexOptions.Compiled);
+            RegexOptions.Compiled
+        );
 
         private static readonly Regex BindingRegex = new Regex(
             @"binding\s*=\s*(\d+)",
-        RegexOptions.Compiled);
+            RegexOptions.Compiled
+        );
 
         private static readonly Regex RenderInfoRegex = new Regex(
             @"^\/\/@\s*render_info=.*$",
-    RegexOptions.Compiled | RegexOptions.Multiline);
+            RegexOptions.Compiled | RegexOptions.Multiline
+        );
 
         private static readonly Regex PropertyCommentRegex2 = new Regex(
-    @"(\w+)\s*=\s*""([^""]*)""",
-    RegexOptions.Compiled);
+            @"(\w+)\s*=\s*""([^""]*)""",
+            RegexOptions.Compiled
+        );
 
         public void ParseAttributes(string glslSource)
         {
@@ -124,36 +142,43 @@ namespace ShaderLibrary
 
                     switch (propertyName)
                     {
-                        case "id": name = propertyValue; break;
+                        case "id":
+                            name = propertyValue;
+                            break;
                     }
                 }
 
                 if (qualifier == "in")
                 {
                     if (!this.InputAttributes.ContainsKey(name))
-                        this.InputAttributes.Add(name, new IntermediateShader.Attribute()
-                        {
-                            ID = name,
-                            Symbol = symbol,
-                            Location = int.Parse(location),
-                            Type = value_type,
-                            ArrayCount = (uint)array_count,
-                        });
+                        this.InputAttributes.Add(
+                            name,
+                            new IntermediateShader.Attribute()
+                            {
+                                ID = name,
+                                Symbol = symbol,
+                                Location = int.Parse(location),
+                                Type = value_type,
+                                ArrayCount = (uint)array_count,
+                            }
+                        );
                 }
                 else
                 {
                     if (!this.OutputAttributes.ContainsKey(name))
-                        this.OutputAttributes.Add(name, new IntermediateShader.Attribute()
-                        {
-                            ID = name,
-                            Symbol = symbol,
-                            Location = int.Parse(location),
-                            Type = value_type,
-                            ArrayCount = (uint)array_count,
-                        });
+                        this.OutputAttributes.Add(
+                            name,
+                            new IntermediateShader.Attribute()
+                            {
+                                ID = name,
+                                Symbol = symbol,
+                                Location = int.Parse(location),
+                                Type = value_type,
+                                ArrayCount = (uint)array_count,
+                            }
+                        );
                 }
             }
-
         }
 
         private void ParseRenderInfo(string glslSource)
@@ -163,10 +188,14 @@ namespace ShaderLibrary
                 switch (typeStr.ToLowerInvariant())
                 {
                     case "int":
-                    case "int32": return RenderInfo.RenderInfoType.Int32;
-                    case "float": return RenderInfo.RenderInfoType.Float;
-                    case "string": return RenderInfo.RenderInfoType.String;
-                    default: return RenderInfo.RenderInfoType.String;
+                    case "int32":
+                        return RenderInfo.RenderInfoType.Int32;
+                    case "float":
+                        return RenderInfo.RenderInfoType.Float;
+                    case "string":
+                        return RenderInfo.RenderInfoType.String;
+                    default:
+                        return RenderInfo.RenderInfoType.String;
                 }
             }
 
@@ -181,13 +210,25 @@ namespace ShaderLibrary
 
                     switch (propertyName)
                     {
-                        case "render_info": info.Name = propertyValue; break;
-                        case "type": info.Type = ParseType(propertyValue); break;
-                        case "default": info.DefaultChoice = propertyValue; break;
+                        case "render_info":
+                            info.Name = propertyValue;
+                            break;
+                        case "type":
+                            info.Type = ParseType(propertyValue);
+                            break;
+                        case "default":
+                            info.DefaultChoice = propertyValue;
+                            break;
                         // ui data
-                        case "group": info.Group = propertyValue; break;
-                        case "order": int.TryParse(propertyValue, out order); break;
-                        case "label": info.Label = propertyValue; break;
+                        case "group":
+                            info.Group = propertyValue;
+                            break;
+                        case "order":
+                            int.TryParse(propertyValue, out order);
+                            break;
+                        case "label":
+                            info.Label = propertyValue;
+                            break;
                     }
                 }
                 RenderInfos.TryAdd(info.Name, info);
@@ -200,14 +241,14 @@ namespace ShaderLibrary
             foreach (Match match in UniformSamplerRegex.Matches(glslSource))
             {
                 string samplerType = match.Groups["samplerType"].Value;
-                string samplerName = match.Groups["samplerName"].Value; 
+                string samplerName = match.Groups["samplerName"].Value;
                 string symbol = samplerName;
                 string properties = match.Groups["properties"].Value;
                 string group = "";
                 string label = samplerName;
                 int order = -1;
 
-                int location = -1; 
+                int location = -1;
                 if (match.Groups["binding"].Success)
                 {
                     location = int.Parse(match.Groups["binding"].Value);
@@ -220,10 +261,18 @@ namespace ShaderLibrary
 
                     switch (propertyName)
                     {
-                        case "id": samplerName = propertyValue; break;
-                        case "group": group = propertyValue; break;
-                        case "order": int.TryParse(propertyValue, out order); break;
-                        case "label": label = propertyValue; break;
+                        case "id":
+                            samplerName = propertyValue;
+                            break;
+                        case "group":
+                            group = propertyValue;
+                            break;
+                        case "order":
+                            int.TryParse(propertyValue, out order);
+                            break;
+                        case "label":
+                            label = propertyValue;
+                            break;
                     }
                 }
 
@@ -236,16 +285,19 @@ namespace ShaderLibrary
                     case "samplerCube":
                     case "samplerCubeArray":
                         if (!this.Samplers.ContainsKey(samplerName))
-                            this.Samplers.Add(samplerName, new IntermediateShader.Sampler()
-                            {
-                                ID = samplerName,
-                                Location = location,
-                                Symbol = symbol,
-                                Type = GetType(samplerType),
-                                Group = group,
-                                Label = label,
-                                Order = order
-                            });
+                            this.Samplers.Add(
+                                samplerName,
+                                new IntermediateShader.Sampler()
+                                {
+                                    ID = samplerName,
+                                    Location = location,
+                                    Symbol = symbol,
+                                    Type = GetType(samplerType),
+                                    Group = group,
+                                    Label = label,
+                                    Order = order,
+                                }
+                            );
                         break;
                 }
             }
@@ -267,8 +319,10 @@ namespace ShaderLibrary
                 //options must be in int form, so ensure booleans are converted
                 string GetChoiceValue(string v)
                 {
-                    if (v == "false") return "0";
-                    else if (v == "true") return "1";
+                    if (v == "false")
+                        return "0";
+                    else if (v == "true")
+                        return "1";
                     return v;
                 }
 
@@ -290,7 +344,10 @@ namespace ShaderLibrary
                 string desc = "";
                 if (!string.IsNullOrEmpty(macroProperties))
                 {
-                    var macroPropertyMatches = Regex.Matches(macroProperties, @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)""");
+                    var macroPropertyMatches = Regex.Matches(
+                        macroProperties,
+                        @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)"""
+                    );
                     foreach (Match propertyMatch in macroPropertyMatches)
                     {
                         string property = propertyMatch.Groups["property"].Value;
@@ -298,19 +355,41 @@ namespace ShaderLibrary
 
                         switch (property)
                         {
-                            case "branch": is_static = valueProp != "dynamic"; break;
-                            case "desc": desc = valueProp; break;
-                            case "flags": compile_all = valueProp.Contains("compile_all_coices"); break;
-                            case "id": name = valueProp; break;
-                            case "order": int.TryParse(valueProp, out order); break;
-                            case "group": group = valueProp; break;
-                            case "label": label = valueProp; break;
-                            case "is_skin_count": is_skin_count = true; break;
-                            case "type": 
-                                type = valueProp; break;
+                            case "branch":
+                                is_static = valueProp != "dynamic";
+                                break;
+                            case "desc":
+                                desc = valueProp;
+                                break;
+                            case "flags":
+                                compile_all = valueProp.Contains("compile_all_coices");
+                                break;
+                            case "id":
+                                name = valueProp;
+                                break;
+                            case "order":
+                                int.TryParse(valueProp, out order);
+                                break;
+                            case "group":
+                                group = valueProp;
+                                break;
+                            case "label":
+                                label = valueProp;
+                                break;
+                            case "is_skin_count":
+                                is_skin_count = true;
+                                break;
+                            case "type":
+                                type = valueProp;
+                                break;
                             case "choices":
                                 choices.Clear();
-                                foreach (var v in valueProp.Split(new[] { ",", " " }, StringSplitOptions.RemoveEmptyEntries))
+                                foreach (
+                                    var v in valueProp.Split(
+                                        new[] { ",", " " },
+                                        StringSplitOptions.RemoveEmptyEntries
+                                    )
+                                )
                                     choices.Add(GetChoiceValue(v));
 
                                 //slight hack atm
@@ -357,7 +436,10 @@ namespace ShaderLibrary
                 uint blockSize = 0;
 
                 // Parse and display block properties
-                var blockPropertyMatches = Regex.Matches(blockProperties, @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)""");
+                var blockPropertyMatches = Regex.Matches(
+                    blockProperties,
+                    @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)"""
+                );
                 foreach (Match propertyMatch in blockPropertyMatches)
                 {
                     string property = propertyMatch.Groups["property"].Value;
@@ -365,9 +447,15 @@ namespace ShaderLibrary
 
                     switch (property)
                     {
-                        case "id": blockName = value; break;
-                        case "type": type = value; break;
-                        case "size": uint.TryParse(value, out blockSize); break;
+                        case "id":
+                            blockName = value;
+                            break;
+                        case "type":
+                            type = value;
+                            break;
+                        case "size":
+                            uint.TryParse(value, out blockSize);
+                            break;
                     }
                 }
 
@@ -389,10 +477,12 @@ namespace ShaderLibrary
         public void ParseUniformBlocks(string glslSource)
         {
             // Pattern to match uniform blocks
-            string blockPattern = @"layout\s*\(\s*(?<layout>[^\)]+)\)\s*uniform\s+(?<blockName>\w+)\s*(\/\/@\s*(?<blockProperties>(\w+\s*=\s*""[^""]+""\s*)+))?\s*\{(?<blockContent>(.|\n)*?)\}\s*\w*\s*;";
+            string blockPattern =
+                @"layout\s*\(\s*(?<layout>[^\)]+)\)\s*uniform\s+(?<blockName>\w+)\s*(\/\/@\s*(?<blockProperties>(\w+\s*=\s*""[^""]+""\s*)+))?\s*\{(?<blockContent>(.|\n)*?)\}\s*\w*\s*;";
 
             // Pattern to match uniforms inside blocks
-            string uniformPattern = @"(?<datatype>\w+)\s+(?<name>\w+)\s*(\[(?<arraySize>[^\]]+)\])?\s*;\s*(\/\/@\s*(?<uniformProperties>(\w+\s*=\s*""[^""]+""\s*)+))?";
+            string uniformPattern =
+                @"(?<datatype>\w+)\s+(?<name>\w+)\s*(\[(?<arraySize>[^\]]+)\])?\s*;\s*(\/\/@\s*(?<uniformProperties>(\w+\s*=\s*""[^""]+""\s*)+))?";
 
             // Match and parse uniform blocks
             var blockMatches = Regex.Matches(glslSource, blockPattern);
@@ -408,7 +498,10 @@ namespace ShaderLibrary
                 uint blockSize = 0;
 
                 // Parse and display block properties
-                var blockPropertyMatches = Regex.Matches(blockProperties, @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)""");
+                var blockPropertyMatches = Regex.Matches(
+                    blockProperties,
+                    @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)"""
+                );
                 foreach (Match propertyMatch in blockPropertyMatches)
                 {
                     string property = propertyMatch.Groups["property"].Value;
@@ -416,9 +509,15 @@ namespace ShaderLibrary
 
                     switch (property)
                     {
-                        case "id": blockName = value; break;
-                        case "type": type = value; break;
-                        case "size":  uint.TryParse(value, out blockSize);  break;
+                        case "id":
+                            blockName = value;
+                            break;
+                        case "type":
+                            type = value;
+                            break;
+                        case "size":
+                            uint.TryParse(value, out blockSize);
+                            break;
                     }
                 }
 
@@ -443,11 +542,21 @@ namespace ShaderLibrary
 
                 switch (type)
                 {
-                    case "material": block.Type = IntermediateShader.BlockType.Material; break;
-                    case "shape": block.Type = IntermediateShader.BlockType.Shape; break;
-                    case "option": block.Type = IntermediateShader.BlockType.Option; break;
-                    case "skeleton": block.Type = IntermediateShader.BlockType.Skeleton; break;
-                    case "resmaterial": block.Type = IntermediateShader.BlockType.ResMaterial; break;
+                    case "material":
+                        block.Type = IntermediateShader.BlockType.Material;
+                        break;
+                    case "shape":
+                        block.Type = IntermediateShader.BlockType.Shape;
+                        break;
+                    case "option":
+                        block.Type = IntermediateShader.BlockType.Option;
+                        break;
+                    case "skeleton":
+                        block.Type = IntermediateShader.BlockType.Skeleton;
+                        break;
+                    case "resmaterial":
+                        block.Type = IntermediateShader.BlockType.ResMaterial;
+                        break;
                 }
 
                 if (type == "material" || type == "scene")
@@ -466,12 +575,17 @@ namespace ShaderLibrary
                         int array_count = 1;
                         //  int.TryParse(arraySize, out array_count);
 
-                        IntermediateShader.ValueType value_type = IntermediateShader.ValueType.FLOAT;
+                        IntermediateShader.ValueType value_type = IntermediateShader
+                            .ValueType
+                            .FLOAT;
                         (value_type, array_count) = GetValueType(datatype, array_count);
 
                         if (!string.IsNullOrEmpty(properties))
                         {
-                            var propertyMatches = Regex.Matches(properties, @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)""");
+                            var propertyMatches = Regex.Matches(
+                                properties,
+                                @"(?<property>\w+)\s*=\s*""(?<value>[^""]+)"""
+                            );
                             foreach (Match propertyMatch in propertyMatches)
                             {
                                 string property = propertyMatch.Groups["property"].Value;
@@ -479,11 +593,15 @@ namespace ShaderLibrary
 
                                 switch (property)
                                 {
-                                    case "id": name = value; break;
+                                    case "id":
+                                        name = value;
+                                        break;
                                     case "default_value":
                                         defaultValue = value;
                                         break;
-                                    case "group": group = value; break;
+                                    case "group":
+                                        group = value;
+                                        break;
                                 }
                             }
                         }
@@ -491,38 +609,52 @@ namespace ShaderLibrary
                         if (block.Uniforms.Any(x => x.ID == name))
                             continue;
 
-                        block.Uniforms.Add(new IntermediateShader.Uniform()
-                        {
-                            ID = name,
-                            Type = value_type,
-                            ArrayCount = (uint)array_count,
-                            DefaultValue = defaultValue,
-                            Group = group,
-                        });
+                        block.Uniforms.Add(
+                            new IntermediateShader.Uniform()
+                            {
+                                ID = name,
+                                Type = value_type,
+                                ArrayCount = (uint)array_count,
+                                DefaultValue = defaultValue,
+                                Group = group,
+                            }
+                        );
                     }
                 }
             }
         }
-
 
         private (IntermediateShader.ValueType, int) GetValueType(string type, int count)
         {
             switch (type)
             {
                 //represent matrices as vec4[] as done generally by game shaders
-                case "mat4": return (IntermediateShader.ValueType.FLOAT4, count * 4);
-                case "mat2x4": return (IntermediateShader.ValueType.FLOAT4, count * 2);
-                case "mat4x2": return (IntermediateShader.ValueType.FLOAT4, count * 2);
-                case "mat3x4": return (IntermediateShader.ValueType.FLOAT3, count * 3);
-                case "bool": return (IntermediateShader.ValueType.BOOL, count);
-                case "float": return (IntermediateShader.ValueType.FLOAT, count);
-                case "vec2": return (IntermediateShader.ValueType.FLOAT2, count);
-                case "vec3": return (IntermediateShader.ValueType.FLOAT3, count);
-                case "vec4": return (IntermediateShader.ValueType.FLOAT4, count);
-                case "int": return (IntermediateShader.ValueType.INT, count);
-                case "ivec2": return (IntermediateShader.ValueType.INT2, count);
-                case "ivec3": return (IntermediateShader.ValueType.INT3, count);
-                case "ivec4": return (IntermediateShader.ValueType.INT4, count);
+                case "mat4":
+                    return (IntermediateShader.ValueType.FLOAT4, count * 4);
+                case "mat2x4":
+                    return (IntermediateShader.ValueType.FLOAT4, count * 2);
+                case "mat4x2":
+                    return (IntermediateShader.ValueType.FLOAT4, count * 2);
+                case "mat3x4":
+                    return (IntermediateShader.ValueType.FLOAT3, count * 3);
+                case "bool":
+                    return (IntermediateShader.ValueType.BOOL, count);
+                case "float":
+                    return (IntermediateShader.ValueType.FLOAT, count);
+                case "vec2":
+                    return (IntermediateShader.ValueType.FLOAT2, count);
+                case "vec3":
+                    return (IntermediateShader.ValueType.FLOAT3, count);
+                case "vec4":
+                    return (IntermediateShader.ValueType.FLOAT4, count);
+                case "int":
+                    return (IntermediateShader.ValueType.INT, count);
+                case "ivec2":
+                    return (IntermediateShader.ValueType.INT2, count);
+                case "ivec3":
+                    return (IntermediateShader.ValueType.INT3, count);
+                case "ivec4":
+                    return (IntermediateShader.ValueType.INT4, count);
             }
             throw new Exception($"value type not supported {type}!");
         }
@@ -531,12 +663,18 @@ namespace ShaderLibrary
         {
             switch (type)
             {
-                case "sampler1D": return IntermediateShader.Sampler.SamplerType.Sampler1D;
-                case "sampler2D": return IntermediateShader.Sampler.SamplerType.Sampler2D;
-                case "sampler3D": return IntermediateShader.Sampler.SamplerType.Sampler3D;
-                case "sampler2DArray": return IntermediateShader.Sampler.SamplerType.Sampler2DArray;
-                case "samplerCube": return IntermediateShader.Sampler.SamplerType.SamplerCube;
-                case "samplerCubeArray": return IntermediateShader.Sampler.SamplerType.SamplerCubeArray;
+                case "sampler1D":
+                    return IntermediateShader.Sampler.SamplerType.Sampler1D;
+                case "sampler2D":
+                    return IntermediateShader.Sampler.SamplerType.Sampler2D;
+                case "sampler3D":
+                    return IntermediateShader.Sampler.SamplerType.Sampler3D;
+                case "sampler2DArray":
+                    return IntermediateShader.Sampler.SamplerType.Sampler2DArray;
+                case "samplerCube":
+                    return IntermediateShader.Sampler.SamplerType.SamplerCube;
+                case "samplerCubeArray":
+                    return IntermediateShader.Sampler.SamplerType.SamplerCubeArray;
             }
             throw new Exception($"sampler type not supported {type}!");
         }

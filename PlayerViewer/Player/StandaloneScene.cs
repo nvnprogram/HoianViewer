@@ -33,7 +33,7 @@ namespace PlayerViewer.Player
 
         public List<string> AnimNames { get; } = new();
 
-            public string CurrentAnimName { get; private set; }
+        public string CurrentAnimName { get; private set; }
         public BfresSkeletalAnim CurrentSkeletal { get; private set; }
         public BfresMaterialAnim CurrentTexPattern { get; private set; }
         public BfresVisibilityAnim CurrentBoneVis { get; private set; }
@@ -52,8 +52,10 @@ namespace PlayerViewer.Player
             raw = Romfs.Decompress(raw);
 
             string stem = Path.GetFileName(filePath);
-            if (stem.EndsWith(".zs")) stem = stem[..^3];
-            if (stem.EndsWith(".bfres")) stem = stem[..^6];
+            if (stem.EndsWith(".zs"))
+                stem = stem[..^3];
+            if (stem.EndsWith(".bfres"))
+                stem = stem[..^6];
 
             //Fake path inside romfs Model so the shader archive lookup works.
             string fakePath = Path.Combine(romfs.Root, "Model", stem + ".bfres");
@@ -67,10 +69,22 @@ namespace PlayerViewer.Player
             if (data == null)
                 return null;
             string fakePath = Path.Combine(romfs.Root, "Model", modelName + ".bfres");
-            return Load(data, fakePath, modelName, romfs.Resolve($"Model/{modelName}.bfres") ?? "", romfs);
+            return Load(
+                data,
+                fakePath,
+                modelName,
+                romfs.Resolve($"Model/{modelName}.bfres") ?? "",
+                romfs
+            );
         }
 
-        static StandaloneScene Load(byte[] data, string fakePath, string name, string sourcePath, Romfs romfs)
+        static StandaloneScene Load(
+            byte[] data,
+            string fakePath,
+            string name,
+            string sourcePath,
+            Romfs romfs
+        )
         {
             IFileFormat format;
             using (var ms = new MemoryStream(data))
@@ -103,7 +117,8 @@ namespace PlayerViewer.Player
                 foreach (var bone in model.ModelData.Skeleton.Bones)
                     scene._defaultBoneVisibility[bone] = bone.Visible;
                 foreach (var mesh in model.Meshes)
-                    scene._defaultShapeVisibility[model.ModelData.Name + "/" + mesh.Name] = mesh.Shape.IsVisible;
+                    scene._defaultShapeVisibility[model.ModelData.Name + "/" + mesh.Name] =
+                        mesh.Shape.IsVisible;
             }
 
             return scene;
@@ -130,7 +145,12 @@ namespace PlayerViewer.Player
                     if (_defaultBoneVisibility.TryGetValue(bone, out bool visible))
                         bone.Visible = visible;
                 foreach (var mesh in model.Meshes)
-                    if (_defaultShapeVisibility.TryGetValue(model.ModelData.Name + "/" + mesh.Name, out bool vis))
+                    if (
+                        _defaultShapeVisibility.TryGetValue(
+                            model.ModelData.Name + "/" + mesh.Name,
+                            out bool vis
+                        )
+                    )
                         mesh.Shape.IsVisible = vis;
                 model.ModelData.Skeleton.Reset();
             }
@@ -138,12 +158,14 @@ namespace PlayerViewer.Player
             CurrentAnimName = name;
             AnimFrame = 0;
 
-            CurrentSkeletal = name != null
-                ? Bfres.SkeletalAnimations.FirstOrDefault(x => x.Name == name) : null;
-            CurrentTexPattern = name != null
-                ? Bfres.MaterialAnimations.FirstOrDefault(x => x.Name == name) : null;
-            CurrentBoneVis = name != null
-                ? Bfres.VisibilityAnimations.FirstOrDefault(x => x.Name == name) : null;
+            CurrentSkeletal =
+                name != null ? Bfres.SkeletalAnimations.FirstOrDefault(x => x.Name == name) : null;
+            CurrentTexPattern =
+                name != null ? Bfres.MaterialAnimations.FirstOrDefault(x => x.Name == name) : null;
+            CurrentBoneVis =
+                name != null
+                    ? Bfres.VisibilityAnimations.FirstOrDefault(x => x.Name == name)
+                    : null;
 
             //Animate ALL skeletons in the file (multi-model), but scope to only
             //this render so the hidden player skeleton is not affected.
@@ -151,7 +173,8 @@ namespace PlayerViewer.Player
             {
                 CurrentSkeletal.SkeletonOverride = null;
                 CurrentSkeletal.SkeletonOverrides = models
-                    .Select(m => m.ModelData.Skeleton).ToList();
+                    .Select(m => m.ModelData.Skeleton)
+                    .ToList();
             }
         }
 
@@ -160,7 +183,8 @@ namespace PlayerViewer.Player
         /// <summary>Frame count of a skeletal animation by name (0 if unknown), for the chain timeline.</summary>
         public int SkeletalFrameCount(string name)
         {
-            var anim = name != null ? Bfres.SkeletalAnimations.FirstOrDefault(x => x.Name == name) : null;
+            var anim =
+                name != null ? Bfres.SkeletalAnimations.FirstOrDefault(x => x.Name == name) : null;
             return anim != null ? Math.Max((int)Math.Round((float)anim.FrameCount), 1) : 0;
         }
 
@@ -187,8 +211,12 @@ namespace PlayerViewer.Player
                 ScopedAnimPlayer.ApplyMaterialAnim(CurrentTexPattern, AnimFrame, models);
             if (CurrentBoneVis != null)
                 foreach (var model in models)
-                    ScopedAnimPlayer.ApplyBoneVisAnim(CurrentBoneVis, AnimFrame,
-                        model.ModelData.Skeleton, models);
+                    ScopedAnimPlayer.ApplyBoneVisAnim(
+                        CurrentBoneVis,
+                        AnimFrame,
+                        model.ModelData.Skeleton,
+                        models
+                    );
         }
 
         public IEnumerable<BfresRender> AllRenders()

@@ -9,11 +9,14 @@ namespace ShaderLibrary
 {
     public class GlslUtility
     {
-        private static readonly Regex IncludeRegex = new Regex(@"#include\s+""(.+?)""", RegexOptions.Compiled);
+        private static readonly Regex IncludeRegex = new Regex(
+            @"#include\s+""(.+?)""",
+            RegexOptions.Compiled
+        );
 
         /// <summary>
         /// Gets other shader sources when paths are marked as #include.
-        /// </summary> 
+        /// </summary>
         /// <param name="shaderSource"></param>
         /// <param name="directory"></param>
         /// <returns></returns>
@@ -22,7 +25,9 @@ namespace ShaderLibrary
         {
             StringBuilder processedShader = new StringBuilder();
 
-            foreach (string line in shaderSource.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None))
+            foreach (
+                string line in shaderSource.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None)
+            )
             {
                 Match match = IncludeRegex.Match(line);
                 if (match.Success)
@@ -94,8 +99,10 @@ namespace ShaderLibrary
 
                     if (isBool) // Set as true or false if necessary
                     {
-                        if (macroNew == "1") macroNew = "true";
-                        if (macroNew == "0") macroNew = "false";
+                        if (macroNew == "1")
+                            macroNew = "true";
+                        if (macroNew == "0")
+                            macroNew = "false";
                     }
 
                     Console.WriteLine($"{macroValue} -> {macroNew}");

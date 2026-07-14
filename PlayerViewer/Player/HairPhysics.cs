@@ -12,7 +12,7 @@ namespace PlayerViewer.Player
     /// animation pose, constrained by the authored link/range sets, collided against
     /// the authored capsules, and finally written back to the hair bones through the
     /// triangle-frame bone deform.
-    /// 
+    ///
     /// Not necessarily perfectly accurate to Havok, since its not based on a proper decomp of Havok clothes.
     /// </summary>
     public class HairPhysics
@@ -20,14 +20,14 @@ namespace PlayerViewer.Player
         public bool Enabled = true;
 
         readonly HairClothPiece _piece;
-        readonly STBone[] _bones;          //cloth skeleton index -> scene bone
-        readonly STBone[] _driven;         //bones written by the deform (subset)
+        readonly STBone[] _bones; //cloth skeleton index -> scene bone
+        readonly STBone[] _driven; //bones written by the deform (subset)
 
         readonly Vector3[] _pos;
         readonly Vector3[] _prev;
-        readonly Vector3[] _skinned;       //animation-pose skinned vertices
-        readonly Matrix4[] _boneWorld;     //current per-frame transform set
-        readonly int[] _refVertex;         //particle -> reference buffer vertex (-1: none)
+        readonly Vector3[] _skinned; //animation-pose skinned vertices
+        readonly Matrix4[] _boneWorld; //current per-frame transform set
+        readonly int[] _refVertex; //particle -> reference buffer vertex (-1: none)
         readonly float[][] _capsuleMinDist; //per collidable x particle: rest-aware pushout distance
         bool _primed;
         float _accumulator;
@@ -54,7 +54,11 @@ namespace PlayerViewer.Player
             {
                 _refVertex[p] = p < _skinned.Length ? p : -1;
                 foreach (var range in piece.LocalRanges)
-                    if (range.Particle == p) { _refVertex[p] = range.ReferenceVertex; break; }
+                    if (range.Particle == p)
+                    {
+                        _refVertex[p] = range.ReferenceVertex;
+                        break;
+                    }
             }
             foreach (var (vertex, particle) in piece.VertexParticlePairs)
                 if (particle >= 0 && particle < n)
@@ -85,8 +89,10 @@ namespace PlayerViewer.Player
         static float DistanceToSegment(Vector3 p, Vector3 a, Vector3 b)
         {
             Vector3 ab = b - a;
-            float t = ab.LengthSquared > 1e-9f
-                ? MathHelper.Clamp(Vector3.Dot(p - a, ab) / ab.LengthSquared, 0, 1) : 0;
+            float t =
+                ab.LengthSquared > 1e-9f
+                    ? MathHelper.Clamp(Vector3.Dot(p - a, ab) / ab.LengthSquared, 0, 1)
+                    : 0;
             return (p - (a + ab * t)).Length;
         }
 
@@ -95,7 +101,11 @@ namespace PlayerViewer.Player
         /// the hair part skeleton first, then the human skeleton (Spine_3 etc. live
         /// there). Returns null when required bones are missing.
         /// </summary>
-        public static HairPhysics Create(HairClothPiece piece, STSkeleton hairSkeleton, STSkeleton humanSkeleton)
+        public static HairPhysics Create(
+            HairClothPiece piece,
+            STSkeleton hairSkeleton,
+            STSkeleton humanSkeleton
+        )
         {
             if (piece.SkinVertices == null || piece.BoneDeforms.Count == 0)
                 return null;
@@ -103,7 +113,8 @@ namespace PlayerViewer.Player
             var bones = new STBone[piece.BoneNames.Length];
             for (int i = 0; i < bones.Length; i++)
             {
-                bones[i] = hairSkeleton.SearchBone(piece.BoneNames[i])
+                bones[i] =
+                    hairSkeleton.SearchBone(piece.BoneNames[i])
                     ?? humanSkeleton?.SearchBone(piece.BoneNames[i]);
                 if (bones[i] == null)
                     return null;
@@ -121,22 +132,28 @@ namespace PlayerViewer.Player
             for (int p = 0; p < _pos.Length; p++)
             {
                 Vector3 target = SkinnedForParticle(p);
-                Console.WriteLine($"  p{p}{(IsFixed(p) ? " FIX" : "    ")} pos=({_pos[p].X:F3},{_pos[p].Y:F3},{_pos[p].Z:F3}) " +
-                    $"skin=({target.X:F3},{target.Y:F3},{target.Z:F3}) drift={(_pos[p] - target).Length:F3}");
+                Console.WriteLine(
+                    $"  p{p}{(IsFixed(p) ? " FIX" : "    ")} pos=({_pos[p].X:F3},{_pos[p].Y:F3},{_pos[p].Z:F3}) "
+                        + $"skin=({target.X:F3},{target.Y:F3},{target.Z:F3}) drift={(_pos[p] - target).Length:F3}"
+                );
             }
             foreach (var range in _piece.LocalRanges)
             {
                 Vector3 c = _skinned[range.ReferenceVertex];
                 float d = (_pos[range.Particle] - c).Length;
-                Console.WriteLine($"  range p{range.Particle} ref=v{range.ReferenceVertex} r={range.Radius:F3} dist={d:F3}{(d > range.Radius + 0.001f ? " VIOLATED" : "")}");
+                Console.WriteLine(
+                    $"  range p{range.Particle} ref=v{range.ReferenceVertex} r={range.Radius:F3} dist={d:F3}{(d > range.Radius + 0.001f ? " VIOLATED" : "")}"
+                );
             }
             foreach (var col in _piece.Collidables)
             {
                 var world = col.BoneOffset * _boneWorld[col.BoneIndex];
                 Vector3 a = Vector3.TransformPosition(col.Start, world);
                 Vector3 b = Vector3.TransformPosition(col.End, world);
-                Console.WriteLine($"  capsule '{col.Name}' bone={_piece.BoneNames[col.BoneIndex]} r={col.Radius:F3} " +
-                    $"a=({a.X:F3},{a.Y:F3},{a.Z:F3}) b=({b.X:F3},{b.Y:F3},{b.Z:F3})");
+                Console.WriteLine(
+                    $"  capsule '{col.Name}' bone={_piece.BoneNames[col.BoneIndex]} r={col.Radius:F3} "
+                        + $"a=({a.X:F3},{a.Y:F3},{a.Z:F3}) b=({b.X:F3},{b.Y:F3},{b.Z:F3})"
+                );
             }
         }
 
@@ -165,7 +182,10 @@ namespace PlayerViewer.Player
                 //buffer mapping in every asset.
                 var restToWorld = Matrix4.Invert(_piece.BoneRefPose[0]) * _boneWorld[0];
                 for (int p = 0; p < _pos.Length; p++)
-                    _pos[p] = _prev[p] = Vector3.TransformPosition(_piece.RestPositions[p], restToWorld);
+                    _pos[p] = _prev[p] = Vector3.TransformPosition(
+                        _piece.RestPositions[p],
+                        restToWorld
+                    );
                 _primed = true;
             }
 
@@ -198,12 +218,17 @@ namespace PlayerViewer.Player
                     if (sv.Weights[b] <= 0)
                         continue;
                     int subset = sv.Bones[b];
-                    int bone = subset < _piece.TransformSubset.Length ? _piece.TransformSubset[subset] : subset;
+                    int bone =
+                        subset < _piece.TransformSubset.Length
+                            ? _piece.TransformSubset[subset]
+                            : subset;
                     //Bone-space deformer: position is authored per blend slot in bone
                     //space. Object-space: shared position through boneFromSkinMesh.
                     Vector3 p = sv.LocalPosPerBone != null ? sv.LocalPosPerBone[b] : sv.LocalPos;
-                    var mat = sv.LocalPosPerBone != null ? _boneWorld[bone]
-                        : _piece.BoneFromSkinMesh[subset] * _boneWorld[bone];
+                    var mat =
+                        sv.LocalPosPerBone != null
+                            ? _boneWorld[bone]
+                            : _piece.BoneFromSkinMesh[subset] * _boneWorld[bone];
                     result += sv.Weights[b] * Vector3.TransformPosition(p, mat);
                 }
                 _skinned[vi] = result;
@@ -244,8 +269,11 @@ namespace PlayerViewer.Player
                 //links and 0.4 for soft strand tips).
                 for (int iter = 0; iter < Math.Clamp(piece.SolveIterations, 1, 8); iter++)
                     foreach (int setIndex in piece.ConstraintExecution)
-                        SolveConstraintSet(setIndex < piece.ConstraintSetKinds.Count
-                            ? piece.ConstraintSetKinds[setIndex] : HairConstraintKind.Unknown);
+                        SolveConstraintSet(
+                            setIndex < piece.ConstraintSetKinds.Count
+                                ? piece.ConstraintSetKinds[setIndex]
+                                : HairConstraintKind.Unknown
+                        );
 
                 SolveCapsules();
             }
@@ -259,13 +287,25 @@ namespace PlayerViewer.Player
                 case HairConstraintKind.Standard:
                     //Spring toward rest length.
                     foreach (var link in piece.StandardLinks)
-                        SolveDistance(link.A, link.B, link.RestLength, Math.Min(link.Stiffness, 1), onlyIfLonger: false);
+                        SolveDistance(
+                            link.A,
+                            link.B,
+                            link.RestLength,
+                            Math.Min(link.Stiffness, 1),
+                            onlyIfLonger: false
+                        );
                     break;
 
                 case HairConstraintKind.Stretch:
                     //Hard upper bound on length.
                     foreach (var link in piece.StretchLinks)
-                        SolveDistance(link.A, link.B, link.RestLength, Math.Min(link.Stiffness, 1), onlyIfLonger: true);
+                        SolveDistance(
+                            link.A,
+                            link.B,
+                            link.RestLength,
+                            Math.Min(link.Stiffness, 1),
+                            onlyIfLonger: true
+                        );
                     break;
 
                 case HairConstraintKind.Bend:
@@ -274,9 +314,21 @@ namespace PlayerViewer.Player
                     {
                         float d = (_pos[link.B] - _pos[link.A]).Length;
                         if (d < link.MinLength)
-                            SolveDistance(link.A, link.B, link.MinLength, Math.Clamp(link.BendStiffness, 0, 1), onlyIfLonger: false);
+                            SolveDistance(
+                                link.A,
+                                link.B,
+                                link.MinLength,
+                                Math.Clamp(link.BendStiffness, 0, 1),
+                                onlyIfLonger: false
+                            );
                         else if (d > link.MaxLength)
-                            SolveDistance(link.A, link.B, link.MaxLength, Math.Clamp(link.StretchStiffness, 0, 1), onlyIfLonger: true);
+                            SolveDistance(
+                                link.A,
+                                link.B,
+                                link.MaxLength,
+                                Math.Clamp(link.StretchStiffness, 0, 1),
+                                onlyIfLonger: true
+                            );
                     }
                     break;
 
@@ -295,8 +347,11 @@ namespace PlayerViewer.Player
                         if (dist > range.Radius && dist > 1e-7f)
                         {
                             Vector3 clamped = center + delta * (range.Radius / dist);
-                            _pos[range.Particle] = Vector3.Lerp(_pos[range.Particle], clamped,
-                                Math.Clamp(range.Stiffness, 0, 1));
+                            _pos[range.Particle] = Vector3.Lerp(
+                                _pos[range.Particle],
+                                clamped,
+                                Math.Clamp(range.Stiffness, 0, 1)
+                            );
                         }
                     }
                     break;
@@ -345,8 +400,14 @@ namespace PlayerViewer.Player
 
                     //Closest point on segment ab.
                     Vector3 ab = b - a;
-                    float t = ab.LengthSquared > 1e-9f
-                        ? MathHelper.Clamp(Vector3.Dot(_pos[p] - a, ab) / ab.LengthSquared, 0, 1) : 0;
+                    float t =
+                        ab.LengthSquared > 1e-9f
+                            ? MathHelper.Clamp(
+                                Vector3.Dot(_pos[p] - a, ab) / ab.LengthSquared,
+                                0,
+                                1
+                            )
+                            : 0;
                     Vector3 closest = a + ab * t;
 
                     Vector3 delta = _pos[p] - closest;
@@ -371,8 +432,11 @@ namespace PlayerViewer.Player
                     continue;
 
                 //Arrange-collapsed bone: keep the welded (collapsed) transform.
-                if (arrange != null && arrange.TryGetValue(_driven[i].Name, out var arr) &&
-                    arr.Scale.X * arr.Scale.Y * arr.Scale.Z < 0.001f)
+                if (
+                    arrange != null
+                    && arrange.TryGetValue(_driven[i].Name, out var arr)
+                    && arr.Scale.X * arr.Scale.Y * arr.Scale.Z < 0.001f
+                )
                     continue;
 
                 Vector3 p0 = _pos[_piece.TriangleIndices[bd.TriangleStart]];
@@ -381,13 +445,27 @@ namespace PlayerViewer.Player
 
                 Vector3 c = (p0 + p1 + p2) / 3.0f;
                 Vector3 n = Vector3.Cross(p1 - p0, p2 - p0) / 3.0f;
-                Vector3 r0 = p0 - c, r1 = p1 - c;
+                Vector3 r0 = p0 - c,
+                    r1 = p1 - c;
 
                 var frame = new Matrix4(
-                    r0.X, r0.Y, r0.Z, 0,
-                    r1.X, r1.Y, r1.Z, 0,
-                    n.X, n.Y, n.Z, 0,
-                    c.X, c.Y, c.Z, 1);
+                    r0.X,
+                    r0.Y,
+                    r0.Z,
+                    0,
+                    r1.X,
+                    r1.Y,
+                    r1.Z,
+                    0,
+                    n.X,
+                    n.Y,
+                    n.Z,
+                    0,
+                    c.X,
+                    c.Y,
+                    c.Z,
+                    1
+                );
 
                 _driven[i].Transform = bd.LocalBoneTransform * frame;
             }

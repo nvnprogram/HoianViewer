@@ -11,7 +11,10 @@ namespace ShaderLibrary
     {
         public static string LoadShader(string filePath)
         {
-            return GlslUtility.ProcessIncludes(File.ReadAllText(filePath), Path.GetDirectoryName(filePath));
+            return GlslUtility.ProcessIncludes(
+                File.ReadAllText(filePath),
+                Path.GetDirectoryName(filePath)
+            );
         }
     }
 }

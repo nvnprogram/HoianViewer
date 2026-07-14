@@ -8,8 +8,12 @@ namespace ShaderLibrary.WiiU
 {
     public class BfshaGX2ShaderImporter
     {
-        public static void Import(ShaderModel shadermodel, BfshaShaderProgram program,
-            GSHFile.GX2Shader shader, IntermediateShader.ShaderModelInfo intermediate)
+        public static void Import(
+            ShaderModel shadermodel,
+            BfshaShaderProgram program,
+            GSHFile.GX2Shader shader,
+            IntermediateShader.ShaderModelInfo intermediate
+        )
         {
             program.GX2VertexData = new BfshaLibrary.WiiU.BfshaGX2VertexHeader();
             program.GX2PixelData = new BfshaLibrary.WiiU.BfshaGX2PixelHeader();
@@ -29,17 +33,21 @@ namespace ShaderLibrary.WiiU
             program.GX2PixelData.Loops = shader.PixelHeader.Loops;
 
             SetLocations(shadermodel, program, shader.PixelHeader, intermediate);
-/*
-            program.GX2GeometryData.Data = shader.GeometryShData;
-            program.GX2GeometryData.Regs = shader.GeometryHeader.GetRegs();
-            program.GX2GeometryData.Mode = shader.GeometryHeader.Mode;
-            program.GX2GeometryData.Loops = shader.GeometryHeader.Loops;
-
-            SetLocations(shadermodel, program, shader.GeometryHeader, intermediate);*/
+            /*
+                        program.GX2GeometryData.Data = shader.GeometryShData;
+                        program.GX2GeometryData.Regs = shader.GeometryHeader.GetRegs();
+                        program.GX2GeometryData.Mode = shader.GeometryHeader.Mode;
+                        program.GX2GeometryData.Loops = shader.GeometryHeader.Loops;
+            
+                        SetLocations(shadermodel, program, shader.GeometryHeader, intermediate);*/
         }
 
-        static void SetLocations(ShaderModel shadermodel, BfshaShaderProgram program,
-            GSHFile.GX2VertexHeader shader, IntermediateShader.ShaderModelInfo intermediate)
+        static void SetLocations(
+            ShaderModel shadermodel,
+            BfshaShaderProgram program,
+            GSHFile.GX2VertexHeader shader,
+            IntermediateShader.ShaderModelInfo intermediate
+        )
         {
             foreach (var uniformBlock in shader.UniformBlocks)
             {
@@ -47,7 +55,9 @@ namespace ShaderLibrary.WiiU
                 if (!shadermodel.UniformBlocks.ContainsKey(target))
                     return;
 
-                var bind_info = program.UniformBlockIndices[shadermodel.UniformBlocks[target].Index];
+                var bind_info = program.UniformBlockIndices[
+                    shadermodel.UniformBlocks[target].Index
+                ];
                 bind_info.VertexLocation = (int)uniformBlock.Offset;
             }
             foreach (var samplerVar in shader.Samplers)
@@ -70,8 +80,12 @@ namespace ShaderLibrary.WiiU
             }
         }
 
-        static void SetLocations(ShaderModel shadermodel, BfshaShaderProgram program,
-            GSHFile.GX2PixelHeader shader, IntermediateShader.ShaderModelInfo intermediate)
+        static void SetLocations(
+            ShaderModel shadermodel,
+            BfshaShaderProgram program,
+            GSHFile.GX2PixelHeader shader,
+            IntermediateShader.ShaderModelInfo intermediate
+        )
         {
             foreach (var uniformBlock in shader.UniformBlocks)
             {
@@ -79,7 +93,9 @@ namespace ShaderLibrary.WiiU
                 if (!shadermodel.UniformBlocks.ContainsKey(target))
                     return;
 
-                var bind_info = program.UniformBlockIndices[shadermodel.UniformBlocks[target].Index];
+                var bind_info = program.UniformBlockIndices[
+                    shadermodel.UniformBlocks[target].Index
+                ];
                 bind_info.FragmentLocation = (int)uniformBlock.Offset;
             }
             foreach (var samplerVar in shader.Samplers)
@@ -92,8 +108,13 @@ namespace ShaderLibrary.WiiU
                 bind_info.FragmentLocation = (int)samplerVar.Location;
             }
         }
-        static void SetLocations(ShaderModel shadermodel, BfshaShaderProgram program,
-            GSHFile.GX2GeometryShaderHeader shader, IntermediateShader.ShaderModelInfo intermediate)
+
+        static void SetLocations(
+            ShaderModel shadermodel,
+            BfshaShaderProgram program,
+            GSHFile.GX2GeometryShaderHeader shader,
+            IntermediateShader.ShaderModelInfo intermediate
+        )
         {
             foreach (var uniformBlock in shader.UniformBlocks)
             {
@@ -101,7 +122,9 @@ namespace ShaderLibrary.WiiU
                 if (!shadermodel.UniformBlocks.ContainsKey(target))
                     return;
 
-                var bind_info = program.UniformBlockIndices[shadermodel.UniformBlocks[target].Index];
+                var bind_info = program.UniformBlockIndices[
+                    shadermodel.UniformBlocks[target].Index
+                ];
                 bind_info.GeoemetryLocation = (int)uniformBlock.Offset;
             }
             foreach (var samplerVar in shader.Samplers)

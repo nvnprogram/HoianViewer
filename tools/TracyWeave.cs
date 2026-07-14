@@ -1,7 +1,7 @@
 using System;
 using System.Threading;
-using Tracy;
 using bottlenoselabs.C2CS.Runtime;
+using Tracy;
 
 // Runtime target of the woven instrumentation. Compiled directly into PlayerViewer under
 // -p:Tracy=true (see PlayerViewer.csproj) and called by the IL the weaver injects. Marked
@@ -21,10 +21,15 @@ namespace TracyWeaver.Runtime
         public readonly struct Ctx
         {
             internal readonly PInvoke.TracyCZoneCtx C;
-            internal Ctx(PInvoke.TracyCZoneCtx c) { C = c; }
+
+            internal Ctx(PInvoke.TracyCZoneCtx c)
+            {
+                C = c;
+            }
         }
 
-        [ThreadStatic] static bool _named;
+        [ThreadStatic]
+        static bool _named;
 
         static void NameThread()
         {
@@ -37,10 +42,21 @@ namespace TracyWeaver.Runtime
         /// <summary>Opens a zone named <paramref name="zone"/> and returns its handle.</summary>
         public static Ctx Begin(string zone)
         {
-            if (!_named) { _named = true; NameThread(); }
+            if (!_named)
+            {
+                _named = true;
+                NameThread();
+            }
             //AllocSrcloc copies the strings, so the temporary can be freed right after.
             var s = CString.FromString(zone);
-            ulong srcloc = PInvoke.TracyAllocSrcloc(0, s, (ulong)zone.Length, s, (ulong)zone.Length, 0);
+            ulong srcloc = PInvoke.TracyAllocSrcloc(
+                0,
+                s,
+                (ulong)zone.Length,
+                s,
+                (ulong)zone.Length,
+                0
+            );
             var ctx = PInvoke.TracyEmitZoneBeginAlloc(srcloc, 1);
             s.Dispose();
             return new Ctx(ctx);
@@ -54,7 +70,11 @@ namespace TracyWeaver.Runtime
     }
 
     /// <summary>Apply to a method or type to exclude it (and its members) from weaving.</summary>
-    [AttributeUsage(AttributeTargets.Method | AttributeTargets.Constructor
-        | AttributeTargets.Class | AttributeTargets.Struct)]
+    [AttributeUsage(
+        AttributeTargets.Method
+            | AttributeTargets.Constructor
+            | AttributeTargets.Class
+            | AttributeTargets.Struct
+    )]
     public sealed class NoProfileAttribute : Attribute { }
 }

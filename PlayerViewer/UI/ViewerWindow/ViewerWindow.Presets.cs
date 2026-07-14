@@ -9,15 +9,19 @@ namespace PlayerViewer.UI
     // file: a serialized PlayerConfig, reusing the Save/RestorePlayerConfig apply path.
     public partial class ViewerWindow
     {
-        string _presetStatus;   //transient message shown under the preset buttons
+        string _presetStatus; //transient message shown under the preset buttons
 
         void SavePreset()
         {
             if (_scene == null)
                 return;
             string def = ExportUtil.Timestamped("player-preset", ".json");
-            string path = NativeFolderPicker.SaveFile("Save Preset", def,
-                "Player preset (*.json)", "*.json");
+            string path = NativeFolderPicker.SaveFile(
+                "Save Preset",
+                def,
+                "Player preset (*.json)",
+                "*.json"
+            );
             if (string.IsNullOrEmpty(path))
                 return;
             if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
@@ -27,7 +31,10 @@ namespace PlayerViewer.UI
             SavePlayerConfig();
             try
             {
-                File.WriteAllText(path, JsonConvert.SerializeObject(_config.Player, Formatting.Indented));
+                File.WriteAllText(
+                    path,
+                    JsonConvert.SerializeObject(_config.Player, Formatting.Indented)
+                );
                 _presetStatus = $"Saved {Path.GetFileName(path)}";
                 Console.WriteLine($"[UI] Saved preset {path}");
             }
@@ -42,7 +49,11 @@ namespace PlayerViewer.UI
         {
             if (_scene == null)
                 return;
-            string path = NativeFolderPicker.OpenFile("Load Preset", "Player preset (*.json)", "*.json");
+            string path = NativeFolderPicker.OpenFile(
+                "Load Preset",
+                "Player preset (*.json)",
+                "*.json"
+            );
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
                 return;
 

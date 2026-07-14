@@ -1,9 +1,9 @@
-﻿using ShaderLibrary.IO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ShaderLibrary.IO;
 
 namespace ShaderLibrary.Common
 {
@@ -72,19 +72,44 @@ namespace ShaderLibrary.Common
             Sections[section_idx].Size = section_size;
         }
 
-        public void SaveEntry(BinaryWriter writer, uint offsetCount, uint structCount, uint paddingCount, uint section_idx, string hint)
+        public void SaveEntry(
+            BinaryWriter writer,
+            uint offsetCount,
+            uint structCount,
+            uint paddingCount,
+            uint section_idx,
+            string hint
+        )
         {
             if (section_idx > Sections.Length)
                 section_idx = 0;
 
-            Sections[section_idx].Entries.Add(new RelocationEntry((uint)writer.BaseStream.Position, 
-               offsetCount, structCount, paddingCount, hint));
+            Sections[section_idx]
+                .Entries.Add(
+                    new RelocationEntry(
+                        (uint)writer.BaseStream.Position,
+                        offsetCount,
+                        structCount,
+                        paddingCount,
+                        hint
+                    )
+                );
         }
 
-        public void SaveEntry(BinaryWriter writer, long pos, uint offsetCount, uint structCount, uint paddingCount, uint section_idx, string hint)
+        public void SaveEntry(
+            BinaryWriter writer,
+            long pos,
+            uint offsetCount,
+            uint structCount,
+            uint paddingCount,
+            uint section_idx,
+            string hint
+        )
         {
-            Sections[section_idx].Entries.Add(new RelocationEntry((uint)pos,
-                offsetCount, structCount, paddingCount, hint));
+            Sections[section_idx]
+                .Entries.Add(
+                    new RelocationEntry((uint)pos, offsetCount, structCount, paddingCount, hint)
+                );
         }
 
         private class RelocationSection
@@ -112,7 +137,13 @@ namespace ShaderLibrary.Common
             internal string Hint;
             internal int SectionIdx;
 
-            internal RelocationEntry(uint position, uint offsetCount, uint structCount, uint padingCount, string hint)
+            internal RelocationEntry(
+                uint position,
+                uint offsetCount,
+                uint structCount,
+                uint padingCount,
+                string hint
+            )
             {
                 Position = position;
                 StructCount = structCount;

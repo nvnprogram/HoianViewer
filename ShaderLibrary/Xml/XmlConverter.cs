@@ -22,43 +22,51 @@ namespace ShaderLibrary.Xml
 
                 foreach (var op in shaderModel.StaticOptions.Values)
                 {
-                    xml_shader_model.static_options.Add(new shader_option()
-                    {
-                        Name = op.Name,
-                        DefaultChoice = op.DefaultChoice,
-                        Choices = op.Choices.Keys.ToList(),
-                    });
+                    xml_shader_model.static_options.Add(
+                        new shader_option()
+                        {
+                            Name = op.Name,
+                            DefaultChoice = op.DefaultChoice,
+                            Choices = op.Choices.Keys.ToList(),
+                        }
+                    );
                 }
                 foreach (var op in shaderModel.DynamicOptions.Values)
                 {
-                    xml_shader_model.dynamic_options.Add(new shader_option()
-                    {
-                        Name = op.Name,
-                        DefaultChoice = op.DefaultChoice,
-                        Choices = op.Choices.Keys.ToList(),
-                    });
+                    xml_shader_model.dynamic_options.Add(
+                        new shader_option()
+                        {
+                            Name = op.Name,
+                            DefaultChoice = op.DefaultChoice,
+                            Choices = op.Choices.Keys.ToList(),
+                        }
+                    );
                 }
                 foreach (var samp in shaderModel.Samplers)
                 {
-                    xml_shader_model.samplers.Add(new sampler()
-                    {
-                        Name = samp.Key,
-                        alt = samp.Value.Annotation,
-                        Index = samp.Value.Index,
-                        Gx2Count = samp.Value.GX2Count,
-                        Gx2Type = samp.Value.GX2Type,
-                    });
+                    xml_shader_model.samplers.Add(
+                        new sampler()
+                        {
+                            Name = samp.Key,
+                            alt = samp.Value.Annotation,
+                            Index = samp.Value.Index,
+                            Gx2Count = samp.Value.GX2Count,
+                            Gx2Type = samp.Value.GX2Type,
+                        }
+                    );
                 }
                 foreach (var attr in shaderModel.Attributes)
                 {
-                    xml_shader_model.attributes.Add(new attribute()
-                    {
-                        Name = attr.Key,
-                        Location = attr.Value.Location,
-                        Index = attr.Value.Index,
-                        Gx2Count = attr.Value.GX2Count,
-                        Gx2Type = attr.Value.GX2Type,
-                    });
+                    xml_shader_model.attributes.Add(
+                        new attribute()
+                        {
+                            Name = attr.Key,
+                            Location = attr.Value.Location,
+                            Index = attr.Value.Index,
+                            Gx2Count = attr.Value.GX2Count,
+                            Gx2Type = attr.Value.GX2Type,
+                        }
+                    );
                 }
                 foreach (var block in shaderModel.UniformBlocks)
                 {
@@ -66,25 +74,29 @@ namespace ShaderLibrary.Xml
 
                     foreach (var un in block.Value.Uniforms)
                     {
-                        uniforms.Add(new uniform()
-                        {
-                            Index = un.Value.Index,
-                            BlockIndex = un.Value.BlockIndex,
-                            Name = un.Key,
-                            Offset = un.Value.DataOffset,
-                            Gx2Count = un.Value.GX2Count,
-                            Gx2Type = un.Value.GX2Type,
-                        });
+                        uniforms.Add(
+                            new uniform()
+                            {
+                                Index = un.Value.Index,
+                                BlockIndex = un.Value.BlockIndex,
+                                Name = un.Key,
+                                Offset = un.Value.DataOffset,
+                                Gx2Count = un.Value.GX2Count,
+                                Gx2Type = un.Value.GX2Type,
+                            }
+                        );
                     }
 
-                    xml_shader_model.uniform_blocks.Add(new uniform_block()
-                    {
-                        Name = block.Key,
-                        Type = (int)block.Value.Type,
-                        Size = (int)block.Value.Size,
-                        Index = block.Value.Index,
-                        uniforms = uniforms,
-                    });
+                    xml_shader_model.uniform_blocks.Add(
+                        new uniform_block()
+                        {
+                            Name = block.Key,
+                            Type = (int)block.Value.Type,
+                            Size = (int)block.Value.Size,
+                            Index = block.Value.Index,
+                            uniforms = uniforms,
+                        }
+                    );
                 }
                 foreach (var p in shaderModel.Programs)
                 {
@@ -92,22 +104,26 @@ namespace ShaderLibrary.Xml
 
                     for (int i = 0; i < shaderModel.Samplers.Count; i++)
                     {
-                        xml_program.sampler_locations.Add(new bind_info()
-                        {
-                            Name = shaderModel.Samplers.GetKey(i),
-                            VertexLocation = p.SamplerIndices[i].VertexLocation,
-                            FragmentLocation = p.SamplerIndices[i].FragmentLocation,
-                        });
+                        xml_program.sampler_locations.Add(
+                            new bind_info()
+                            {
+                                Name = shaderModel.Samplers.GetKey(i),
+                                VertexLocation = p.SamplerIndices[i].VertexLocation,
+                                FragmentLocation = p.SamplerIndices[i].FragmentLocation,
+                            }
+                        );
                     }
 
                     for (int i = 0; i < shaderModel.UniformBlocks.Count; i++)
                     {
-                        xml_program.block_locations.Add(new bind_info()
-                        {
-                            Name = shaderModel.UniformBlocks.GetKey(i),
-                            VertexLocation = p.UniformBlockIndices[i].VertexLocation,
-                            FragmentLocation = p.UniformBlockIndices[i].FragmentLocation,
-                        });
+                        xml_program.block_locations.Add(
+                            new bind_info()
+                            {
+                                Name = shaderModel.UniformBlocks.GetKey(i),
+                                VertexLocation = p.UniformBlockIndices[i].VertexLocation,
+                                FragmentLocation = p.UniformBlockIndices[i].FragmentLocation,
+                            }
+                        );
                     }
 
                     for (int i = 0; i < shaderModel.Attributes.Count; i++)
@@ -159,8 +175,10 @@ namespace ShaderLibrary.Xml
         {
             [XmlAttribute]
             public string Name;
+
             [XmlAttribute]
             public int VertexLocation;
+
             [XmlAttribute]
             public int FragmentLocation;
         }
@@ -181,10 +199,13 @@ namespace ShaderLibrary.Xml
         {
             [XmlAttribute]
             public string Name;
+
             [XmlAttribute]
             public int Size;
+
             [XmlAttribute]
             public int Type;
+
             [XmlAttribute]
             public int Index;
 
@@ -195,15 +216,19 @@ namespace ShaderLibrary.Xml
         {
             [XmlAttribute]
             public string Name;
+
             [XmlAttribute]
             public int Index;
+
             [XmlAttribute]
             public int BlockIndex;
+
             [XmlAttribute]
             public int Offset;
 
             [XmlAttribute]
             public int Gx2Type;
+
             [XmlAttribute]
             public int Gx2Count;
         }
@@ -212,13 +237,16 @@ namespace ShaderLibrary.Xml
         {
             [XmlAttribute]
             public string Name;
+
             [XmlAttribute]
             public int Index;
+
             [XmlAttribute]
             public int Location;
 
             [XmlAttribute]
             public int Gx2Type;
+
             [XmlAttribute]
             public int Gx2Count;
         }
@@ -227,13 +255,16 @@ namespace ShaderLibrary.Xml
         {
             [XmlAttribute]
             public string Name;
+
             [XmlAttribute]
             public int Index;
+
             [XmlAttribute]
             public string alt;
 
             [XmlAttribute]
             public int Gx2Type;
+
             [XmlAttribute]
             public int Gx2Count;
         }

@@ -53,51 +53,60 @@ namespace PlayerViewer.UI
             Charlie = new System.Numerics.Vector3(0.980f, 0.769f, 0.196f),
             Neutral = new System.Numerics.Vector3(0.56f, 0.55f, 0.43f),
         };
-        float _uiFrame;   //frame slider mirror
-        int _captureRes = 2;   //index into CaptureSizes
+        float _uiFrame; //frame slider mirror
+        int _captureRes = 2; //index into CaptureSizes
 
         //--- Standalone model viewing (dropped/browsed files, outside the player)
         StandaloneScene _standalone;
         string _standaloneError;
 
-        public string AutoOpenFile;   //--open <file>: opens a standalone model right after load
+        public string AutoOpenFile; //--open <file>: opens a standalone model right after load
 
         //--- Deterministic full-animation export: drives the timeline frame-by-frame
         //(ignoring wall clock) so every animation frame lands exactly once. Reuses the
         //current camera and the chosen background (greenscreen for MP4, alpha for WebP).
         bool _animExporting;
-        float _animExportIndex;    //current animation-frame position being captured
-        int _animExportTotal;      //frame count of the animation
-        float _animExportAdvance;  //animation frames advanced per output frame ((60/fps) * speed)
-        int _exportFps = 60;       //two-tick control: 30 or 60
-        bool _animExportTrim;      //snapshot of TrimDeadspace taken at export start
-        int _animExportSupersample;//snapshot of ExportSupersample taken at export start
-        bool _animExportChain;     //exporting the whole sequence (Sequence mode) vs a single anim
+        float _animExportIndex; //current animation-frame position being captured
+        int _animExportTotal; //frame count of the animation
+        float _animExportAdvance; //animation frames advanced per output frame ((60/fps) * speed)
+        int _exportFps = 60; //two-tick control: 30 or 60
+        bool _animExportTrim; //snapshot of TrimDeadspace taken at export start
+        int _animExportSupersample; //snapshot of ExportSupersample taken at export start
+        bool _animExportChain; //exporting the whole sequence (Sequence mode) vs a single anim
         OutputFormat _animExportFormat;
-        byte[] _animExportBg;      //full-frame composite background (null = keep alpha)
+        byte[] _animExportBg; //full-frame composite background (null = keep alpha)
         bool _animExportPrevPaused;
         float _animExportPrevFrame;
-        BufferedAnimExporter _bufferedExporter;   //non-null during the trim (buffered) export
+        BufferedAnimExporter _bufferedExporter; //non-null during the trim (buffered) export
 
         //--- Unified capture UI
-        int _exportFormat;   //0 PNG, 1 MP4, 2 WebP, 3 WebM
+        int _exportFormat; //0 PNG, 1 MP4, 2 WebP, 3 WebM
         bool _showSettings;
 
         //--- Background: the data lives on _config.Player.Background (saved with the preset);
         //these only track when the live viewport preview buffer needs rebuilding.
         Core.BackgroundConfig Bg => _config.Player.Background;
-        bool _bgDirty = true;              //rebuild the live preview buffer on next frame
-        int _bgPreviewW = -1, _bgPreviewH = -1;
+        bool _bgDirty = true; //rebuild the live preview buffer on next frame
+        int _bgPreviewW = -1,
+            _bgPreviewH = -1;
+
         //Self-correcting layout: capture controls stay pinned, the animation list absorbs
         //slack. We size the list from last frame's measured control height.
         float _measuredCaptureHeight = 220;
         float _measuredStandaloneTailHeight = 160;
 
         public ViewerWindow(AppConfig config)
-            : base(config.WindowWidth, config.WindowHeight,
-                  new GraphicsMode(new ColorFormat(32), 24, 8, 4, new ColorFormat(32), 2, false),
-                  "Splatoon 3 Player Viewer",
-                  GameWindowFlags.Default, DisplayDevice.Default, 3, 2, GraphicsContextFlags.Default)
+            : base(
+                config.WindowWidth,
+                config.WindowHeight,
+                new GraphicsMode(new ColorFormat(32), 24, 8, 4, new ColorFormat(32), 2, false),
+                "Splatoon 3 Player Viewer",
+                GameWindowFlags.Default,
+                DisplayDevice.Default,
+                3,
+                2,
+                GraphicsContextFlags.Default
+            )
         {
             _config = config;
             _romfsInput = config.RomfsPath ?? "";
@@ -122,8 +131,10 @@ namespace PlayerViewer.UI
             //Anchor Toolbox's Shaders/Plugins/Hashes lookups to the exe directory. Its default
             //comes from Assembly.Location, which is empty under single-file publish and would null
             //those paths (crashing the plugin scan). AppContext.BaseDirectory is always correct.
-            Toolbox.Core.Runtime.ExecutableDir =
-                AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            Toolbox.Core.Runtime.ExecutableDir = AppContext.BaseDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar
+            );
 
             _imgui = new ImGuiController(Width, Height);
             Theme.Apply();
@@ -157,8 +168,12 @@ namespace PlayerViewer.UI
                 _scene = null;
                 CompactHeap();
 
-                _romfs = new Romfs(_config.RomfsPath, _config.LayeredFsPath, _config.UseLayeredFs,
-                    _config.SdodrRomfsPath);
+                _romfs = new Romfs(
+                    _config.RomfsPath,
+                    _config.LayeredFsPath,
+                    _config.UseLayeredFs,
+                    _config.SdodrRomfsPath
+                );
                 BfresEditor.HoianNXRender.GamePath = _config.RomfsPath;
                 //Decompress/parse the ~25MB UBER shader archive while the database loads.
                 BfresEditor.HoianNXRender.PrewarmShaderArchives();
@@ -170,7 +185,10 @@ namespace PlayerViewer.UI
                 if (state != null)
                 {
                     state.Restore(_scene, _db);
-                    _teamColorIndex = Math.Min(_teamColorIndex, Math.Max(_db.TeamColors.Count - 1, 0));
+                    _teamColorIndex = Math.Min(
+                        _teamColorIndex,
+                        Math.Max(_db.TeamColors.Count - 1, 0)
+                    );
                 }
                 else if (_config.Player?.Hair != null || _config.Player?.PlayerType != 0)
                 {
@@ -195,11 +213,13 @@ namespace PlayerViewer.UI
         class SceneState
         {
             int _playerType;
-            int _eye, _skin;
+            int _eye,
+                _skin;
             string _anim;
             float _frame;
             bool _paused;
-            readonly Dictionary<GearSlot, (string RowId, int Variation, string CustomPath)> _gear = new();
+            readonly Dictionary<GearSlot, (string RowId, int Variation, string CustomPath)> _gear =
+                new();
 
             public static SceneState Capture(PlayerScene scene)
             {
@@ -214,8 +234,10 @@ namespace PlayerViewer.UI
                 };
                 void Add(GearSlot slot, GearEntry e)
                 {
-                    if (e != null) s._gear[slot] = (e.RowId, e.Variation, e.CustomPath);
-                    else s._gear[slot] = (null, 0, null);
+                    if (e != null)
+                        s._gear[slot] = (e.RowId, e.Variation, e.CustomPath);
+                    else
+                        s._gear[slot] = (null, 0, null);
                 }
                 Add(GearSlot.Hair, scene.CurrentHair);
                 Add(GearSlot.Eyebrow, scene.CurrentEyebrow);
@@ -236,12 +258,21 @@ namespace PlayerViewer.UI
                     //Defaults set by SetPlayerType stand in when the row disappeared.
                     if (gear.RowId == null)
                     {
-                        if (slot is GearSlot.Head or GearSlot.Clothes or GearSlot.Shoes or GearSlot.Tank or GearSlot.MainWeapon)
+                        if (
+                            slot
+                            is GearSlot.Head
+                                or GearSlot.Clothes
+                                or GearSlot.Shoes
+                                or GearSlot.Tank
+                                or GearSlot.MainWeapon
+                        )
                             scene.SetGear(slot, null);
                         continue;
                     }
-                    var entry = db.GetList(slot).FirstOrDefault(x =>
-                        x.RowId == gear.RowId && x.Variation == gear.Variation);
+                    var entry = db.GetList(slot)
+                        .FirstOrDefault(x =>
+                            x.RowId == gear.RowId && x.Variation == gear.Variation
+                        );
                     if (entry != null)
                         scene.SetGear(slot, entry);
                 }
@@ -272,7 +303,12 @@ namespace PlayerViewer.UI
         {
             base.OnFileDrop(e);
             string file = e.FileName;
-            if (file == null || (!file.EndsWith(".bfres") && !file.EndsWith(".bfres.zs") && !file.EndsWith(".zs")))
+            if (
+                file == null
+                || (
+                    !file.EndsWith(".bfres") && !file.EndsWith(".bfres.zs") && !file.EndsWith(".zs")
+                )
+            )
                 return;
             OpenStandalone(file);
         }

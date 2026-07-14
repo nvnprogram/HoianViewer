@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
-using ImGuiNET;
 
 namespace PlayerViewer.UI
 {
@@ -15,14 +15,15 @@ namespace PlayerViewer.UI
     public partial class ViewerWindow
     {
         readonly List<string> _animChain = new();
-        int _animMode;            //0 = Single, 1 = Sequence
-        bool _chainActive;        //interactive preview is playing
+        int _animMode; //0 = Single, 1 = Sequence
+        bool _chainActive; //interactive preview is playing
         bool _chainLoop;
-        int _chainIndex = -1;     //step currently bound (shared by preview + export)
-        int _chainSelected = -1;  //timeline segment selected in the editor
-        float _chainCursor;       //global frame cursor for the interactive preview
+        int _chainIndex = -1; //step currently bound (shared by preview + export)
+        int _chainSelected = -1; //timeline segment selected in the editor
+        float _chainCursor; //global frame cursor for the interactive preview
 
-        float ChainTotalFrames() => _animChain.Sum(n => (float)Math.Max(PlaybackFrameCountOf(n), 1));
+        float ChainTotalFrames() =>
+            _animChain.Sum(n => (float)Math.Max(PlaybackFrameCountOf(n), 1));
 
         //Binds the step containing global frame g (rebinding only on a boundary, without a hair
         //reset) and positions its local frame. The caller runs the scene Update afterwards.
@@ -35,7 +36,8 @@ namespace PlayerViewer.UI
             for (; i < _animChain.Count - 1; i++)
             {
                 float fc = Math.Max(PlaybackFrameCountOf(_animChain[i]), 1);
-                if (g < acc + fc) break;
+                if (g < acc + fc)
+                    break;
                 acc += fc;
             }
             if (i != _chainIndex)
@@ -99,9 +101,17 @@ namespace PlayerViewer.UI
         void DrawModeTabs()
         {
             Widgets.SectionHeader("Animation source");
-            if (ImGui.RadioButton("Single", _animMode == 0)) { _animMode = 0; SaveCaptureSettings(); }
+            if (ImGui.RadioButton("Single", _animMode == 0))
+            {
+                _animMode = 0;
+                SaveCaptureSettings();
+            }
             ImGui.SameLine();
-            if (ImGui.RadioButton("Sequence", _animMode == 1)) { _animMode = 1; SaveCaptureSettings(); }
+            if (ImGui.RadioButton("Sequence", _animMode == 1))
+            {
+                _animMode = 1;
+                SaveCaptureSettings();
+            }
         }
 
         void DrawSequencePanel()
@@ -109,37 +119,54 @@ namespace PlayerViewer.UI
             DrawChainTimeline();
 
             string cur = PlaybackCurrentAnim;
-            Widgets.DisabledButton("+ Add current", !string.IsNullOrEmpty(cur), () =>
-            {
-                _animChain.Add(cur);
-                _chainSelected = _animChain.Count - 1;
-            });
+            Widgets.DisabledButton(
+                "+ Add current",
+                !string.IsNullOrEmpty(cur),
+                () =>
+                {
+                    _animChain.Add(cur);
+                    _chainSelected = _animChain.Count - 1;
+                }
+            );
 
             bool hasSel = _chainSelected >= 0 && _chainSelected < _animChain.Count;
-            if (!hasSel) ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.45f);
+            if (!hasSel)
+                ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.45f);
             if (ImGui.Button("Move <") && hasSel && _chainSelected > 0)
             {
-                (_animChain[_chainSelected - 1], _animChain[_chainSelected]) =
-                    (_animChain[_chainSelected], _animChain[_chainSelected - 1]);
+                (_animChain[_chainSelected - 1], _animChain[_chainSelected]) = (
+                    _animChain[_chainSelected],
+                    _animChain[_chainSelected - 1]
+                );
                 _chainSelected--;
             }
             ImGui.SameLine();
             if (ImGui.Button("Move >") && hasSel && _chainSelected < _animChain.Count - 1)
             {
-                (_animChain[_chainSelected + 1], _animChain[_chainSelected]) =
-                    (_animChain[_chainSelected], _animChain[_chainSelected + 1]);
+                (_animChain[_chainSelected + 1], _animChain[_chainSelected]) = (
+                    _animChain[_chainSelected],
+                    _animChain[_chainSelected + 1]
+                );
                 _chainSelected++;
             }
             ImGui.SameLine();
             if (ImGui.Button("Remove") && hasSel)
             {
                 _animChain.RemoveAt(_chainSelected);
-                if (_chainSelected >= _animChain.Count) _chainSelected = _animChain.Count - 1;
-                if (_chainIndex >= _animChain.Count) _chainIndex = _animChain.Count - 1;
+                if (_chainSelected >= _animChain.Count)
+                    _chainSelected = _animChain.Count - 1;
+                if (_chainIndex >= _animChain.Count)
+                    _chainIndex = _animChain.Count - 1;
             }
-            if (!hasSel) ImGui.PopStyleVar();
+            if (!hasSel)
+                ImGui.PopStyleVar();
             ImGui.SameLine();
-            if (ImGui.Button("Clear")) { _animChain.Clear(); _chainSelected = -1; StopAnimChain(); }
+            if (ImGui.Button("Clear"))
+            {
+                _animChain.Clear();
+                _chainSelected = -1;
+                StopAnimChain();
+            }
 
             ImGui.Checkbox("Loop", ref _chainLoop);
             ImGui.SameLine();
@@ -162,13 +189,18 @@ namespace PlayerViewer.UI
             var afterStrip = ImGui.GetCursorScreenPos();
 
             var draw = ImGui.GetWindowDrawList();
-            draw.AddRectFilled(origin, origin + new Vector2(width, height),
-                ImGui.GetColorU32(new Vector4(0.10f, 0.11f, 0.13f, 1)), 4f);
+            draw.AddRectFilled(
+                origin,
+                origin + new Vector2(width, height),
+                ImGui.GetColorU32(new Vector4(0.10f, 0.11f, 0.13f, 1)),
+                4f
+            );
 
             var labelCol = new Vector4(0.92f, 0.92f, 0.95f, 1);
             void Label(float lx, string text, float maxW)
             {
-                if (maxW <= 24) return;
+                if (maxW <= 24)
+                    return;
                 ImGui.SetCursorScreenPos(new Vector2(lx, origin.Y + height / 2 - 8));
                 ImGui.TextColored(labelCol, FitLabel(text, maxW - 10));
             }
@@ -195,17 +227,29 @@ namespace PlayerViewer.UI
                 float w = width * frames[i] / total;
                 var a = new Vector2(x + 1, origin.Y + 2);
                 var b = new Vector2(x + w - 1, origin.Y + height - 2);
-                draw.AddRectFilled(a, b, running && i == _chainIndex ? segActive : (i % 2 == 0 ? segA : segB), 3f);
+                draw.AddRectFilled(
+                    a,
+                    b,
+                    running && i == _chainIndex ? segActive : (i % 2 == 0 ? segA : segB),
+                    3f
+                );
                 if (i == _chainSelected)
                     draw.AddRect(a, b, outline, 3f);
                 x += w;
             }
 
-            float? cursor = _chainActive ? _chainCursor : (_animExporting && _animExportChain ? _animExportIndex : null);
+            float? cursor = _chainActive
+                ? _chainCursor
+                : (_animExporting && _animExportChain ? _animExportIndex : null);
             if (cursor.HasValue)
             {
                 float px = origin.X + width * Math.Min(cursor.Value, total) / total;
-                draw.AddLine(new Vector2(px, origin.Y), new Vector2(px, origin.Y + height), outline, 2f);
+                draw.AddLine(
+                    new Vector2(px, origin.Y),
+                    new Vector2(px, origin.Y + height),
+                    outline,
+                    2f
+                );
             }
 
             x = origin.X;
@@ -219,11 +263,16 @@ namespace PlayerViewer.UI
 
             if (clicked)
             {
-                float mx = ImGui.GetMousePos().X - origin.X, acc = 0;
+                float mx = ImGui.GetMousePos().X - origin.X,
+                    acc = 0;
                 for (int i = 0; i < _animChain.Count; i++)
                 {
                     float w = width * frames[i] / total;
-                    if (mx >= acc && mx < acc + w) { _chainSelected = i; break; }
+                    if (mx >= acc && mx < acc + w)
+                    {
+                        _chainSelected = i;
+                        break;
+                    }
                     acc += w;
                 }
             }
@@ -232,8 +281,10 @@ namespace PlayerViewer.UI
         //Truncates a label with ".." so it fits maxW pixels (segment width).
         static string FitLabel(string s, float maxW)
         {
-            if (maxW <= 0) return "";
-            if (ImGui.CalcTextSize(s).X <= maxW) return s;
+            if (maxW <= 0)
+                return "";
+            if (ImGui.CalcTextSize(s).X <= maxW)
+                return s;
             while (s.Length > 1 && ImGui.CalcTextSize(s + "..").X > maxW)
                 s = s[..^1];
             return s + "..";

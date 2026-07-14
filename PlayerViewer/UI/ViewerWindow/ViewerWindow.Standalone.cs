@@ -1,8 +1,8 @@
 using System;
 using System.Linq;
+using ImGuiNET;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
-using ImGuiNET;
 
 namespace PlayerViewer.UI
 {

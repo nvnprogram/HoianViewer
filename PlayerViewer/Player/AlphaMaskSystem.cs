@@ -33,7 +33,8 @@ namespace PlayerViewer.Player
         /// <summary>Decodes all mask textures from Model/GearAlphaMask.bfres.zs.</summary>
         public void Load(Romfs romfs)
         {
-            if (_loaded) return;
+            if (_loaded)
+                return;
             _loaded = true;
 
             var data = romfs.ReadModel("GearAlphaMask");
@@ -48,7 +49,8 @@ namespace PlayerViewer.Player
                 return;
 
             var bntx = new Syroot.NintenTools.NSW.Bntx.BntxFile(
-                new MemoryStream(data, bntxOffset, data.Length - bntxOffset));
+                new MemoryStream(data, bntxOffset, data.Length - bntxOffset)
+            );
             foreach (var tex in bntx.Textures)
             {
                 try
@@ -56,7 +58,11 @@ namespace PlayerViewer.Player
                     //Texture names carry an _Opa suffix; RSDB mask names do not.
                     string name = tex.Name.EndsWith("_Opa") ? tex.Name[..^4] : tex.Name;
                     var bt = new BntxTexture(bntx, tex);
-                    _masks[name] = new MaskImage(bt.GetDecodedSurface(0, 0), (int)bt.Width, (int)bt.Height);
+                    _masks[name] = new MaskImage(
+                        bt.GetDecodedSurface(0, 0),
+                        (int)bt.Width,
+                        (int)bt.Height
+                    );
                 }
                 catch (Exception ex)
                 {
@@ -69,7 +75,12 @@ namespace PlayerViewer.Player
         static int FindBntx(byte[] data)
         {
             for (int i = 0; i < data.Length - 4; i++)
-                if (data[i] == 'B' && data[i + 1] == 'N' && data[i + 2] == 'T' && data[i + 3] == 'X')
+                if (
+                    data[i] == 'B'
+                    && data[i + 1] == 'N'
+                    && data[i + 2] == 'T'
+                    && data[i + 3] == 'X'
+                )
                     return i;
             return -1;
         }
@@ -98,14 +109,16 @@ namespace PlayerViewer.Player
 
             //Start from the body's own opacity texture so authored holes survive.
             byte[] result = null;
-            int rw = 256, rh = 256;
+            int rw = 256,
+                rh = 256;
             if (human.Render.Textures.TryGetValue("M_Body_Opa", out var bodyOpa))
             {
                 try
                 {
                     var bt = (BntxTexture)bodyOpa;
                     result = bt.GetDecodedSurface(0, 0);
-                    rw = (int)bt.Width; rh = (int)bt.Height;
+                    rw = (int)bt.Width;
+                    rh = (int)bt.Height;
                 }
                 catch { }
             }
@@ -169,8 +182,18 @@ namespace PlayerViewer.Player
             RenderableTex = GLTexture2D.FromRgba(rgba, width, height);
         }
 
-        public override void SetImageData(List<byte[]> imageData, uint width, uint height, int arrayLevel = 0) { }
-        public override byte[] GetImageData(int ArrayLevel = 0, int MipLevel = 0, int DepthLevel = 0) => Array.Empty<byte>();
+        public override void SetImageData(
+            List<byte[]> imageData,
+            uint width,
+            uint height,
+            int arrayLevel = 0
+        ) { }
+
+        public override byte[] GetImageData(
+            int ArrayLevel = 0,
+            int MipLevel = 0,
+            int DepthLevel = 0
+        ) => Array.Empty<byte>();
 
         public void Dispose()
         {

@@ -1,10 +1,10 @@
 using System;
-using Vector2 = System.Numerics.Vector2;
-using Vector4 = System.Numerics.Vector4;
 using ImGuiNET;
 using OpenTK;
 using OpenTK.Input;
 using PlayerViewer.Player;
+using Vector2 = System.Numerics.Vector2;
+using Vector4 = System.Numerics.Vector4;
 
 namespace PlayerViewer.UI
 {
@@ -40,7 +40,12 @@ namespace PlayerViewer.UI
             //instead of overflowing the region so it doesn't "zoom"
             float fit = Math.Min(size.X / _pipeline.Width, size.Y / _pipeline.Height);
             var imgSize = new Vector2(_pipeline.Width * fit, _pipeline.Height * fit);
-            ImGui.Image((IntPtr)_pipeline.ViewportTextureId, imgSize, new Vector2(0, 1), new Vector2(1, 0));
+            ImGui.Image(
+                (IntPtr)_pipeline.ViewportTextureId,
+                imgSize,
+                new Vector2(0, 1),
+                new Vector2(1, 0)
+            );
 
             _viewportHovered = ImGui.IsItemHovered();
             //Freeze the camera during a full-animation export so every frame shares
@@ -84,16 +89,21 @@ namespace PlayerViewer.UI
                     //Orbit around the target.
                     cam.RotationY += delta.X * 0.008f;
                     cam.RotationX += delta.Y * 0.008f;
-                    cam.RotationX = MathHelper.Clamp(cam.RotationX,
-                        -MathHelper.PiOver2 + 0.01f, MathHelper.PiOver2 - 0.01f);
+                    cam.RotationX = MathHelper.Clamp(
+                        cam.RotationX,
+                        -MathHelper.PiOver2 + 0.01f,
+                        MathHelper.PiOver2 - 0.01f
+                    );
                     changed = true;
                 }
             }
 
             if (_viewportHovered && io.MouseWheel != 0)
             {
-                cam.TargetDistance = Math.Max(0.05f,
-                    cam.TargetDistance * (1.0f - io.MouseWheel * 0.12f));
+                cam.TargetDistance = Math.Max(
+                    0.05f,
+                    cam.TargetDistance * (1.0f - io.MouseWheel * 0.12f)
+                );
                 changed = true;
             }
 
@@ -104,12 +114,18 @@ namespace PlayerViewer.UI
                 float move = cam.TargetDistance * io.DeltaTime;
                 var dir = OpenTK.Vector3.Zero;
                 var rot = cam.InverseRotationMatrix;
-                if (kb.IsKeyDown(Key.W)) dir -= rot.Row2;
-                if (kb.IsKeyDown(Key.S)) dir += rot.Row2;
-                if (kb.IsKeyDown(Key.A)) dir -= rot.Row0;
-                if (kb.IsKeyDown(Key.D)) dir += rot.Row0;
-                if (kb.IsKeyDown(Key.Space)) dir += rot.Row1;
-                if (kb.IsKeyDown(Key.ShiftLeft) || kb.IsKeyDown(Key.ShiftRight)) dir -= rot.Row1;
+                if (kb.IsKeyDown(Key.W))
+                    dir -= rot.Row2;
+                if (kb.IsKeyDown(Key.S))
+                    dir += rot.Row2;
+                if (kb.IsKeyDown(Key.A))
+                    dir -= rot.Row0;
+                if (kb.IsKeyDown(Key.D))
+                    dir += rot.Row0;
+                if (kb.IsKeyDown(Key.Space))
+                    dir += rot.Row1;
+                if (kb.IsKeyDown(Key.ShiftLeft) || kb.IsKeyDown(Key.ShiftRight))
+                    dir -= rot.Row1;
                 if (dir != OpenTK.Vector3.Zero)
                 {
                     cam.TargetPosition += dir * move;

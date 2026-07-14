@@ -1,8 +1,8 @@
 using System;
-using Vector2 = System.Numerics.Vector2;
-using Vector4 = System.Numerics.Vector4;
 using ImGuiNET;
 using PlayerViewer.Core;
+using Vector2 = System.Numerics.Vector2;
+using Vector4 = System.Numerics.Vector4;
 
 namespace PlayerViewer.UI
 {
@@ -14,10 +14,16 @@ namespace PlayerViewer.UI
             var viewport = ImGui.GetMainViewport();
             ImGui.SetNextWindowPos(viewport.Pos);
             ImGui.SetNextWindowSize(viewport.Size);
-            ImGui.Begin("##host",
-                ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove |
-                ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoBringToFrontOnFocus | ImGuiWindowFlags.NoNavFocus |
-                ImGuiWindowFlags.MenuBar);
+            ImGui.Begin(
+                "##host",
+                ImGuiWindowFlags.NoTitleBar
+                    | ImGuiWindowFlags.NoResize
+                    | ImGuiWindowFlags.NoMove
+                    | ImGuiWindowFlags.NoCollapse
+                    | ImGuiWindowFlags.NoBringToFrontOnFocus
+                    | ImGuiWindowFlags.NoNavFocus
+                    | ImGuiWindowFlags.MenuBar
+            );
 
             DrawMenuBar();
 
@@ -39,8 +45,12 @@ namespace PlayerViewer.UI
             ImGui.EndChild();
 
             ImGui.SameLine();
-            ImGui.BeginChild("##center", new Vector2(-rightWidth - 8, 0), false,
-                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
+            ImGui.BeginChild(
+                "##center",
+                new Vector2(-rightWidth - 8, 0),
+                false,
+                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse
+            );
             DrawViewport();
             ImGui.EndChild();
 
@@ -75,7 +85,11 @@ namespace PlayerViewer.UI
                 }
                 if (ImGui.MenuItem("View model file... (or drag && drop)"))
                 {
-                    string file = NativeFolderPicker.OpenFile("Open Model", "BFRES models (*.bfres;*.zs)", "*.bfres;*.zs");
+                    string file = NativeFolderPicker.OpenFile(
+                        "Open Model",
+                        "BFRES models (*.bfres;*.zs)",
+                        "*.bfres;*.zs"
+                    );
                     if (!string.IsNullOrEmpty(file))
                         OpenStandalone(file);
                 }
@@ -141,13 +155,17 @@ namespace PlayerViewer.UI
             ImGui.SameLine();
             if (ImGui.Button("Browse...##sdodr"))
             {
-                string folder = NativeFolderPicker.SelectFolder("Select Side Order romfs folder", _sdodrInput);
+                string folder = NativeFolderPicker.SelectFolder(
+                    "Select Side Order romfs folder",
+                    _sdodrInput
+                );
                 if (!string.IsNullOrEmpty(folder))
                     _sdodrInput = folder;
             }
 
             ImGui.Spacing();
-            if (!valid) ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.45f);
+            if (!valid)
+                ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.45f);
             if (ImGui.Button("Load", new Vector2(120, 0)) && valid)
             {
                 _config.RomfsPath = _romfsInput;
@@ -155,7 +173,8 @@ namespace PlayerViewer.UI
                 _config.Save();
                 _needsLoad = true;
             }
-            if (!valid) ImGui.PopStyleVar();
+            if (!valid)
+                ImGui.PopStyleVar();
 
             ImGui.EndChild();
         }

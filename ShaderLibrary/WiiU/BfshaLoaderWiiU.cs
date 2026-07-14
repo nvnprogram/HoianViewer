@@ -1,6 +1,4 @@
-﻿using Microsoft.VisualBasic.FileIO;
-using ShaderLibrary.IO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -9,6 +7,8 @@ using System.Reflection.PortableExecutable;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.VisualBasic.FileIO;
+using ShaderLibrary.IO;
 
 namespace ShaderLibrary.WiiU
 {
@@ -107,7 +107,7 @@ namespace ShaderLibrary.WiiU
 
             shaderModel.Name = reader.LoadString(nameOffset);
 
-            if (staticOptionsDictOffset  != 0)
+            if (staticOptionsDictOffset != 0)
             {
                 reader.SeekBegin(staticOptionsDictOffset);
                 shaderModel.StaticOptions = ReadDictionary(reader, ReadShaderOption);
@@ -135,7 +135,9 @@ namespace ShaderLibrary.WiiU
             if (keyTableOffset != 0)
             {
                 reader.SeekBegin(keyTableOffset);
-                shaderModel.KeyTable = reader.ReadInt32s((shaderModel.StaticKeyLength + shaderModel.DynamicKeyLength) * programCount);
+                shaderModel.KeyTable = reader.ReadInt32s(
+                    (shaderModel.StaticKeyLength + shaderModel.DynamicKeyLength) * programCount
+                );
             }
 
             reader.SeekBegin(shaderProgramsOffset);
@@ -174,10 +176,7 @@ namespace ShaderLibrary.WiiU
 
         static ResUint32 ReadOptionValue(BinaryReader reader)
         {
-            return new ResUint32()
-            {
-                Value = reader.ReadUInt32(),
-            };
+            return new ResUint32() { Value = reader.ReadUInt32() };
         }
 
         static BfshaSampler ReadShaderSampler(BinaryDataReader reader)
@@ -188,7 +187,7 @@ namespace ShaderLibrary.WiiU
             sampler.GX2Count = reader.ReadByte();
             reader.ReadSByte(); //padding
             reader.ReadUInt32();
-           // sampler.Annotation = reader.LoadString((uint)reader.ReadOffset());
+            // sampler.Annotation = reader.LoadString((uint)reader.ReadOffset());
 
             Console.WriteLine($"BfshaSampler {sampler.Index}");
 
@@ -222,14 +221,17 @@ namespace ShaderLibrary.WiiU
 
             if (uniformOffset != 0)
             {
-                using (reader.BaseStream.TemporarySeek(uniformOffset, SeekOrigin.Begin)) {
+                using (reader.BaseStream.TemporarySeek(uniformOffset, SeekOrigin.Begin))
+                {
                     block.Uniforms = ReadDictionary(reader, ReadShaderUniform);
                 }
             }
             if (dataOffset != 0)
             {
-                block.DefaultBuffer = reader.ReadCustom(() =>
-                    reader.ReadBytes(block.Size), (uint)dataOffset);
+                block.DefaultBuffer = reader.ReadCustom(
+                    () => reader.ReadBytes(block.Size),
+                    (uint)dataOffset
+                );
             }
 
             Console.WriteLine($"BfshaUniformBlock {block.Index}");
@@ -283,10 +285,10 @@ namespace ShaderLibrary.WiiU
                 //Rather than GX2 shader headers, this version has unsupported headers that work differently
                 //Unsure how to support these atm
 
-               // throw new Exception($"Version {reader.Header.VersionMajor} not supported!");
+                // throw new Exception($"Version {reader.Header.VersionMajor} not supported!");
 
-              //  program.SamplerIndices = ReadLocationList(reader, samplerLocationsOffset, samplerCount);
-              //  program.UniformBlockIndices = ReadLocationList(reader, uniformBlockLocationsOffset, blockCount);
+                //  program.SamplerIndices = ReadLocationList(reader, samplerLocationsOffset, samplerCount);
+                //  program.UniformBlockIndices = ReadLocationList(reader, uniformBlockLocationsOffset, blockCount);
             }
             else
             {
@@ -302,47 +304,75 @@ namespace ShaderLibrary.WiiU
 
                 var parentModelOffset = reader.ReadOffset();
 
-                program.GX2VertexData = reader.ReadCustom(() =>
-                {
-                    return new BfshaLibrary.WiiU.BfshaGX2VertexHeader(reader);
-                }, (uint)GX2VertexDataOffset);
+                program.GX2VertexData = reader.ReadCustom(
+                    () =>
+                    {
+                        return new BfshaLibrary.WiiU.BfshaGX2VertexHeader(reader);
+                    },
+                    (uint)GX2VertexDataOffset
+                );
 
-                program.GX2GeometryData = reader.ReadCustom(() =>
-                {
-                    return new BfshaLibrary.WiiU.BfshaGX2GeometryHeader(reader);
-                }, (uint)GX2GeometryDataOffset);
+                program.GX2GeometryData = reader.ReadCustom(
+                    () =>
+                    {
+                        return new BfshaLibrary.WiiU.BfshaGX2GeometryHeader(reader);
+                    },
+                    (uint)GX2GeometryDataOffset
+                );
 
-                program.GX2PixelData = reader.ReadCustom(() =>
-                {
-                    return new BfshaLibrary.WiiU.BfshaGX2PixelHeader(reader);
-                }, (uint)GX2FragmentDataOffset);
+                program.GX2PixelData = reader.ReadCustom(
+                    () =>
+                    {
+                        return new BfshaLibrary.WiiU.BfshaGX2PixelHeader(reader);
+                    },
+                    (uint)GX2FragmentDataOffset
+                );
 
-                program.SamplerIndices = ReadLocationList(reader, samplerLocationsOffset, samplerCount);
-                program.UniformBlockIndices = ReadLocationList(reader, uniformBlockLocationsOffset, blockCount);
+                program.SamplerIndices = ReadLocationList(
+                    reader,
+                    samplerLocationsOffset,
+                    samplerCount
+                );
+                program.UniformBlockIndices = ReadLocationList(
+                    reader,
+                    uniformBlockLocationsOffset,
+                    blockCount
+                );
             }
             return program;
         }
 
-        static List<ShaderIndexHeader> ReadLocationList(BinaryDataReader reader, long offset, byte count)
+        static List<ShaderIndexHeader> ReadLocationList(
+            BinaryDataReader reader,
+            long offset,
+            byte count
+        )
         {
             List<ShaderIndexHeader> values = new List<ShaderIndexHeader>();
             using (reader.BaseStream.TemporarySeek(offset, SeekOrigin.Begin))
             {
                 for (int i = 0; i < count; i++)
                 {
-                    values.Add(new ShaderIndexHeader()
-                    {
-                        VertexLocation = reader.ReadSByte(),
-                        GeoemetryLocation = reader.ReadSByte(),
-                        FragmentLocation = reader.ReadSByte(),
-                    });
+                    values.Add(
+                        new ShaderIndexHeader()
+                        {
+                            VertexLocation = reader.ReadSByte(),
+                            GeoemetryLocation = reader.ReadSByte(),
+                            FragmentLocation = reader.ReadSByte(),
+                        }
+                    );
                     if (reader.Header.VersionMajor >= 4) //extra shader
                         values[i].ComputeLocation = reader.ReadSByte();
                 }
-            }return values;
+            }
+            return values;
         }
 
-        static ResDict<T> ReadDictionary<T>(BinaryDataReader reader, Func<BinaryDataReader, T> load_section) where T : class, IResData, new()
+        static ResDict<T> ReadDictionary<T>(
+            BinaryDataReader reader,
+            Func<BinaryDataReader, T> load_section
+        )
+            where T : class, IResData, new()
         {
             ResDict<T> dict = new ResDict<T>();
 
@@ -356,13 +386,15 @@ namespace ShaderLibrary.WiiU
                 var Key = reader.LoadString((uint)reader.ReadOffset());
                 var ValueOffset = reader.ReadOffset();
 
-                dict._nodes.Add(new ResDict<T>.Node()
-                {
-                    Reference = refe,
-                    IdxLeft = IdxLeft,
-                    IdxRight = IdxRight,
-                    Key = Key,
-                });
+                dict._nodes.Add(
+                    new ResDict<T>.Node()
+                    {
+                        Reference = refe,
+                        IdxLeft = IdxLeft,
+                        IdxRight = IdxRight,
+                        Key = Key,
+                    }
+                );
 
                 if (i == 0)
                     continue;
@@ -379,7 +411,6 @@ namespace ShaderLibrary.WiiU
             }
             return dict;
         }
-
 
         [StructLayout(LayoutKind.Sequential, Size = 0x10)]
         public struct BfshaHeader
@@ -409,8 +440,6 @@ namespace ShaderLibrary.WiiU
             public uint Unknown1;
             public uint Unknown2;
         }
-
-
 
         [StructLayout(LayoutKind.Sequential, Size = 0x10)]
         public struct ShaderModelHeader

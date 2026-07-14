@@ -14,7 +14,15 @@ namespace PlayerViewer.Core.Formats
         //--- reflection info
         class TypeDef
         {
-            public uint TypeId, ParentTypeId, Format, SubtypeId, Version, Size, Align, Flags, OptBits;
+            public uint TypeId,
+                ParentTypeId,
+                Format,
+                SubtypeId,
+                Version,
+                Size,
+                Align,
+                Flags,
+                OptBits;
             public FormatKind Kind;
             public string Name = "";
             public List<(string Name, uint Flags, uint Offset, uint TypeId)> Fields = new();
@@ -22,8 +30,15 @@ namespace PlayerViewer.Core.Formats
 
         enum FormatKind : uint
         {
-            Void = 0, Opaque = 1, Bool = 2, String = 3, Int = 4,
-            Float = 5, Pointer = 6, Record = 7, Array = 8,
+            Void = 0,
+            Opaque = 1,
+            Bool = 2,
+            String = 3,
+            Int = 4,
+            Float = 5,
+            Pointer = 6,
+            Record = 7,
+            Array = 8,
         }
 
         class Item
@@ -34,19 +49,26 @@ namespace PlayerViewer.Core.Formats
             public uint Count;
         }
 
-        const uint OPT_FORMAT = 1 << 0, OPT_SUBTYPE = 1 << 1, OPT_VERSION = 1 << 2,
-            OPT_SIZE_ALIGN = 1 << 3, OPT_FLAGS = 1 << 4, OPT_DECLS = 1 << 5,
-            OPT_INTERFACES = 1 << 6, OPT_ATTRIBUTE_STRING = 1 << 7, OPT_MUTABLE = 1 << 8;
+        const uint OPT_FORMAT = 1 << 0,
+            OPT_SUBTYPE = 1 << 1,
+            OPT_VERSION = 1 << 2,
+            OPT_SIZE_ALIGN = 1 << 3,
+            OPT_FLAGS = 1 << 4,
+            OPT_DECLS = 1 << 5,
+            OPT_INTERFACES = 1 << 6,
+            OPT_ATTRIBUTE_STRING = 1 << 7,
+            OPT_MUTABLE = 1 << 8;
 
         const int INT_SIGNED_BIT = 1 << 9;
         const int INT_NUM_BITS_SHIFT = 10;
+
         //Tuple types (hkVector4f etc.) store the element count in the high bits
         //of the format word (0x428 = tuple of 4, 0x1028 = tuple of 16).
         const int TUPLE_COUNT_SHIFT = 8;
 
-        byte[] _data;                        //DATA section payload
+        byte[] _data; //DATA section payload
         readonly List<Item> _items = new();
-        readonly List<TypeDef> _types = new();      //indexed by typeId
+        readonly List<TypeDef> _types = new(); //indexed by typeId
         readonly List<string> _typeStrings = new();
         readonly List<string> _fieldStrings = new();
 
@@ -70,8 +92,8 @@ namespace PlayerViewer.Core.Formats
         {
             if (bphcl.Length < 0x30 || Encoding.ASCII.GetString(bphcl, 0, 5) != "Phive")
                 throw new InvalidOperationException("Not a Phive file");
-            uint tagOffset = BitConverter.ToUInt32(bphcl, 0x0C);   //HktOffset
-            uint tagSize = BitConverter.ToUInt32(bphcl, 0x18);     //Section0 size
+            uint tagOffset = BitConverter.ToUInt32(bphcl, 0x0C); //HktOffset
+            uint tagSize = BitConverter.ToUInt32(bphcl, 0x18); //Section0 size
             var tag = new byte[tagSize];
             Array.Copy(bphcl, tagOffset, tag, 0, Math.Min(tagSize, bphcl.Length - tagOffset));
             return Parse(tag);
@@ -87,27 +109,38 @@ namespace PlayerViewer.Core.Formats
             uint tag0Size = ReadBE32(data, 0) & 0x3FFFFFFF;
 
             int pos = 8;
-            int typeStart = -1, typeSize = 0, indxStart = -1, indxSize = 0;
+            int typeStart = -1,
+                typeSize = 0,
+                indxStart = -1,
+                indxSize = 0;
             while (pos < tag0Size)
             {
                 uint secSizeRaw = ReadBE32(data, pos);
                 int secSize = (int)(secSizeRaw & 0x3FFFFFFF);
-                if (secSize < 8) { pos += 4; continue; }   //zero padding
+                if (secSize < 8)
+                {
+                    pos += 4;
+                    continue;
+                } //zero padding
                 string magic = Encoding.ASCII.GetString(data, pos + 4, 4);
                 switch (magic)
                 {
                     case "SDKV":
-                        SdkVersion = Encoding.ASCII.GetString(data, pos + 8, secSize - 8).TrimEnd('\0');
+                        SdkVersion = Encoding
+                            .ASCII.GetString(data, pos + 8, secSize - 8)
+                            .TrimEnd('\0');
                         break;
                     case "DATA":
                         _data = new byte[secSize - 8];
                         Array.Copy(data, pos + 8, _data, 0, secSize - 8);
                         break;
                     case "TYPE":
-                        typeStart = pos; typeSize = secSize;
+                        typeStart = pos;
+                        typeSize = secSize;
                         break;
                     case "INDX":
-                        indxStart = pos + 8; indxSize = secSize - 8;
+                        indxStart = pos + 8;
+                        indxSize = secSize - 8;
                         break;
                 }
                 pos += secSize;
@@ -123,21 +156,33 @@ namespace PlayerViewer.Core.Formats
         {
             int pos = start + 8;
             int end = start + size;
-            int tbdyPos = -1, tbdySize = 0;
+            int tbdyPos = -1,
+                tbdySize = 0;
             var tna1 = (pos: -1, size: 0);
 
             while (pos < end)
             {
                 int subSize = (int)(ReadBE32(data, pos) & 0x3FFFFFFF);
-                if (subSize == 0) break;
+                if (subSize == 0)
+                    break;
                 string magic = Encoding.ASCII.GetString(data, pos + 4, 4);
-                int payload = pos + 8, payloadSize = subSize - 8;
+                int payload = pos + 8,
+                    payloadSize = subSize - 8;
                 switch (magic)
                 {
-                    case "TST1": ReadStringTable(data, payload, payloadSize, _typeStrings); break;
-                    case "FST1": ReadStringTable(data, payload, payloadSize, _fieldStrings); break;
-                    case "TNA1": tna1 = (payload, payloadSize); break;
-                    case "TBDY": tbdyPos = payload; tbdySize = payloadSize; break;
+                    case "TST1":
+                        ReadStringTable(data, payload, payloadSize, _typeStrings);
+                        break;
+                    case "FST1":
+                        ReadStringTable(data, payload, payloadSize, _fieldStrings);
+                        break;
+                    case "TNA1":
+                        tna1 = (payload, payloadSize);
+                        break;
+                    case "TBDY":
+                        tbdyPos = payload;
+                        tbdySize = payloadSize;
+                        break;
                 }
                 pos += subSize;
             }
@@ -154,8 +199,14 @@ namespace PlayerViewer.Core.Formats
                 {
                     ulong strIdx = reader.ReadVle();
                     ulong templateCount = reader.ReadVle();
-                    typeNames.Add(strIdx < (ulong)_typeStrings.Count ? _typeStrings[(int)strIdx] : "");
-                    for (ulong t = 0; t < templateCount; t++) { reader.ReadVle(); reader.ReadVle(); }
+                    typeNames.Add(
+                        strIdx < (ulong)_typeStrings.Count ? _typeStrings[(int)strIdx] : ""
+                    );
+                    for (ulong t = 0; t < templateCount; t++)
+                    {
+                        reader.ReadVle();
+                        reader.ReadVle();
+                    }
                 }
             }
 
@@ -177,7 +228,12 @@ namespace PlayerViewer.Core.Formats
                 if (_types[id] == null && typeNames[id].Length > 0)
                 {
                     byName.TryGetValue(typeNames[id] + "f", out uint concrete);
-                    _types[id] = new TypeDef { TypeId = (uint)id, Name = typeNames[id], ParentTypeId = concrete };
+                    _types[id] = new TypeDef
+                    {
+                        TypeId = (uint)id,
+                        Name = typeNames[id],
+                        ParentTypeId = concrete,
+                    };
                 }
             }
         }
@@ -188,7 +244,8 @@ namespace PlayerViewer.Core.Formats
             while (pos < end)
             {
                 int len = 0;
-                while (pos + len < end && data[pos + len] != 0) len++;
+                while (pos + len < end && data[pos + len] != 0)
+                    len++;
                 target.Add(Encoding.UTF8.GetString(data, pos, len));
                 pos += len + 1;
             }
@@ -219,14 +276,17 @@ namespace PlayerViewer.Core.Formats
                     type.Format = (uint)reader.ReadVle();
                     type.Kind = (FormatKind)(type.Format & 0x1F);
                 }
-                if ((type.OptBits & OPT_SUBTYPE) != 0) type.SubtypeId = (uint)reader.ReadVle();
-                if ((type.OptBits & OPT_VERSION) != 0) type.Version = (uint)reader.ReadVle();
+                if ((type.OptBits & OPT_SUBTYPE) != 0)
+                    type.SubtypeId = (uint)reader.ReadVle();
+                if ((type.OptBits & OPT_VERSION) != 0)
+                    type.Version = (uint)reader.ReadVle();
                 if ((type.OptBits & OPT_SIZE_ALIGN) != 0)
                 {
                     type.Size = (uint)reader.ReadVle();
                     type.Align = (uint)reader.ReadVle();
                 }
-                if ((type.OptBits & OPT_FLAGS) != 0) type.Flags = (uint)reader.ReadVle();
+                if ((type.OptBits & OPT_FLAGS) != 0)
+                    type.Flags = (uint)reader.ReadVle();
                 if ((type.OptBits & OPT_DECLS) != 0)
                 {
                     ulong encoded = reader.ReadVle();
@@ -238,20 +298,28 @@ namespace PlayerViewer.Core.Formats
                         //Flag bit 0x80 marks an extra VLE payload after the flags
                         //(seen on e.g. hkPackedVector3::values, hclCollidable::userData).
                         //Not consuming it desyncs the whole remaining type table.
-                        if ((flags & 0x80) != 0) reader.ReadVle();
+                        if ((flags & 0x80) != 0)
+                            reader.ReadVle();
                         uint offset = (uint)reader.ReadVle();
                         uint typeId = (uint)reader.ReadVle();
-                        string name = nameId < _fieldStrings.Count ? _fieldStrings[(int)nameId] : $"field{i}";
+                        string name =
+                            nameId < _fieldStrings.Count ? _fieldStrings[(int)nameId] : $"field{i}";
                         type.Fields.Add((name, flags, offset, typeId));
                     }
                 }
                 if ((type.OptBits & OPT_INTERFACES) != 0)
                 {
                     uint numIfaces = (uint)reader.ReadVle();
-                    for (uint i = 0; i < numIfaces; i++) { reader.ReadVle(); reader.ReadVle(); }
+                    for (uint i = 0; i < numIfaces; i++)
+                    {
+                        reader.ReadVle();
+                        reader.ReadVle();
+                    }
                 }
-                if ((type.OptBits & OPT_ATTRIBUTE_STRING) != 0) reader.ReadVle();
-                if ((type.OptBits & OPT_MUTABLE) != 0) reader.ReadVle();
+                if ((type.OptBits & OPT_ATTRIBUTE_STRING) != 0)
+                    reader.ReadVle();
+                if ((type.OptBits & OPT_MUTABLE) != 0)
+                    reader.ReadVle();
 
                 type.Name = type.TypeId < typeNames.Count ? typeNames[(int)type.TypeId] : "";
                 while (_types.Count <= type.TypeId)
@@ -269,7 +337,8 @@ namespace PlayerViewer.Core.Formats
             while (pos < end)
             {
                 int subSize = (int)(ReadBE32(data, pos) & 0x3FFFFFFF);
-                if (subSize == 0) break;
+                if (subSize == 0)
+                    break;
                 string magic = Encoding.ASCII.GetString(data, pos + 4, 4);
                 if (magic == "ITEM")
                 {
@@ -277,13 +346,15 @@ namespace PlayerViewer.Core.Formats
                     for (int i = 0; i < count; i++)
                     {
                         int e = pos + 8 + i * 12;
-                        _items.Add(new Item
-                        {
-                            TypeIndex = BitConverter.ToUInt16(data, e),
-                            Flags = data[e + 3],
-                            Offset = BitConverter.ToUInt32(data, e + 4),
-                            Count = BitConverter.ToUInt32(data, e + 8),
-                        });
+                        _items.Add(
+                            new Item
+                            {
+                                TypeIndex = BitConverter.ToUInt16(data, e),
+                                Flags = data[e + 3],
+                                Offset = BitConverter.ToUInt32(data, e + 4),
+                                Count = BitConverter.ToUInt32(data, e + 8),
+                            }
+                        );
                     }
                 }
                 pos += subSize;
@@ -292,30 +363,35 @@ namespace PlayerViewer.Core.Formats
 
         #region type helpers
 
-        TypeDef GetType(uint typeId) =>
-            typeId < _types.Count ? _types[(int)typeId] : null;
+        TypeDef GetType(uint typeId) => typeId < _types.Count ? _types[(int)typeId] : null;
 
         uint TypeByteSize(uint typeId)
         {
             var t = GetType(typeId);
-            if (t == null) return 0;
-            if (t.Size > 0) return t.Size;
+            if (t == null)
+                return 0;
+            if (t.Size > 0)
+                return t.Size;
             return t.ParentTypeId != 0 ? TypeByteSize(t.ParentTypeId) : 0;
         }
 
         FormatKind EffectiveKind(uint typeId)
         {
             var t = GetType(typeId);
-            if (t == null) return FormatKind.Void;
-            if (t.Kind != FormatKind.Void) return t.Kind;
+            if (t == null)
+                return FormatKind.Void;
+            if (t.Kind != FormatKind.Void)
+                return t.Kind;
             return t.ParentTypeId != 0 ? EffectiveKind(t.ParentTypeId) : FormatKind.Void;
         }
 
         TypeDef EffectiveType(uint typeId)
         {
             var t = GetType(typeId);
-            if (t == null) return null;
-            if (t.Kind != FormatKind.Void || t.ParentTypeId == 0) return t;
+            if (t == null)
+                return null;
+            if (t.Kind != FormatKind.Void || t.ParentTypeId == 0)
+                return t;
             return EffectiveType(t.ParentTypeId);
         }
 
@@ -335,8 +411,8 @@ namespace PlayerViewer.Core.Formats
             foreach (var t in _types.Where(t => t != null))
             {
                 string parent = GetType(t.ParentTypeId)?.Name ?? "";
-                yield return $"type {t.TypeId}: '{t.Name}' kind={t.Kind} fmt=0x{t.Format:X} size={t.Size} parent='{parent}' " +
-                    $"fields=[{string.Join(",", t.Fields.Select(f => $"{f.Name}@{f.Offset}:{GetType(f.TypeId)?.Name}({f.TypeId})"))}]";
+                yield return $"type {t.TypeId}: '{t.Name}' kind={t.Kind} fmt=0x{t.Format:X} size={t.Size} parent='{parent}' "
+                    + $"fields=[{string.Join(",", t.Fields.Select(f => $"{f.Name}@{f.Offset}:{GetType(f.TypeId)?.Name}({f.TypeId})"))}]";
             }
         }
 
@@ -362,12 +438,16 @@ namespace PlayerViewer.Core.Formats
         }
 
         /// <summary>All decoded record groups of the given type (one list per item).</summary>
-        public IEnumerable<(int index, List<Dictionary<string, object>> records)> AllItems(string typeName)
+        public IEnumerable<(int index, List<Dictionary<string, object>> records)> AllItems(
+            string typeName
+        )
         {
             for (int i = 1; i < _items.Count; i++)
             {
-                if (ItemTypeName(i) == typeName &&
-                    DecodeItem(i) is List<Dictionary<string, object>> records)
+                if (
+                    ItemTypeName(i) == typeName
+                    && DecodeItem(i) is List<Dictionary<string, object>> records
+                )
                     yield return (i, records);
             }
         }
@@ -392,7 +472,7 @@ namespace PlayerViewer.Core.Formats
             if (kind == FormatKind.Record && item.Count > 0 && elemSize > 0)
             {
                 var records = new List<Dictionary<string, object>>((int)item.Count);
-                _decoded[index] = records;   //pre-register (cycles via pointers)
+                _decoded[index] = records; //pre-register (cycles via pointers)
                 var recType = RecordType(item.TypeIndex);
                 for (uint i = 0; i < item.Count; i++)
                     records.Add(DecodeRecord((int)(item.Offset + i * elemSize), recType));
@@ -418,12 +498,17 @@ namespace PlayerViewer.Core.Formats
                     for (uint i = 0; i < item.Count; i++)
                     {
                         byte c = _data[item.Offset + i];
-                        if (c != 0 && (c < 0x20 || c > 0x7E)) { isString = false; break; }
+                        if (c != 0 && (c < 0x20 || c > 0x7E))
+                        {
+                            isString = false;
+                            break;
+                        }
                     }
                     if (isString)
                     {
                         int len = 0;
-                        while (len < item.Count && _data[item.Offset + len] != 0) len++;
+                        while (len < item.Count && _data[item.Offset + len] != 0)
+                            len++;
                         result = Encoding.ASCII.GetString(_data, (int)item.Offset, len);
                         _decoded[index] = result;
                         return result;
@@ -435,8 +520,11 @@ namespace PlayerViewer.Core.Formats
                 _decoded[index] = list;
                 return list;
             }
-            if ((kind == FormatKind.Float || kind == FormatKind.Bool || kind == FormatKind.Opaque)
-                && item.Count > 0 && elemSize > 0)
+            if (
+                (kind == FormatKind.Float || kind == FormatKind.Bool || kind == FormatKind.Opaque)
+                && item.Count > 0
+                && elemSize > 0
+            )
             {
                 var list = new List<object>((int)item.Count);
                 for (uint i = 0; i < item.Count; i++)
@@ -542,7 +630,10 @@ namespace PlayerViewer.Core.Formats
                         object decoded = itemRef != 0 ? DecodeItem((int)itemRef) : null;
                         if (size > 0)
                         {
-                            if (decoded is List<Dictionary<string, object>> recs && recs.Count > size)
+                            if (
+                                decoded is List<Dictionary<string, object>> recs
+                                && recs.Count > size
+                            )
                                 decoded = recs.Take(size).ToList();
                             else if (decoded is List<object> vals && vals.Count > size)
                                 decoded = vals.Take(size).ToList();
@@ -568,17 +659,28 @@ namespace PlayerViewer.Core.Formats
                 {
                     uint numBits = type.Format >> INT_NUM_BITS_SHIFT;
                     bool signed = (type.Format & INT_SIGNED_BIT) != 0;
-                    if (numBits <= 8) return signed ? (sbyte)_data[offset] : (object)_data[offset];
-                    if (numBits <= 16) return signed ? BitConverter.ToInt16(_data, offset) : (object)BitConverter.ToUInt16(_data, offset);
-                    if (numBits <= 32) return signed ? BitConverter.ToInt32(_data, offset) : (object)BitConverter.ToUInt32(_data, offset);
-                    return signed ? BitConverter.ToInt64(_data, offset) : (object)BitConverter.ToUInt64(_data, offset);
+                    if (numBits <= 8)
+                        return signed ? (sbyte)_data[offset] : (object)_data[offset];
+                    if (numBits <= 16)
+                        return signed
+                            ? BitConverter.ToInt16(_data, offset)
+                            : (object)BitConverter.ToUInt16(_data, offset);
+                    if (numBits <= 32)
+                        return signed
+                            ? BitConverter.ToInt32(_data, offset)
+                            : (object)BitConverter.ToUInt32(_data, offset);
+                    return signed
+                        ? BitConverter.ToInt64(_data, offset)
+                        : (object)BitConverter.ToUInt64(_data, offset);
                 }
                 case FormatKind.Float:
-                    if (type.Size == 4) return BitConverter.ToSingle(_data, offset);
-                    if (type.Size == 8) return BitConverter.ToDouble(_data, offset);
-                    if (type.Size >= 12 && type.Size % 4 == 0)   //hkVector4/matrix vector types
+                    if (type.Size == 4)
+                        return BitConverter.ToSingle(_data, offset);
+                    if (type.Size == 8)
+                        return BitConverter.ToDouble(_data, offset);
+                    if (type.Size >= 12 && type.Size % 4 == 0) //hkVector4/matrix vector types
                         return FloatVector(offset, (int)type.Size / 4);
-                    return (object)BitConverter.ToUInt16(_data, offset);   //half, raw bits
+                    return (object)BitConverter.ToUInt16(_data, offset); //half, raw bits
                 case FormatKind.Bool:
                     return _data[offset] != 0;
                 case FormatKind.Pointer:
@@ -607,22 +709,71 @@ namespace PlayerViewer.Core.Formats
             int _pos;
             readonly int _end;
 
-            public VleReader(byte[] d, int pos, int size) { _d = d; _pos = pos; _end = pos + size; }
+            public VleReader(byte[] d, int pos, int size)
+            {
+                _d = d;
+                _pos = pos;
+                _end = pos + size;
+            }
+
             public bool HasMore => _pos < _end;
             public int Position => _pos;
+
             byte Next() => _pos < _end ? _d[_pos++] : (byte)0;
 
             public ulong ReadVle()
             {
                 byte b0 = Next();
-                if ((b0 & 0x80) == 0) return b0;
-                if ((b0 & 0xC0) == 0x80) return ((ulong)(b0 & 0x3F) << 8) | Next();
-                if ((b0 & 0xE0) == 0xC0) { byte b1 = Next(), b2 = Next(); return ((ulong)(b0 & 0x1F) << 16) | ((ulong)b1 << 8) | b2; }
-                if ((b0 & 0xF8) == 0xE0) { byte b1 = Next(), b2 = Next(), b3 = Next(); return ((ulong)(b0 & 0x0F) << 24) | ((ulong)b1 << 16) | ((ulong)b2 << 8) | b3; }
-                if ((b0 & 0xF8) == 0xE8) { byte b1 = Next(), b2 = Next(), b3 = Next(), b4 = Next(); return ((ulong)(b0 & 0x07) << 32) | ((ulong)b1 << 24) | ((ulong)b2 << 16) | ((ulong)b3 << 8) | b4; }
-                if ((b0 & 0xFE) == 0xF0) { ulong v = 0; for (int i = 0; i < 7; i++) v = (v << 8) | Next(); return ((ulong)(b0 & 0x01) << 56) | v; }
-                if (b0 == 0xF8) { ulong v = 0; for (int i = 0; i < 5; i++) v = (v << 8) | Next(); return v; }
-                if (b0 == 0xF9) { ulong v = 0; for (int i = 0; i < 8; i++) v = (v << 8) | Next(); return v; }
+                if ((b0 & 0x80) == 0)
+                    return b0;
+                if ((b0 & 0xC0) == 0x80)
+                    return ((ulong)(b0 & 0x3F) << 8) | Next();
+                if ((b0 & 0xE0) == 0xC0)
+                {
+                    byte b1 = Next(),
+                        b2 = Next();
+                    return ((ulong)(b0 & 0x1F) << 16) | ((ulong)b1 << 8) | b2;
+                }
+                if ((b0 & 0xF8) == 0xE0)
+                {
+                    byte b1 = Next(),
+                        b2 = Next(),
+                        b3 = Next();
+                    return ((ulong)(b0 & 0x0F) << 24) | ((ulong)b1 << 16) | ((ulong)b2 << 8) | b3;
+                }
+                if ((b0 & 0xF8) == 0xE8)
+                {
+                    byte b1 = Next(),
+                        b2 = Next(),
+                        b3 = Next(),
+                        b4 = Next();
+                    return ((ulong)(b0 & 0x07) << 32)
+                        | ((ulong)b1 << 24)
+                        | ((ulong)b2 << 16)
+                        | ((ulong)b3 << 8)
+                        | b4;
+                }
+                if ((b0 & 0xFE) == 0xF0)
+                {
+                    ulong v = 0;
+                    for (int i = 0; i < 7; i++)
+                        v = (v << 8) | Next();
+                    return ((ulong)(b0 & 0x01) << 56) | v;
+                }
+                if (b0 == 0xF8)
+                {
+                    ulong v = 0;
+                    for (int i = 0; i < 5; i++)
+                        v = (v << 8) | Next();
+                    return v;
+                }
+                if (b0 == 0xF9)
+                {
+                    ulong v = 0;
+                    for (int i = 0; i < 8; i++)
+                        v = (v << 8) | Next();
+                    return v;
+                }
                 return 0;
             }
         }

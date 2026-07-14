@@ -32,7 +32,9 @@ namespace PlayerViewer.UI
         public string OutputPath { get; private set; }
         public string Error { get; private set; }
 
-        int _width, _height, _fps;
+        int _width,
+            _height,
+            _fps;
         string _tempPath;
         FileStream _tempWrite;
         BlockingCollection<byte[]> _writeQueue;
@@ -40,7 +42,10 @@ namespace PlayerViewer.UI
         Thread _encoder;
 
         //Content bounding box in buffer (bottom-up) coordinates; expanded by the writer.
-        int _minX, _minY, _maxX, _maxY;
+        int _minX,
+            _minY,
+            _maxX,
+            _maxY;
         bool _trim;
 
         public bool StartCapture(int width, int height, int fps, string outputPath, bool trim)
@@ -57,15 +62,24 @@ namespace PlayerViewer.UI
             Error = null;
             EncodeProgress = 0;
             EncodeTotal = 0;
-            _minX = width; _minY = height; _maxX = -1; _maxY = -1;
+            _minX = width;
+            _minY = height;
+            _maxX = -1;
+            _maxY = -1;
 
             try
             {
                 string dir = Path.Combine(Path.GetTempPath(), "PlayerViewerExport");
                 Directory.CreateDirectory(dir);
                 _tempPath = Path.Combine(dir, $"anim_{Guid.NewGuid():N}.raw");
-                _tempWrite = new FileStream(_tempPath, FileMode.Create, FileAccess.Write,
-                    FileShare.None, 1 << 20, FileOptions.SequentialScan);
+                _tempWrite = new FileStream(
+                    _tempPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    1 << 20,
+                    FileOptions.SequentialScan
+                );
             }
             catch (Exception ex)
             {
@@ -88,8 +102,14 @@ namespace PlayerViewer.UI
                 ArrayPool<byte>.Shared.Return(rgba);
                 return;
             }
-            try { _writeQueue.Add(rgba); }
-            catch { ArrayPool<byte>.Shared.Return(rgba); }
+            try
+            {
+                _writeQueue.Add(rgba);
+            }
+            catch
+            {
+                ArrayPool<byte>.Shared.Return(rgba);
+            }
         }
 
         void WriteLoop()
@@ -120,7 +140,8 @@ namespace PlayerViewer.UI
             if (_minX == 0 && _minY == 0 && _maxX == _width - 1 && _maxY == _height - 1)
                 return;
 
-            int w = _width, h = _height;
+            int w = _width,
+                h = _height;
             for (int y = 0; y < h; y++)
             {
                 int row = y * w * 4;
@@ -128,10 +149,14 @@ namespace PlayerViewer.UI
                 {
                     if (buf[row + x * 4 + 3] != 0)
                     {
-                        if (x < _minX) _minX = x;
-                        if (x > _maxX) _maxX = x;
-                        if (y < _minY) _minY = y;
-                        if (y > _maxY) _maxY = y;
+                        if (x < _minX)
+                            _minX = x;
+                        if (x > _maxX)
+                            _maxX = x;
+                        if (y < _minY)
+                            _minY = y;
+                        if (y > _maxY)
+                            _maxY = y;
                     }
                 }
             }
@@ -141,8 +166,12 @@ namespace PlayerViewer.UI
         /// Ends capture and kicks off the encode pass on a worker thread. Returns immediately;
         /// poll <see cref="IsEncoding"/> / <see cref="EncodeProgress"/> for progress.
         /// </summary>
-        public void FinishCapture(OutputFormat format, byte[] background,
-            int webpQuality, int marginPx)
+        public void FinishCapture(
+            OutputFormat format,
+            byte[] background,
+            int webpQuality,
+            int marginPx
+        )
         {
             if (!IsCapturing)
                 return;
@@ -156,11 +185,17 @@ namespace PlayerViewer.UI
                 _tempWrite.Dispose();
                 _tempWrite = null;
             }
-            catch (Exception ex) { Error ??= ex.Message; }
+            catch (Exception ex)
+            {
+                Error ??= ex.Message;
+            }
 
             IsEncoding = true;
             _encoder = new Thread(() => EncodeLoop(format, background, webpQuality, marginPx))
-            { IsBackground = true, Name = "AnimExportEncode" };
+            {
+                IsBackground = true,
+                Name = "AnimExportEncode",
+            };
             _encoder.Start();
         }
 
@@ -175,10 +210,16 @@ namespace PlayerViewer.UI
 
                 //Compute crop rect (buffer coords). No trim, or an empty box (nothing drawn),
                 //keeps the whole frame.
-                int x0, y0, cw, ch;
+                int x0,
+                    y0,
+                    cw,
+                    ch;
                 if (!_trim || _maxX < 0)
                 {
-                    x0 = 0; y0 = 0; cw = _width; ch = _height;
+                    x0 = 0;
+                    y0 = 0;
+                    cw = _width;
+                    ch = _height;
                 }
                 else
                 {
@@ -191,15 +232,19 @@ namespace PlayerViewer.UI
                 }
                 //Even dimensions: required by MP4's yuv420p, harmless for WebP. Trimming a
                 //column/row keeps the crop inside the original frame.
-                cw &= ~1; ch &= ~1;
-                if (cw < 2) cw = 2;
-                if (ch < 2) ch = 2;
+                cw &= ~1;
+                ch &= ~1;
+                if (cw < 2)
+                    cw = 2;
+                if (ch < 2)
+                    ch = 2;
 
                 var psi = new ProcessStartInfo
                 {
                     FileName = ExportUtil.ResolveFfmpeg(),
-                    Arguments = ExportUtil.RawInputArgs(cw, ch, _fps) +
-                                ExportUtil.CodecArgs(format, webpQuality, OutputPath),
+                    Arguments =
+                        ExportUtil.RawInputArgs(cw, ch, _fps)
+                        + ExportUtil.CodecArgs(format, webpQuality, OutputPath),
                     UseShellExecute = false,
                     RedirectStandardInput = true,
                     RedirectStandardError = true,
@@ -216,8 +261,14 @@ namespace PlayerViewer.UI
                 frame = ArrayPool<byte>.Shared.Rent(frameBytes);
                 var outBuf = new byte[cw * ch * 4];
 
-                using var read = new FileStream(_tempPath, FileMode.Open, FileAccess.Read,
-                    FileShare.None, 1 << 20, FileOptions.SequentialScan);
+                using var read = new FileStream(
+                    _tempPath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.None,
+                    1 << 20,
+                    FileOptions.SequentialScan
+                );
 
                 for (long f = 0; f < total; f++)
                 {
@@ -232,12 +283,17 @@ namespace PlayerViewer.UI
                             //full-frame layout, so the source index maps directly into it).
                             for (int rx = 0; rx < cw; rx++)
                             {
-                                int s = srcRow + rx * 4, d = dstRow + rx * 4;
+                                int s = srcRow + rx * 4,
+                                    d = dstRow + rx * 4;
                                 byte a = frame[s + 3];
                                 int ia = 255 - a;
                                 outBuf[d] = (byte)((frame[s] * a + background[s] * ia) / 255);
-                                outBuf[d + 1] = (byte)((frame[s + 1] * a + background[s + 1] * ia) / 255);
-                                outBuf[d + 2] = (byte)((frame[s + 2] * a + background[s + 2] * ia) / 255);
+                                outBuf[d + 1] = (byte)(
+                                    (frame[s + 1] * a + background[s + 1] * ia) / 255
+                                );
+                                outBuf[d + 2] = (byte)(
+                                    (frame[s + 2] * a + background[s + 2] * ia) / 255
+                                );
                                 outBuf[d + 3] = 255;
                             }
                         }
@@ -273,7 +329,8 @@ namespace PlayerViewer.UI
             while (read < count)
             {
                 int n = s.Read(buf, read, count - read);
-                if (n <= 0) throw new EndOfStreamException();
+                if (n <= 0)
+                    throw new EndOfStreamException();
                 read += n;
             }
         }
@@ -298,7 +355,11 @@ namespace PlayerViewer.UI
 
         void TryDeleteTemp()
         {
-            try { if (_tempPath != null && File.Exists(_tempPath)) File.Delete(_tempPath); }
+            try
+            {
+                if (_tempPath != null && File.Exists(_tempPath))
+                    File.Delete(_tempPath);
+            }
             catch { }
         }
 

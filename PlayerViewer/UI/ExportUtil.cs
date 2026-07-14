@@ -11,8 +11,10 @@ namespace PlayerViewer.UI
     {
         /// <summary>H.264 MP4, opaque (yuv420p). Alpha is discarded.</summary>
         Mp4,
+
         /// <summary>Animated WebP that preserves the RGBA alpha channel.</summary>
         WebpTransparent,
+
         /// <summary>VP9 WebM that preserves the alpha channel (yuva420p).</summary>
         WebmTransparent,
     }
@@ -40,19 +42,24 @@ namespace PlayerViewer.UI
                 {
                     try
                     {
-                        using var probe = Process.Start(new ProcessStartInfo
-                        {
-                            FileName = ResolveFfmpeg(),
-                            Arguments = "-version",
-                            UseShellExecute = false,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            CreateNoWindow = true,
-                        });
+                        using var probe = Process.Start(
+                            new ProcessStartInfo
+                            {
+                                FileName = ResolveFfmpeg(),
+                                Arguments = "-version",
+                                UseShellExecute = false,
+                                RedirectStandardOutput = true,
+                                RedirectStandardError = true,
+                                CreateNoWindow = true,
+                            }
+                        );
                         probe.WaitForExit(5000);
                         _ffmpegAvailable = true;
                     }
-                    catch { _ffmpegAvailable = false; }
+                    catch
+                    {
+                        _ffmpegAvailable = false;
+                    }
                 }
                 return _ffmpegAvailable.Value;
             }
@@ -87,8 +94,8 @@ namespace PlayerViewer.UI
 
         /// <summary>Raw-RGBA input args for a pipe of the given size and rate.</summary>
         public static string RawInputArgs(int width, int height, int fps) =>
-            $"-y -f rawvideo -pixel_format rgba -video_size {width}x{height} " +
-            $"-framerate {fps} -i pipe:0 -vf vflip ";
+            $"-y -f rawvideo -pixel_format rgba -video_size {width}x{height} "
+            + $"-framerate {fps} -i pipe:0 -vf vflip ";
 
         /// <summary>
         /// Builds a full-frame straight-RGBA background buffer for compositing at export time:
@@ -99,7 +106,8 @@ namespace PlayerViewer.UI
         /// </summary>
         public static byte[] BuildBackground(int fw, int fh, BackgroundConfig cfg, bool bottomUp)
         {
-            if (fw <= 0 || fh <= 0) return null;
+            if (fw <= 0 || fh <= 0)
+                return null;
             var buf = new byte[fw * fh * 4];
 
             void Fill()
@@ -107,13 +115,24 @@ namespace PlayerViewer.UI
                 byte r = (byte)(Math.Clamp(cfg.Color[0], 0f, 1f) * 255);
                 byte g = (byte)(Math.Clamp(cfg.Color[1], 0f, 1f) * 255);
                 byte b = (byte)(Math.Clamp(cfg.Color[2], 0f, 1f) * 255);
-                for (int i = 0; i < buf.Length; i += 4) { buf[i] = r; buf[i + 1] = g; buf[i + 2] = b; buf[i + 3] = 255; }
+                for (int i = 0; i < buf.Length; i += 4)
+                {
+                    buf[i] = r;
+                    buf[i + 1] = g;
+                    buf[i + 2] = b;
+                    buf[i + 3] = 255;
+                }
             }
 
-            if (cfg.Mode == 1) { Fill(); return buf; }                     //Color
-            if (cfg.Mode != 2)                                             //Transparent -> black
+            if (cfg.Mode == 1)
             {
-                for (int i = 3; i < buf.Length; i += 4) buf[i] = 255;
+                Fill();
+                return buf;
+            } //Color
+            if (cfg.Mode != 2) //Transparent -> black
+            {
+                for (int i = 3; i < buf.Length; i += 4)
+                    buf[i] = 255;
                 return buf;
             }
 
@@ -127,18 +146,27 @@ namespace PlayerViewer.UI
             float zoom = Math.Max(cfg.Zoom, 1e-4f);
 
             //Placement/scale is constant across the whole frame; hoist it out of the pixel loops.
-            int nx = Math.Max(cfg.TileX, 1), ny = Math.Max(cfg.TileY, 1);
-            float offXfw = cfg.OffsetX * fw, offYfh = cfg.OffsetY * fh;
-            float sx, sy;
-            if (cfg.ScaleMode == 2) { sx = (float)fw / iw * zoom; sy = (float)fh / ih * zoom; }
+            int nx = Math.Max(cfg.TileX, 1),
+                ny = Math.Max(cfg.TileY, 1);
+            float offXfw = cfg.OffsetX * fw,
+                offYfh = cfg.OffsetY * fh;
+            float sx,
+                sy;
+            if (cfg.ScaleMode == 2)
+            {
+                sx = (float)fw / iw * zoom;
+                sy = (float)fh / ih * zoom;
+            }
             else
             {
-                float s = cfg.ScaleMode == 1
-                    ? MathF.Min((float)fw / iw, (float)fh / ih)   //Fit
-                    : MathF.Max((float)fw / iw, (float)fh / ih);  //Fill
+                float s =
+                    cfg.ScaleMode == 1
+                        ? MathF.Min((float)fw / iw, (float)fh / ih) //Fit
+                        : MathF.Max((float)fw / iw, (float)fh / ih); //Fill
                 sx = sy = s * zoom;
             }
-            float dispW = iw * sx, dispH = ih * sy;
+            float dispW = iw * sx,
+                dispH = ih * sy;
             float originX = (fw - dispW) * 0.5f + offXfw;
             float originY = (fh - dispH) * 0.5f + offYfh;
 
@@ -147,8 +175,15 @@ namespace PlayerViewer.UI
                 int dyEff = bottomUp ? fh - 1 - dy : dy;
                 //v is constant across the row.
                 float v;
-                if (cfg.Tile) { v = ((dyEff - offYfh) / fh) * ny / zoom; v -= MathF.Floor(v); }
-                else { v = (dyEff - originY) / dispH; }
+                if (cfg.Tile)
+                {
+                    v = ((dyEff - offYfh) / fh) * ny / zoom;
+                    v -= MathF.Floor(v);
+                }
+                else
+                {
+                    v = (dyEff - originY) / dispH;
+                }
 
                 for (int dx = 0; dx < fw; dx++)
                 {
@@ -162,45 +197,67 @@ namespace PlayerViewer.UI
                     {
                         u = (dx - originX) / dispW;
                         if (u < 0 || u >= 1 || v < 0 || v >= 1)
-                            continue;   //off-frame / Fit letterbox stays transparent (0,0,0,0)
+                            continue; //off-frame / Fit letterbox stays transparent (0,0,0,0)
                     }
                     int sxp = Math.Clamp((int)(u * iw), 0, iw - 1);
                     int syp = Math.Clamp((int)(v * ih), 0, ih - 1);
-                    int si = (syp * iw + sxp) * 4, d = (dy * fw + dx) * 4;
-                    buf[d] = src[si]; buf[d + 1] = src[si + 1]; buf[d + 2] = src[si + 2]; buf[d + 3] = src[si + 3];
+                    int si = (syp * iw + sxp) * 4,
+                        d = (dy * fw + dx) * 4;
+                    buf[d] = src[si];
+                    buf[d + 1] = src[si + 1];
+                    buf[d + 2] = src[si + 2];
+                    buf[d + 3] = src[si + 3];
                 }
             }
             return buf;
         }
 
         //Decodes the background image to tightly-packed top-down RGBA, cached by path + write time.
-        static string _bgPath; static long _bgStamp; static byte[] _bgRgba; static int _bgW, _bgH;
+        static string _bgPath;
+        static long _bgStamp;
+        static byte[] _bgRgba;
+        static int _bgW,
+            _bgH;
+
         static bool TryDecodeBackground(string path, out byte[] rgba, out int w, out int h)
         {
-            rgba = null; w = h = 0;
+            rgba = null;
+            w = h = 0;
             try
             {
-                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return false;
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return false;
                 long stamp = File.GetLastWriteTimeUtc(path).Ticks;
                 if (_bgRgba == null || _bgPath != path || _bgStamp != stamp)
                 {
                     using var img = Image.Load<Rgba32>(path);
                     var pixels = new byte[img.Width * img.Height * 4];
                     img.CopyPixelDataTo(pixels);
-                    _bgRgba = pixels; _bgW = img.Width; _bgH = img.Height; _bgPath = path; _bgStamp = stamp;
+                    _bgRgba = pixels;
+                    _bgW = img.Width;
+                    _bgH = img.Height;
+                    _bgPath = path;
+                    _bgStamp = stamp;
                 }
-                if (_bgW <= 0 || _bgH <= 0) return false;
-                rgba = _bgRgba; w = _bgW; h = _bgH;
+                if (_bgW <= 0 || _bgH <= 0)
+                    return false;
+                rgba = _bgRgba;
+                w = _bgW;
+                h = _bgH;
                 return true;
             }
-            catch { return false; }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>Appends _&lt;unix seconds&gt; before the extension so saves never collide.</summary>
         public static string Timestamped(string baseName, string ext)
         {
             long unix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-            if (!ext.StartsWith('.')) ext = "." + ext;
+            if (!ext.StartsWith('.'))
+                ext = "." + ext;
             return $"{baseName}_{unix}{ext}";
         }
     }

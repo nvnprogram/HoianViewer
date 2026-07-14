@@ -16,7 +16,8 @@ namespace ShaderLibrary.IO
         private bool IsBigEndian = false;
         private bool IsWiiU = false;
 
-        public BinaryDataReader(Stream input, bool is_big_endian = false, bool leaveOpen = false) : base(input, Encoding.UTF8, leaveOpen)
+        public BinaryDataReader(Stream input, bool is_big_endian = false, bool leaveOpen = false)
+            : base(input, Encoding.UTF8, leaveOpen)
         {
             IsBigEndian = is_big_endian;
             IsWiiU |= is_big_endian;
@@ -25,7 +26,8 @@ namespace ShaderLibrary.IO
         public override uint ReadUInt32()
         {
             var bytes = base.ReadBytes(4);
-            if (IsBigEndian) Array.Reverse(bytes);
+            if (IsBigEndian)
+                Array.Reverse(bytes);
 
             return BitConverter.ToUInt32(bytes);
         }
@@ -33,7 +35,8 @@ namespace ShaderLibrary.IO
         public override int ReadInt32()
         {
             var bytes = base.ReadBytes(4);
-            if (IsBigEndian) Array.Reverse(bytes);
+            if (IsBigEndian)
+                Array.Reverse(bytes);
 
             return BitConverter.ToInt32(bytes);
         }
@@ -41,7 +44,8 @@ namespace ShaderLibrary.IO
         public override short ReadInt16()
         {
             var bytes = base.ReadBytes(2);
-            if (IsBigEndian) Array.Reverse(bytes);
+            if (IsBigEndian)
+                Array.Reverse(bytes);
 
             return BitConverter.ToInt16(bytes);
         }
@@ -49,7 +53,8 @@ namespace ShaderLibrary.IO
         public override ushort ReadUInt16()
         {
             var bytes = base.ReadBytes(2);
-            if (IsBigEndian) Array.Reverse(bytes);
+            if (IsBigEndian)
+                Array.Reverse(bytes);
 
             return BitConverter.ToUInt16(bytes);
         }
@@ -69,13 +74,14 @@ namespace ShaderLibrary.IO
 
         public T ReadCustom<T>(Func<T> value, ulong offset)
         {
-            if (offset == 0) return default(T);
+            if (offset == 0)
+                return default(T);
 
-            using (this.BaseStream.TemporarySeek((long)offset, SeekOrigin.Begin)) {
+            using (this.BaseStream.TemporarySeek((long)offset, SeekOrigin.Begin))
+            {
                 return value.Invoke();
             }
         }
-
 
         public sbyte[] ReadSbytes(int count)
         {
@@ -148,11 +154,13 @@ namespace ShaderLibrary.IO
 
         public string LoadString(ulong offset)
         {
-            if (offset == 0) return "";
+            if (offset == 0)
+                return "";
 
             var shift = IsWiiU ? 0 : 2; //switch shifts by 2 due to string length
 
-            using (this.BaseStream.TemporarySeek((long)offset + shift, SeekOrigin.Begin)) {
+            using (this.BaseStream.TemporarySeek((long)offset + shift, SeekOrigin.Begin))
+            {
                 return ReadZeroTerminatedString();
             }
         }
@@ -167,8 +175,11 @@ namespace ShaderLibrary.IO
             this.BaseStream.Seek((long)offset, SeekOrigin.Begin);
         }
 
-        public T ReadStruct<T>() => Utils.BytesToStruct<T>(ReadBytes(Marshal.SizeOf<T>()), IsBigEndian);
-        public List<T> ReadMultipleStructs<T>(int count) => Enumerable.Range(0, count).Select(_ => ReadStruct<T>()).ToList();
+        public T ReadStruct<T>() =>
+            Utils.BytesToStruct<T>(ReadBytes(Marshal.SizeOf<T>()), IsBigEndian);
+
+        public List<T> ReadMultipleStructs<T>(int count) =>
+            Enumerable.Range(0, count).Select(_ => ReadStruct<T>()).ToList();
 
         public string ReadZeroTerminatedString(int maxLength = int.MaxValue)
         {
@@ -190,7 +201,10 @@ namespace ShaderLibrary.IO
         public void Align(int align)
         {
             var startPos = this.BaseStream.Position;
-             this.BaseStream.Seek((int)(-this.BaseStream.Position % align + align) % align, SeekOrigin.Current);
+            this.BaseStream.Seek(
+                (int)(-this.BaseStream.Position % align + align) % align,
+                SeekOrigin.Current
+            );
         }
     }
 }

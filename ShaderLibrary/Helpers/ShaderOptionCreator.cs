@@ -46,12 +46,12 @@ namespace ShaderLibrary.Helpers
 
                 // Calculate the bit mask for the choices
                 //total bits to take up, shift by bit pos
-                uint bitMask = (uint)((1 << bitsPerChoice) - 1) ;
+                uint bitMask = (uint)((1 << bitsPerChoice) - 1);
                 bitMask <<= bitPos;
 
                 uint bitKeyIndex = (uint)bitfield.Count - 1;
 
-               // Console.WriteLine($"{bitKeyIndex} {bitPos} {bitMask} og {option.Bit32Index} {option.Bit32Shift} {option.Bit32Mask} bitsPerChoice {bitsPerChoice} {option.Choices.Count}");
+                // Console.WriteLine($"{bitKeyIndex} {bitPos} {bitMask} og {option.Bit32Index} {option.Bit32Shift} {option.Bit32Mask} bitsPerChoice {bitsPerChoice} {option.Choices.Count}");
 
                 option.Bit32Mask = (uint)bitMask;
                 option.Bit32Shift = (byte)bitPos;

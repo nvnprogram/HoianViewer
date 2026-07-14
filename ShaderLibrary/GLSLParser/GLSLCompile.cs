@@ -1,12 +1,12 @@
-﻿using Silk.NET.Core.Native;
-using Silk.NET.OpenGL;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using Silk.NET.Core.Native;
+using Silk.NET.OpenGL;
 
 namespace ShaderLibrary
 {
@@ -52,28 +52,32 @@ namespace ShaderLibrary
         public int GetSamplerLocation(string name)
         {
             name = SamplerSymbols.ContainsKey(name) ? SamplerSymbols[name] : name;
-            return this.Samplers.ContainsKey(name) ? this.Samplers[name] : -1; 
+            return this.Samplers.ContainsKey(name) ? this.Samplers[name] : -1;
         }
-            
+
         public int GetUniformBlockLocation(string name)
         {
             name = UniformBlockSymbols.ContainsKey(name) ? UniformBlockSymbols[name] : name;
             return this.UniformBlocks.ContainsKey(name) ? this.UniformBlocks[name] : -1;
         }
 
-        public int GetStorageBufferLocation(string name)
-            => this.StorageBuffers.ContainsKey(name) ? this.StorageBuffers[name] : -1;
-        public int GetOutputLocation(string name)
-            => this.Outputs.ContainsKey(name) ? this.Outputs[name] : -1;
+        public int GetStorageBufferLocation(string name) =>
+            this.StorageBuffers.ContainsKey(name) ? this.StorageBuffers[name] : -1;
+
+        public int GetOutputLocation(string name) =>
+            this.Outputs.ContainsKey(name) ? this.Outputs[name] : -1;
 
         public unsafe void CompileVert(string vertexShaderSource)
         {
-            const string dummyFragShader = "#version 330 core\r\n\r\nout vec4 FragColor;\r\n\r\nvoid main()\r\n{\r\n    FragColor = vec4(1.0); // Output solid white\r\n}";
+            const string dummyFragShader =
+                "#version 330 core\r\n\r\nout vec4 FragColor;\r\n\r\nvoid main()\r\n{\r\n    FragColor = vec4(1.0); // Output solid white\r\n}";
             Compile(vertexShaderSource, dummyFragShader);
         }
+
         public unsafe void CompileFrag(string fragmentShaderSource)
         {
-            const string dummyVertexShader = "#version 330 core\nvoid main() { gl_Position = vec4(0.0); }";
+            const string dummyVertexShader =
+                "#version 330 core\nvoid main() { gl_Position = vec4(0.0); }";
             Compile(dummyVertexShader, fragmentShaderSource);
         }
 
@@ -124,7 +128,12 @@ namespace ShaderLibrary
             _gl.GetProgram(ShaderProgram, GLEnum.ActiveUniforms, out int numUniforms);
             for (int i = 0; i < numUniforms; i++)
             {
-                string name = _gl.GetActiveUniform(ShaderProgram, (uint)i, out _, out UniformType type);
+                string name = _gl.GetActiveUniform(
+                    ShaderProgram,
+                    (uint)i,
+                    out _,
+                    out UniformType type
+                );
                 int location = _gl.GetUniformLocation(ShaderProgram, name);
 
                 if (type.ToString().Contains("Sampler"))
@@ -145,39 +154,72 @@ namespace ShaderLibrary
             }
 
             // Query uniform blocks
-            _gl.GetProgram(ShaderProgram, ProgramPropertyARB.ActiveUniformBlocks, out int numBlocks);
+            _gl.GetProgram(
+                ShaderProgram,
+                ProgramPropertyARB.ActiveUniformBlocks,
+                out int numBlocks
+            );
             for (int i = 0; i < numBlocks; i++)
             {
                 Span<byte> nameBuffer = stackalloc byte[256];
                 unsafe
                 {
-                    _gl.GetActiveUniformBlock(ShaderProgram, (uint)i, 
-                        GLEnum.UniformBlockReferencedByVertexShader, out int isVertexUsed);
-                    _gl.GetActiveUniformBlock(ShaderProgram, (uint)i,
-                        GLEnum.UniformBlockReferencedByFragmentShader, out int isFragmentUsed);
+                    _gl.GetActiveUniformBlock(
+                        ShaderProgram,
+                        (uint)i,
+                        GLEnum.UniformBlockReferencedByVertexShader,
+                        out int isVertexUsed
+                    );
+                    _gl.GetActiveUniformBlock(
+                        ShaderProgram,
+                        (uint)i,
+                        GLEnum.UniformBlockReferencedByFragmentShader,
+                        out int isFragmentUsed
+                    );
 
-                    _gl.GetActiveUniformBlockName(ShaderProgram, (uint)i,
-                        (uint)nameBuffer.Length, null, out nameBuffer[0]);
+                    _gl.GetActiveUniformBlockName(
+                        ShaderProgram,
+                        (uint)i,
+                        (uint)nameBuffer.Length,
+                        null,
+                        out nameBuffer[0]
+                    );
 
                     if (isVertexUsed == 0 && isFragmentUsed == 0)
                         continue; // Not used, skip
                 }
 
-                _gl.GetActiveUniformBlock(ShaderProgram, (uint)i, GLEnum.UniformBlockBinding, out int binding);
+                _gl.GetActiveUniformBlock(
+                    ShaderProgram,
+                    (uint)i,
+                    GLEnum.UniformBlockBinding,
+                    out int binding
+                );
 
                 string name = SilkMarshal.PtrToString((nint)Unsafe.AsPointer(ref nameBuffer[0]))!;
                 UniformBlocks[name] = binding;
             }
 
             // Query shader storage blocks
-            _gl.GetProgramInterface(ShaderProgram, GLEnum.ShaderStorageBlock, GLEnum.ActiveResources, out int numSSBOs);
+            _gl.GetProgramInterface(
+                ShaderProgram,
+                GLEnum.ShaderStorageBlock,
+                GLEnum.ActiveResources,
+                out int numSSBOs
+            );
             for (int i = 0; i < numSSBOs; i++)
             {
                 Span<byte> nameBuffer = stackalloc byte[256];
                 unsafe
                 {
-                    _gl.GetProgramResourceName(ShaderProgram, ProgramInterface.ShaderStorageBlock, (uint)i,
-                        (uint)nameBuffer.Length, out uint len, out nameBuffer[0]);
+                    _gl.GetProgramResourceName(
+                        ShaderProgram,
+                        ProgramInterface.ShaderStorageBlock,
+                        (uint)i,
+                        (uint)nameBuffer.Length,
+                        out uint len,
+                        out nameBuffer[0]
+                    );
                 }
                 string name = SilkMarshal.PtrToString((nint)Unsafe.AsPointer(ref nameBuffer[0]))!;
                 StorageBuffers[name] = i;
