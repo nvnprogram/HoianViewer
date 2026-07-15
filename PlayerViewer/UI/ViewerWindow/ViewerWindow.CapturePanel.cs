@@ -88,7 +88,7 @@ namespace PlayerViewer.UI
                 SetPaused(!paused);
             ImGui.SameLine();
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.SliderFloat("##speed", ref speed, 0.1f, 2.0f, "speed %.2fx"))
+            if (ImGui.SliderFloat("##speed", ref speed, 0.01f, 10.0f, "speed %.2fx"))
                 SetSpeed(speed);
 
             float frameCount = Math.Max(rawFrameCount - 1, 1);
