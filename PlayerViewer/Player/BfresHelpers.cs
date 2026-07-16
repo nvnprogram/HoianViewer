@@ -24,10 +24,15 @@ namespace PlayerViewer.Player
 
                 if (resFile.ExternalFiles.ContainsKey("share_tex_list.txt"))
                 {
-                    string content = System.Text.Encoding.UTF8
-                        .GetString(resFile.ExternalFiles["share_tex_list.txt"].Data).Trim();
-                    var refs = content.Split(new[] { '\r', '\n' },
-                        StringSplitOptions.RemoveEmptyEntries);
+                    string content = System
+                        .Text.Encoding.UTF8.GetString(
+                            resFile.ExternalFiles["share_tex_list.txt"].Data
+                        )
+                        .Trim();
+                    var refs = content.Split(
+                        new[] { '\r', '\n' },
+                        StringSplitOptions.RemoveEmptyEntries
+                    );
                     foreach (var refModel in refs)
                         MergeSharedAssets(bfres, refModel.Trim(), romfs);
                 }
@@ -45,7 +50,11 @@ namespace PlayerViewer.Player
         /// the referenced BFRES textures into the render's texture cache.
         /// Value format: "_rp0/ModelName" or "_re0,ModelName".
         /// </summary>
-        static void ResolveExternalTextureResources(BFRES bfres, BfresLibrary.ResFile resFile, Romfs romfs)
+        static void ResolveExternalTextureResources(
+            BFRES bfres,
+            BfresLibrary.ResFile resFile,
+            Romfs romfs
+        )
         {
             var render = (BfresRender)bfres.Renderer;
             var loaded = new HashSet<string>();
@@ -56,24 +65,29 @@ namespace PlayerViewer.Player
                 if (!mat.UserData.ContainsKey("ExternalTextureResource"))
                     continue;
                 var strings = mat.UserData["ExternalTextureResource"].GetValueStringArray();
-                if (strings.Length == 0) continue;
+                if (strings.Length == 0)
+                    continue;
 
                 string raw = strings[0];
                 int sep = Math.Max(raw.LastIndexOf('/'), raw.LastIndexOf(','));
                 string refName = sep >= 0 ? raw.Substring(sep + 1) : raw;
-                if (!loaded.Add(refName)) continue;
+                if (!loaded.Add(refName))
+                    continue;
 
                 var refData = romfs.ReadModel(refName);
                 if (refData == null)
                 {
-                    Console.WriteLine($"[Scene] ExternalTextureResource not found: {refName} (from {raw})");
+                    Console.WriteLine(
+                        $"[Scene] ExternalTextureResource not found: {refName} (from {raw})"
+                    );
                     continue;
                 }
                 var refRes = new BfresLibrary.ResFile(new MemoryStream(refData));
                 int added = 0;
                 foreach (var tex in refRes.Textures.Values)
                 {
-                    if (render.Textures.ContainsKey(tex.Name)) continue;
+                    if (render.Textures.ContainsKey(tex.Name))
+                        continue;
                     if (tex is BfresLibrary.Switch.SwitchTexture st)
                     {
                         render.Textures.Add(tex.Name, new BntxTexture(st.BntxFile, st.Texture));
@@ -81,7 +95,9 @@ namespace PlayerViewer.Player
                     }
                 }
                 if (added > 0)
-                    Console.WriteLine($"[Scene] Merged {added} textures from ExternalTextureResource {refName}");
+                    Console.WriteLine(
+                        $"[Scene] Merged {added} textures from ExternalTextureResource {refName}"
+                    );
             }
         }
 
@@ -131,16 +147,24 @@ namespace PlayerViewer.Player
 
                 int total = skelAnims + matAnims + visAnims;
                 if (texAdded > 0 || total > 0)
-                    Console.WriteLine($"[Scene] Merged {texAdded} tex, {total} anims " +
-                        $"(skel={skelAnims} mat={matAnims} vis={visAnims}) from {baseModelName}");
+                    Console.WriteLine(
+                        $"[Scene] Merged {texAdded} tex, {total} anims "
+                            + $"(skel={skelAnims} mat={matAnims} vis={visAnims}) from {baseModelName}"
+                    );
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[Scene] Shared asset merge failed ({baseModelName}): {ex.Message}");
+                Console.WriteLine(
+                    $"[Scene] Shared asset merge failed ({baseModelName}): {ex.Message}"
+                );
             }
         }
 
-        static int MergeMaterialAnims(BFRES bfres, BfresLibrary.ResDict<BfresLibrary.MaterialAnim> source, string resName)
+        static int MergeMaterialAnims(
+            BFRES bfres,
+            BfresLibrary.ResDict<BfresLibrary.MaterialAnim> source,
+            string resName
+        )
         {
             int added = 0;
             foreach (var anim in source.Values)

@@ -26,21 +26,27 @@ namespace PlayerViewer.Core
 
         readonly Dictionary<string, Sarc> _packCache = new(StringComparer.OrdinalIgnoreCase);
 
-        public Romfs(string root, string layeredRoot = null, bool useLayered = false,
-            string sdodrRoot = null)
+        public Romfs(
+            string root,
+            string layeredRoot = null,
+            bool useLayered = false,
+            string sdodrRoot = null
+        )
         {
             Root = root;
             LayeredRoot = layeredRoot;
-            UseLayered = useLayered && !string.IsNullOrEmpty(layeredRoot) && Directory.Exists(layeredRoot);
-            SdodrRoot = !string.IsNullOrEmpty(sdodrRoot) && Directory.Exists(sdodrRoot) ? sdodrRoot : null;
+            UseLayered =
+                useLayered && !string.IsNullOrEmpty(layeredRoot) && Directory.Exists(layeredRoot);
+            SdodrRoot =
+                !string.IsNullOrEmpty(sdodrRoot) && Directory.Exists(sdodrRoot) ? sdodrRoot : null;
         }
 
         public static bool IsValidRoot(string root)
         {
-            return !string.IsNullOrEmpty(root) &&
-                Directory.Exists(Path.Combine(root, "Model")) &&
-                Directory.Exists(Path.Combine(root, "RSDB")) &&
-                File.Exists(Path.Combine(root, "Model", "Player00.bfres.zs"));
+            return !string.IsNullOrEmpty(root)
+                && Directory.Exists(Path.Combine(root, "Model"))
+                && Directory.Exists(Path.Combine(root, "RSDB"))
+                && File.Exists(Path.Combine(root, "Model", "Player00.bfres.zs"));
         }
 
         /// <summary>
@@ -52,18 +58,24 @@ namespace PlayerViewer.Core
             if (UseLayered)
             {
                 string layered = Path.Combine(LayeredRoot, relativePath);
-                if (File.Exists(layered)) return layered;
-                if (File.Exists(layered + ".zs")) return layered + ".zs";
+                if (File.Exists(layered))
+                    return layered;
+                if (File.Exists(layered + ".zs"))
+                    return layered + ".zs";
             }
             if (SdodrRoot != null)
             {
                 string sdodr = Path.Combine(SdodrRoot, relativePath);
-                if (File.Exists(sdodr)) return sdodr;
-                if (File.Exists(sdodr + ".zs")) return sdodr + ".zs";
+                if (File.Exists(sdodr))
+                    return sdodr;
+                if (File.Exists(sdodr + ".zs"))
+                    return sdodr + ".zs";
             }
             string path = Path.Combine(Root, relativePath);
-            if (File.Exists(path)) return path;
-            if (File.Exists(path + ".zs")) return path + ".zs";
+            if (File.Exists(path))
+                return path;
+            if (File.Exists(path + ".zs"))
+                return path + ".zs";
             return null;
         }
 
@@ -94,10 +106,16 @@ namespace PlayerViewer.Core
         public static byte[] Decompress(byte[] data)
         {
             //zstd magic
-            if (data.Length >= 4 && data[0] == 0x28 && data[1] == 0xB5 && data[2] == 0x2F && data[3] == 0xFD)
+            if (
+                data.Length >= 4
+                && data[0] == 0x28
+                && data[1] == 0xB5
+                && data[2] == 0x2F
+                && data[3] == 0xFD
+            )
             {
-                using var decompressor = new ZstdNet.Decompressor();
-                return decompressor.Unwrap(data);
+                using var decompressor = new ZstdSharp.Decompressor();
+                return decompressor.Unwrap(data).ToArray();
             }
             return data;
         }

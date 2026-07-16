@@ -9,11 +9,19 @@ namespace PlayerViewer.Core.Formats
     /// </summary>
     public class Sarc
     {
-        public readonly Dictionary<string, ArraySegment<byte>> Files = new(StringComparer.OrdinalIgnoreCase);
+        public readonly Dictionary<string, ArraySegment<byte>> Files = new(
+            StringComparer.OrdinalIgnoreCase
+        );
 
         public Sarc(byte[] data)
         {
-            if (data.Length < 0x20 || data[0] != 'S' || data[1] != 'A' || data[2] != 'R' || data[3] != 'C')
+            if (
+                data.Length < 0x20
+                || data[0] != 'S'
+                || data[1] != 'A'
+                || data[2] != 'R'
+                || data[3] != 'C'
+            )
                 throw new InvalidOperationException("Not a SARC archive.");
 
             uint dataOffset = BitConverter.ToUInt32(data, 0x0C);
@@ -39,7 +47,8 @@ namespace PlayerViewer.Core.Formats
                 {
                     int nameOff = names + (int)((attrs & 0xFFFF) * 4);
                     int strEnd = nameOff;
-                    while (data[strEnd] != 0) strEnd++;
+                    while (data[strEnd] != 0)
+                        strEnd++;
                     name = Encoding.UTF8.GetString(data, nameOff, strEnd - nameOff);
                 }
                 else
@@ -47,7 +56,11 @@ namespace PlayerViewer.Core.Formats
                     name = $"hash_{BitConverter.ToUInt32(data, node):X8}";
                 }
 
-                Files[name] = new ArraySegment<byte>(data, (int)(dataOffset + start), (int)(end - start));
+                Files[name] = new ArraySegment<byte>(
+                    data,
+                    (int)(dataOffset + start),
+                    (int)(end - start)
+                );
             }
         }
 

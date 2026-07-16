@@ -1,0 +1,6 @@
+# only format our own code
+Cafe-Shader-Studio/
+
+# Build artifacts
+**/bin/
+**/obj/

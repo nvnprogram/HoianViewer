@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using OpenTK.Graphics.OpenGL;
 using System.Drawing;
 using Toolbox.Core;
@@ -91,14 +89,25 @@ namespace GLFrameworkEngine
             return glTexture;
         }
 
+        //Decodes an encoded image (PNG/JPEG/...) to RGBA and uploads it with ImageSharp.
         public static GLTexture2D FromBitmap(byte[] imageFile)
         {
-            Bitmap image =  (Bitmap)Bitmap.FromStream(new System.IO.MemoryStream(imageFile));
+            using var image = SixLabors.ImageSharp.Image.Load<SixLabors.ImageSharp.PixelFormats.Rgba32>(imageFile);
+            byte[] rgba = new byte[image.Width * image.Height * 4];
+            image.CopyPixelDataTo(rgba);
+            return FromRgba(rgba, image.Width, image.Height);
+        }
 
+        public static GLTexture2D FromRgba(byte[] rgba, int width, int height)
+        {
             GLTexture2D texture = new GLTexture2D();
             texture.Target = TextureTarget.Texture2D;
-            texture.Width = image.Width; texture.Height = image.Height;
-            texture.LoadImage(image);
+            texture.Width = width; texture.Height = height;
+            texture.Bind();
+            GL.TexImage2D(texture.Target, 0, PixelInternalFormat.Rgba, width, height, 0,
+                PixelFormat.Rgba, PixelType.UnsignedByte, rgba);
+            GL.GenerateMipmap(GenerateMipmapTarget.Texture2D);
+            texture.Unbind();
             return texture;
         }
 

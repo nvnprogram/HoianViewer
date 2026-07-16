@@ -1,10 +1,10 @@
-﻿using ShaderLibrary.IO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using ShaderLibrary.IO;
 
 namespace ShaderLibrary.Switch
 {
@@ -40,7 +40,9 @@ namespace ShaderLibrary.Switch
             return variation;
         }
 
-        internal static BnshFile.BnshShaderProgram ReadBnshShaderProgram(BnshFile.ShaderVariation variation)
+        internal static BnshFile.BnshShaderProgram ReadBnshShaderProgram(
+            BnshFile.ShaderVariation variation
+        )
         {
             BnshFile.BnshShaderProgram program = new();
 
@@ -54,8 +56,14 @@ namespace ShaderLibrary.Switch
             program.FragmentShader = ReadShaderCode(reader, program.header.FragmentShaderOffset);
             program.GeometryShader = ReadShaderCode(reader, program.header.GeometryShaderOffset);
             program.ComputeShader = ReadShaderCode(reader, program.header.ComputeShaderOffset);
-            program.TessellationControlShader = ReadShaderCode(reader, program.header.TessellationControlShaderOffset);
-            program.TessellationEvalShader = ReadShaderCode(reader, program.header.TessellationEvalShaderOffset);
+            program.TessellationControlShader = ReadShaderCode(
+                reader,
+                program.header.TessellationControlShaderOffset
+            );
+            program.TessellationEvalShader = ReadShaderCode(
+                reader,
+                program.header.TessellationEvalShaderOffset
+            );
 
             reader.SeekBegin(program.header.ObjectOffset);
             program.MemoryData = reader.ReadBytes((int)program.header.ObjectSize);
@@ -66,7 +74,10 @@ namespace ShaderLibrary.Switch
                 //offsets
                 var offsets = reader.ReadUInt64s(6);
                 program.VertexShaderReflection = ReadReflectionData(reader, offsets[0]);
-                program.TessellationControlShaderReflection = ReadReflectionData(reader, offsets[1]);
+                program.TessellationControlShaderReflection = ReadReflectionData(
+                    reader,
+                    offsets[1]
+                );
                 program.TessellationEvalShaderReflection = ReadReflectionData(reader, offsets[2]);
                 program.GeometryShaderReflection = ReadReflectionData(reader, offsets[3]);
                 program.FragmentShaderReflection = ReadReflectionData(reader, offsets[4]);
@@ -80,7 +91,8 @@ namespace ShaderLibrary.Switch
 
         private static BnshFile.ShaderCode ReadShaderCode(BinaryDataReader reader, ulong offset)
         {
-            if (offset == 0) return null;
+            if (offset == 0)
+                return null;
             reader.SeekBegin(offset);
 
             BnshFile.ShaderCode code = new();
@@ -91,22 +103,32 @@ namespace ShaderLibrary.Switch
             uint controlCodeSize = reader.ReadUInt32();
             code.Reserved = reader.ReadBytes(32); //padding
 
-            code.ControlCode = reader.ReadCustom(() =>
-            {
-                return reader.ReadBytes((int)controlCodeSize);
-            }, controlCodeOffset);
+            code.ControlCode = reader.ReadCustom(
+                () =>
+                {
+                    return reader.ReadBytes((int)controlCodeSize);
+                },
+                controlCodeOffset
+            );
 
-            code.ByteCode = reader.ReadCustom(() =>
-            {
-                return reader.ReadBytes((int)byteCodeSize);
-            }, byteCodeOffset);
+            code.ByteCode = reader.ReadCustom(
+                () =>
+                {
+                    return reader.ReadBytes((int)byteCodeSize);
+                },
+                byteCodeOffset
+            );
 
             return code;
         }
 
-        private static BnshFile.ShaderReflectionData ReadReflectionData(BinaryDataReader reader, ulong offset)
+        private static BnshFile.ShaderReflectionData ReadReflectionData(
+            BinaryDataReader reader,
+            ulong offset
+        )
         {
-            if (offset == 0) return null;
+            if (offset == 0)
+                return null;
             reader.SeekBegin(offset);
 
             BnshFile.ShaderReflectionData reflect = new();
@@ -114,21 +136,47 @@ namespace ShaderLibrary.Switch
             reader.BaseStream.Read(Utils.AsSpan(ref reflect.header));
             var pos = reader.BaseStream.Position;
 
-            reflect.Inputs = BfshaLoader.LoadDictionary(reader, reflect.header.InputDictionaryOffset, 0, BfshaLoader.ReadResUint);
-            reflect.Outputs = BfshaLoader.LoadDictionary(reader, reflect.header.OutputDictionaryOffset, 0, BfshaLoader.ReadResUint);
-            reflect.Samplers = BfshaLoader.LoadDictionary(reader, reflect.header.SamplerDictionaryOffset, 0, BfshaLoader.ReadResUint);
-            reflect.UniformBuffers = BfshaLoader.LoadDictionary(reader, reflect.header.UniformBufferDictionaryOffset, 0, BfshaLoader.ReadResUint);
-            reflect.StorageBuffers = BfshaLoader.LoadDictionary(reader, reflect.header.StorageBufferDictionaryOffset, 0, BfshaLoader.ReadResUint);
+            reflect.Inputs = BfshaLoader.LoadDictionary(
+                reader,
+                reflect.header.InputDictionaryOffset,
+                0,
+                BfshaLoader.ReadResUint
+            );
+            reflect.Outputs = BfshaLoader.LoadDictionary(
+                reader,
+                reflect.header.OutputDictionaryOffset,
+                0,
+                BfshaLoader.ReadResUint
+            );
+            reflect.Samplers = BfshaLoader.LoadDictionary(
+                reader,
+                reflect.header.SamplerDictionaryOffset,
+                0,
+                BfshaLoader.ReadResUint
+            );
+            reflect.UniformBuffers = BfshaLoader.LoadDictionary(
+                reader,
+                reflect.header.UniformBufferDictionaryOffset,
+                0,
+                BfshaLoader.ReadResUint
+            );
+            reflect.StorageBuffers = BfshaLoader.LoadDictionary(
+                reader,
+                reflect.header.StorageBufferDictionaryOffset,
+                0,
+                BfshaLoader.ReadResUint
+            );
 
             if (reflect.header.SlotCount > 0)
             {
-                reflect.Slots = reader.ReadCustom(() => reader.ReadInt32s((int)reflect.header.SlotCount), (uint)reflect.header.SlotOffset);
+                reflect.Slots = reader.ReadCustom(
+                    () => reader.ReadInt32s((int)reflect.header.SlotCount),
+                    (uint)reflect.header.SlotOffset
+                );
                 reflect.AssignSlots(reflect.Slots);
             }
             reader.SeekBegin(pos);
             return reflect;
         }
-
-
     }
 }

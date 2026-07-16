@@ -1,10 +1,10 @@
 ﻿using System;
-using System.Numerics;
-using System.Linq;
-using System.Text;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Numerics;
+using System.Text;
 
 namespace ShaderLibrary
 {
@@ -14,7 +14,10 @@ namespace ShaderLibrary
 
         static string ToBinaryString(string text, Encoding encoding)
         {
-            return string.Join("", encoding.GetBytes(text).Select(n => Convert.ToString(n, 2).PadLeft(8, '0')));
+            return string.Join(
+                "",
+                encoding.GetBytes(text).Select(n => Convert.ToString(n, 2).PadLeft(8, '0'))
+            );
         }
 
         static int _bit(BigInteger n, int b)
@@ -49,7 +52,6 @@ namespace ShaderLibrary
             }
             return -1;
         }
-
 
         static int BitLength(BigInteger bits)
         {
@@ -136,13 +138,11 @@ namespace ShaderLibrary
                     else
                         newNode.Child[_bit(data, bitIdx) ^ 1] = root;
 
-
                     current.Child[_bit(data, current.bitInx)] = newNode;
                     insertEntry(data, newNode);
                 }
                 else
                 {
-
                     int NewBitIdx = first_1bit(data);
 
                     if (current.Child[_bit(data, bitIdx)] != root)
@@ -156,8 +156,7 @@ namespace ShaderLibrary
             }
         }
 
-
-        static internal Node[] UpdateNodes(List<string> keys)
+        internal static Node[] UpdateNodes(List<string> keys)
         {
             Node[] _nodes = new Node[keys.Count + 1];
             for (int i = 0; i < keys.Count; i++)
@@ -169,7 +168,12 @@ namespace ShaderLibrary
             Tree tree = new Tree();
 
             // Create a new root node with empty key so the length can be retrieved throughout the process.
-            _nodes[0] = new Node() { Key = String.Empty, bitInx = -1, Parent = _nodes[0] };
+            _nodes[0] = new Node()
+            {
+                Key = String.Empty,
+                bitInx = -1,
+                Parent = _nodes[0],
+            };
 
             // Update the data-referencing nodes.
             for (ushort i = 1; i < _nodes.Length; i++)
@@ -220,6 +224,7 @@ namespace ShaderLibrary
                 Child.Add(this);
                 Reference = UInt32.MaxValue;
             }
+
             internal string GetName()
             {
                 BigInteger data = BitLength(Data) + 7 / 8;
@@ -227,18 +232,23 @@ namespace ShaderLibrary
                 Array.Reverse(stringBytes, 0, stringBytes.Length); //Convert to big endian
                 return Encoding.UTF8.GetString(stringBytes); //Decode byte[] to string
             }
+
             internal int GetCompactBitIdx()
             {
                 int byteIndx = bitInx / 8;
                 return (byteIndx << 3) | bitInx - 8 * byteIndx;
             }
-            internal Node(BigInteger data, int bitidx, Node parent) : this()
+
+            internal Node(BigInteger data, int bitidx, Node parent)
+                : this()
             {
                 Data = data;
                 bitInx = bitidx;
                 Parent = parent;
             }
-            internal Node(string key) : this()
+
+            internal Node(string key)
+                : this()
             {
                 Key = key;
             }

@@ -1,5 +1,4 @@
-﻿using Microsoft.VisualBasic;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.VisualBasic;
 
 namespace ShaderLibrary
 {
@@ -77,7 +77,8 @@ namespace ShaderLibrary
 
         public ControlShader(byte[] data)
         {
-            using (var reader = new BinaryReader(new MemoryStream(data))) {
+            using (var reader = new BinaryReader(new MemoryStream(data)))
+            {
                 Read(reader);
             }
         }
@@ -132,7 +133,7 @@ namespace ShaderLibrary
                 {
                     reader.ReadUInt32(),
                     reader.ReadUInt32(),
-                    reader.ReadUInt32()
+                    reader.ReadUInt32(),
                 },
                 SharedMemSz = reader.ReadUInt32(),
                 LocalPosMemSz = reader.ReadUInt32(),
@@ -164,7 +165,8 @@ namespace ShaderLibrary
 
         public void Save(Stream stream)
         {
-            using (var writer = new BinaryWriter(stream)) {
+            using (var writer = new BinaryWriter(stream))
+            {
                 Write(writer);
             }
         }
@@ -238,14 +240,14 @@ namespace ShaderLibrary
             using (var reader = new BinaryReader(new MemoryStream(shader_code)))
             {
                 reader.BaseStream.Seek(this.ConstBufOffset, SeekOrigin.Begin);
-                return reader.ReadBytes((int)this.ConstBufSize); 
+                return reader.ReadBytes((int)this.ConstBufSize);
             }
         }
 
         public void SetConstants(byte[] shader_code, byte[] constants, out byte[] new_shader_code)
         {
             this.ConstBufSize = (uint)constants.Length; //constants size
-            this.ProgramSize = GetBytecodeLength(shader_code);  //shader code without the header
+            this.ProgramSize = GetBytecodeLength(shader_code); //shader code without the header
 
             //save to output shader bytecode
             var mem = new MemoryStream();
@@ -295,7 +297,10 @@ namespace ShaderLibrary
         static void AlignBytes(BinaryWriter wr, int align, byte pad_val = 0)
         {
             var startPos = wr.BaseStream.Position;
-            long position = wr.Seek((int)(-wr.BaseStream.Position % align + align) % align, SeekOrigin.Current);
+            long position = wr.Seek(
+                (int)(-wr.BaseStream.Position % align + align) % align,
+                SeekOrigin.Current
+            );
 
             wr.Seek((int)startPos, System.IO.SeekOrigin.Begin);
             while (wr.BaseStream.Position != position)
@@ -316,7 +321,7 @@ namespace ShaderLibrary
             NVN_SHADER_STAGE_GEOMETRY = 2,
             NVN_SHADER_STAGE_TESS_CONTROL = 3,
             NVN_SHADER_STAGE_TESS_EVALUATION = 4,
-            NVN_SHADER_STAGE_COMPUTE = 5
+            NVN_SHADER_STAGE_COMPUTE = 5,
         }
     }
 }

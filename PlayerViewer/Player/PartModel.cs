@@ -19,8 +19,8 @@ namespace PlayerViewer.Player
         ShoeLeft,
         ShoeRight,
         Tank,
-        WeaponMain,   //Right hand (Weapon_R)
-        WeaponLeft,   //Left hand (Weapon_L), such as dualies second model
+        WeaponMain, //Right hand (Weapon_R)
+        WeaponLeft, //Left hand (Weapon_L), such as dualies second model
     }
 
     /// <summary>
@@ -103,8 +103,13 @@ namespace PlayerViewer.Player
         /// nameMap maps special gear bone names to human bone names (e.g. Head_Root->Head).
         /// mirrorLR remaps _L/_R suffixes (right shoe reusing the left shoe model).
         /// </summary>
-        public void ResolveWelds(STSkeleton human, Dictionary<string, string> nameMap,
-            bool mirrorLR = false, bool uprightWeld = false, bool mapOnly = false)
+        public void ResolveWelds(
+            STSkeleton human,
+            Dictionary<string, string> nameMap,
+            bool mirrorLR = false,
+            bool uprightWeld = false,
+            bool mapOnly = false
+        )
         {
             WeldTargets = new STBone[Skeleton.Bones.Count];
             WeldPre = new Matrix4[Skeleton.Bones.Count];
@@ -145,8 +150,10 @@ namespace PlayerViewer.Player
             var visited = new HashSet<STBone>();
             void Visit(STBone b)
             {
-                if (!visited.Add(b)) return;
-                if (b.Parent != null) Visit(b.Parent);
+                if (!visited.Add(b))
+                    return;
+                if (b.Parent != null)
+                    Visit(b.Parent);
                 ordered.Add(b);
             }
             foreach (var bone in Skeleton.Bones)
@@ -172,8 +179,10 @@ namespace PlayerViewer.Player
 
         public static string SwapLR(string name)
         {
-            if (name.EndsWith("_L")) return name.Substring(0, name.Length - 2) + "_R";
-            if (name.EndsWith("_R")) return name.Substring(0, name.Length - 2) + "_L";
+            if (name.EndsWith("_L"))
+                return name.Substring(0, name.Length - 2) + "_R";
+            if (name.EndsWith("_R"))
+                return name.Substring(0, name.Length - 2) + "_L";
             return name;
         }
 
@@ -188,11 +197,12 @@ namespace PlayerViewer.Player
         //rotation/scale (otherwise one arrange-collapsed bone would flatten the
         //whole chain below it instead of just its own mesh segment).
         readonly Dictionary<STBone, Vector3> _weldScale = new();
-        readonly Dictionary<STBone, Matrix4> _weldRT = new();     //scale-free world
+        readonly Dictionary<STBone, Matrix4> _weldRT = new(); //scale-free world
 
         public void ApplyWeld()
         {
-            if (WeldTargets == null) return;
+            if (WeldTargets == null)
+                return;
             _weldScale.Clear();
             _weldRT.Clear();
 
@@ -201,8 +211,8 @@ namespace PlayerViewer.Player
                 int i = Skeleton.Bones.IndexOf(bone);
                 var target = WeldTargets[i];
 
-                Matrix4 rt;               //world rotation+translation (no scale)
-                Vector3 scale;            //own local scale (applies to skinning + child positions)
+                Matrix4 rt; //world rotation+translation (no scale)
+                Vector3 scale; //own local scale (applies to skinning + child positions)
                 if (target != null)
                 {
                     rt = WeldPre[i] * target.Transform;
@@ -235,17 +245,23 @@ namespace PlayerViewer.Player
                 }
                 else
                 {
-                    Vector3 parentScale = bone.Parent != null &&
-                        _weldScale.TryGetValue(bone.Parent, out var ps) ? ps : Vector3.One;
-                    Matrix4 parentRT = bone.Parent != null &&
-                        _weldRT.TryGetValue(bone.Parent, out var prt) ? prt : Matrix4.Identity;
+                    Vector3 parentScale =
+                        bone.Parent != null && _weldScale.TryGetValue(bone.Parent, out var ps)
+                            ? ps
+                            : Vector3.One;
+                    Matrix4 parentRT =
+                        bone.Parent != null && _weldRT.TryGetValue(bone.Parent, out var prt)
+                            ? prt
+                            : Matrix4.Identity;
 
                     GetLocalPose(bone, out scale, out Quaternion rot, out Vector3 pos);
                     //Child position inherits the parent's own scale (Maya behavior);
                     //rotation/scale do not.
                     pos *= parentScale;
-                    rt = Matrix4.CreateFromQuaternion(rot) *
-                         Matrix4.CreateTranslation(pos) * parentRT;
+                    rt =
+                        Matrix4.CreateFromQuaternion(rot)
+                        * Matrix4.CreateTranslation(pos)
+                        * parentRT;
                 }
 
                 _weldRT[bone] = rt;
@@ -254,15 +270,18 @@ namespace PlayerViewer.Player
             }
         }
 
-        static Vector3 ClampScale(Vector3 s) => new Vector3(
-            Math.Max(s.X, 0.01f), Math.Max(s.Y, 0.01f), Math.Max(s.Z, 0.01f));
+        static Vector3 ClampScale(Vector3 s) =>
+            new Vector3(Math.Max(s.X, 0.01f), Math.Max(s.Y, 0.01f), Math.Max(s.Z, 0.01f));
 
         static Matrix4 ArrangeRotation(ArrangeBoneParam arr)
         {
-            return Matrix4.CreateFromQuaternion(Quaternion.FromEulerAngles(
-                MathHelper.DegreesToRadians(arr.RotationDeg.X),
-                MathHelper.DegreesToRadians(arr.RotationDeg.Y),
-                MathHelper.DegreesToRadians(arr.RotationDeg.Z)));
+            return Matrix4.CreateFromQuaternion(
+                Quaternion.FromEulerAngles(
+                    MathHelper.DegreesToRadians(arr.RotationDeg.X),
+                    MathHelper.DegreesToRadians(arr.RotationDeg.Y),
+                    MathHelper.DegreesToRadians(arr.RotationDeg.Z)
+                )
+            );
         }
 
         void GetLocalPose(STBone bone, out Vector3 scale, out Quaternion rot, out Vector3 pos)
@@ -286,20 +305,22 @@ namespace PlayerViewer.Player
                 scale = new Vector3(
                     Math.Max(scale.X * arr.Scale.X, 0.01f),
                     Math.Max(scale.Y * arr.Scale.Y, 0.01f),
-                    Math.Max(scale.Z * arr.Scale.Z, 0.01f));
+                    Math.Max(scale.Z * arr.Scale.Z, 0.01f)
+                );
                 //S2 decomp (hideEarHair_BeforeCalcDraw): finalRot = restRot * arrangeRot
                 //(column conv) = arrange applied in the bone's local frame. In OpenTK
                 //quaternion order that is rest * arrange. Euler XYZ, degrees.
                 var arrRot = Quaternion.FromEulerAngles(
                     MathHelper.DegreesToRadians(arr.RotationDeg.X),
                     MathHelper.DegreesToRadians(arr.RotationDeg.Y),
-                    MathHelper.DegreesToRadians(arr.RotationDeg.Z));
+                    MathHelper.DegreesToRadians(arr.RotationDeg.Z)
+                );
                 rot = rot * arrRot;
                 //The translate is authored in model space (Y = down folds the OCT001
                 //ponytail); hair bones inherit the head bone's 90° rest twist, so
                 //express it in the parent's bind frame before adding to the local pos.
-                var parentBind = bone.Parent != null
-                    ? RestWorldRotation(bone.Parent) : Quaternion.Identity;
+                var parentBind =
+                    bone.Parent != null ? RestWorldRotation(bone.Parent) : Quaternion.Identity;
                 pos += Vector3.Transform(arr.Translate, Quaternion.Invert(parentBind));
             }
         }
@@ -313,10 +334,23 @@ namespace PlayerViewer.Player
         public static Matrix4 NegateMatrix(Matrix4 m)
         {
             return new Matrix4(
-                -m.Row0.X, -m.Row0.Y, -m.Row0.Z, m.Row0.W,
-                -m.Row1.X, -m.Row1.Y, -m.Row1.Z, m.Row1.W,
-                -m.Row2.X, -m.Row2.Y, -m.Row2.Z, m.Row2.W,
-                m.Row3.X, m.Row3.Y, m.Row3.Z, m.Row3.W);
+                -m.Row0.X,
+                -m.Row0.Y,
+                -m.Row0.Z,
+                m.Row0.W,
+                -m.Row1.X,
+                -m.Row1.Y,
+                -m.Row1.Z,
+                m.Row1.W,
+                -m.Row2.X,
+                -m.Row2.Y,
+                -m.Row2.Z,
+                m.Row2.W,
+                m.Row3.X,
+                m.Row3.Y,
+                m.Row3.Z,
+                m.Row3.W
+            );
         }
 
         /// <summary>

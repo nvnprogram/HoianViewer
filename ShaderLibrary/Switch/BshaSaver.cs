@@ -1,6 +1,4 @@
-﻿using ShaderLibrary.Common;
-using ShaderLibrary.IO;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -8,6 +6,8 @@ using System.Reflection.PortableExecutable;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using ShaderLibrary.Common;
+using ShaderLibrary.IO;
 
 namespace ShaderLibrary
 {
@@ -163,8 +163,14 @@ namespace ShaderLibrary
                 var model = bfsha.ShaderModels[i];
                 var ofs_list = saved_models[i];
 
-                RelocationTable.SaveEntry(writer, 3,
-                    (uint)model.StaticOptions.Count, 2, 0, "Static Options");
+                RelocationTable.SaveEntry(
+                    writer,
+                    3,
+                    (uint)model.StaticOptions.Count,
+                    2,
+                    0,
+                    "Static Options"
+                );
 
                 writer.AlignBytes(8);
                 writer.WriteOffset(ofs_list.static_option_offset);
@@ -211,8 +217,14 @@ namespace ShaderLibrary
                 writer.AlignBytes(8);
                 writer.WriteOffset(ofs_list.dynamic_option_offset);
 
-                RelocationTable.SaveEntry(writer, 3,
-                      (uint)model.DynamicOptions.Count, 2, 0, "Dynamic Options");
+                RelocationTable.SaveEntry(
+                    writer,
+                    3,
+                    (uint)model.DynamicOptions.Count,
+                    2,
+                    0,
+                    "Dynamic Options"
+                );
 
                 foreach (var op in model.DynamicOptions.Values)
                     SaveOption(op);
@@ -229,8 +241,7 @@ namespace ShaderLibrary
                 writer.AlignBytes(8);
                 writer.WriteOffset(ofs_list.sampler_offset);
 
-                RelocationTable.SaveEntry(writer, 1,
-                    (uint)model.Samplers.Count, 1, 0, "Samplers");
+                RelocationTable.SaveEntry(writer, 1, (uint)model.Samplers.Count, 1, 0, "Samplers");
 
                 foreach (var sampler in model.Samplers.Values)
                 {
@@ -242,8 +253,14 @@ namespace ShaderLibrary
                 writer.AlignBytes(8);
                 writer.WriteOffset(ofs_list.uniform_block_offset);
 
-                RelocationTable.SaveEntry(writer, 3,
-                   (uint)model.UniformBlocks.Count, 1, 0, "Uniform Blocks");
+                RelocationTable.SaveEntry(
+                    writer,
+                    3,
+                    (uint)model.UniformBlocks.Count,
+                    1,
+                    0,
+                    "Uniform Blocks"
+                );
 
                 foreach (var uniformBlocks in model.UniformBlocks.Values)
                 {
@@ -269,12 +286,10 @@ namespace ShaderLibrary
                     }
                 }
 
-
                 writer.AlignBytes(8);
                 writer.WriteOffset(ofs_list.uniform_offset);
 
-                var num_uniforms =
-                   (uint)model.UniformBlocks.Values.Sum(x => x.Uniforms.Count);
+                var num_uniforms = (uint)model.UniformBlocks.Values.Sum(x => x.Uniforms.Count);
 
                 RelocationTable.SaveEntry(writer, 1, num_uniforms, 1, 0, "Uniform Vars");
 
@@ -308,14 +323,34 @@ namespace ShaderLibrary
                 else if (bfsha.BinHeader.VersionMajor == 5)
                     num_padding = 6;
 
-                RelocationTable.SaveEntry(writer, num_offsets,
-                          (uint)model.Programs.Count, 4, 0, "Shader Programs");
+                RelocationTable.SaveEntry(
+                    writer,
+                    num_offsets,
+                    (uint)model.Programs.Count,
+                    4,
+                    0,
+                    "Shader Programs"
+                );
 
-                RelocationTable.SaveEntry(writer, (uint)writer.Position + (num_offsets * 8), 1,
-                          (uint)model.Programs.Count, num_padding, 1, "Shader Variations");
+                RelocationTable.SaveEntry(
+                    writer,
+                    (uint)writer.Position + (num_offsets * 8),
+                    1,
+                    (uint)model.Programs.Count,
+                    num_padding,
+                    1,
+                    "Shader Variations"
+                );
 
-                RelocationTable.SaveEntry(writer, (uint)writer.Position + (num_offsets * 8) + 8, 1,
-                        (uint)model.Programs.Count, num_padding, 0, "Shader Program model pos");
+                RelocationTable.SaveEntry(
+                    writer,
+                    (uint)writer.Position + (num_offsets * 8) + 8,
+                    1,
+                    (uint)model.Programs.Count,
+                    num_padding,
+                    0,
+                    "Shader Program model pos"
+                );
 
                 foreach (var prog in model.Programs)
                 {
@@ -361,8 +396,16 @@ namespace ShaderLibrary
                         writer.Write((ushort)prog.UniformBlockIndices.Count);
                         writer.Write(new byte[6]);
 
-                        RelocationTable.SaveEntry(writer, (uint)writer.Position, 1, 1, 0, 0, "Shader Program v5 unk offset");
-                        writer.Write(new byte[8]); //version 5 is weird, write this unused pointer 
+                        RelocationTable.SaveEntry(
+                            writer,
+                            (uint)writer.Position,
+                            1,
+                            1,
+                            0,
+                            0,
+                            "Shader Program v5 unk offset"
+                        );
+                        writer.Write(new byte[8]); //version 5 is weird, write this unused pointer
                     }
                     else
                     {
@@ -425,7 +468,7 @@ namespace ShaderLibrary
                         writer.Write(0UL);
                         writer.Write(0UL);
                     }
-                
+
                     uint num_symbol_offsets = 4;
                     if (bfsha.BinHeader.VersionMajor > 8)
                         num_symbol_offsets = 1;
@@ -434,7 +477,7 @@ namespace ShaderLibrary
 
                     void SaveSymbol(SymbolData.SymbolEntry entry)
                     {
-                         writer.SaveString(entry.Name1);
+                        writer.SaveString(entry.Name1);
                         if (bfsha.BinHeader.VersionMajor <= 8)
                         {
                             writer.SaveString(entry.Value1);
@@ -456,8 +499,15 @@ namespace ShaderLibrary
                     {
                         writer.WriteOffset(samplerSymbolsOfsPos);
 
-                        RelocationTable.SaveEntry(writer, (uint)writer.Position, num_symbol_offsets,
-                                (uint)model.SymbolData.Samplers.Count, 0, 0, "Samplers Symbols");
+                        RelocationTable.SaveEntry(
+                            writer,
+                            (uint)writer.Position,
+                            num_symbol_offsets,
+                            (uint)model.SymbolData.Samplers.Count,
+                            0,
+                            0,
+                            "Samplers Symbols"
+                        );
 
                         foreach (var symbol in model.SymbolData.Samplers)
                             SaveSymbol(symbol);
@@ -467,19 +517,36 @@ namespace ShaderLibrary
                     {
                         writer.WriteOffset(uniformBlockSymbolsOfsPos);
 
-                        RelocationTable.SaveEntry(writer, (uint)writer.Position, num_symbol_offsets,
-                            (uint)model.SymbolData.UniformBlocks.Count, 0, 0, "UniformBlocks Symbols");
+                        RelocationTable.SaveEntry(
+                            writer,
+                            (uint)writer.Position,
+                            num_symbol_offsets,
+                            (uint)model.SymbolData.UniformBlocks.Count,
+                            0,
+                            0,
+                            "UniformBlocks Symbols"
+                        );
 
                         foreach (var symbol in model.SymbolData.UniformBlocks)
                             SaveSymbol(symbol);
                     }
 
-                    if (bfsha.BinHeader.VersionMajor >= 7 && model.SymbolData.StorageBuffers.Count > 0)
+                    if (
+                        bfsha.BinHeader.VersionMajor >= 7
+                        && model.SymbolData.StorageBuffers.Count > 0
+                    )
                     {
                         writer.WriteOffset(storageBlockSymbolsOfsPos);
 
-                        RelocationTable.SaveEntry(writer, (uint)writer.Position, num_symbol_offsets,
-                           (uint)model.SymbolData.StorageBuffers.Count, 0, 0, "StorageBuffer Symbols");
+                        RelocationTable.SaveEntry(
+                            writer,
+                            (uint)writer.Position,
+                            num_symbol_offsets,
+                            (uint)model.SymbolData.StorageBuffers.Count,
+                            0,
+                            0,
+                            "StorageBuffer Symbols"
+                        );
 
                         foreach (var symbol in model.SymbolData.StorageBuffers)
                             SaveSymbol(symbol);
@@ -493,7 +560,10 @@ namespace ShaderLibrary
                 writer.WriteDictionary(model.UniformBlocks, ofs_list.uniform_block_dict_offset);
 
                 if (bfsha.BinHeader.VersionMajor >= 7)
-                    writer.WriteDictionary(model.StorageBuffers, ofs_list.storage_block_dict_offset);
+                    writer.WriteDictionary(
+                        model.StorageBuffers,
+                        ofs_list.storage_block_dict_offset
+                    );
 
                 foreach (var block in model.UniformBlocks.Values)
                     writer.WriteDictionary(block.Uniforms, block._uniformVarDictOfsPos);
@@ -552,7 +622,9 @@ namespace ShaderLibrary
 
             var size = writer.Position - pos;
 
-            using (writer.BaseStream.TemporarySeek(string_pool_offset + 8, System.IO.SeekOrigin.Begin))
+            using (
+                writer.BaseStream.TemporarySeek(string_pool_offset + 8, System.IO.SeekOrigin.Begin)
+            )
             {
                 writer.Write((uint)size);
             }
@@ -590,7 +662,12 @@ namespace ShaderLibrary
                 for (int j = 0; j < model.Programs.Count; j++)
                 {
                     var program = model.Programs[j];
-                    using (writer.BaseStream.TemporarySeek(shader_pos + variationStartOffset + (program.VariationIndex * 64), System.IO.SeekOrigin.Begin))
+                    using (
+                        writer.BaseStream.TemporarySeek(
+                            shader_pos + variationStartOffset + (program.VariationIndex * 64),
+                            System.IO.SeekOrigin.Begin
+                        )
+                    )
                     {
                         writer.WriteOffset(program._shaderVariationOfsPos);
                     }
@@ -599,7 +676,11 @@ namespace ShaderLibrary
 
             writer.AlignBytes(1024);
 
-            RelocationTable.SetRelocationSection(1, (uint)pos2, (uint)(writer.BaseStream.Position - pos2));
+            RelocationTable.SetRelocationSection(
+                1,
+                (uint)pos2,
+                (uint)(writer.BaseStream.Position - pos2)
+            );
 
             RelocationTable.Write(writer);
             writer.WriteHeaderBlocks();
@@ -618,7 +699,6 @@ namespace ShaderLibrary
             writer.Write(0u); //uint size
             StringTable.AddFileNameEntry(pos, name);
         }
-
 
         class ShaderModelOffset
         {

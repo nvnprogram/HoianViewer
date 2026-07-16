@@ -2,13 +2,24 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Platforms>AnyCPU;x64</Platforms>
     <AssemblyName>PlayerViewer</AssemblyName>
     <RootNamespace>PlayerViewer</RootNamespace>
     <CssRoot>..\Cafe-Shader-Studio</CssRoot>
   </PropertyGroup>
+
+  <!-- Opt-in automatic Tracy profiling: build with `-p:Tracy=true`. Compiles the runtime shim
+       into this assembly (and pulls Tracy-CSharp so TracyClient.so ships), then a post-build step
+       runs the Mono.Cecil weaver to wrap every eligible method in the output assemblies in a Tracy zone.-->
+  <ItemGroup Condition="'$(Tracy)' == 'true'">
+    <PackageReference Include="Tracy-CSharp" Version="0.13.1" />
+    <Compile Include="..\tools\TracyWeave.cs" />
+  </ItemGroup>
+  <Target Name="TracyWeave" AfterTargets="Build" Condition="'$(Tracy)' == 'true'">
+    <Exec Command="dotnet run --file &quot;$(MSBuildThisFileDirectory)..\tools\TracyWeaver.cs&quot; -- --dir &quot;$(TargetDir)&quot; --frame-mark PlayerViewer.UI.ViewerWindow::OnRenderFrame PlayerViewer.dll GLFrameworkEngine.dll" />
+  </Target>
 
   <ItemGroup>
     <Reference Include="BfresLibrary">
@@ -17,12 +28,7 @@
     <Reference Include="ImGui.NET">
       <HintPath>$(CssRoot)\CafeShaderStudio\Lib\ImGui.NET.dll</HintPath>
     </Reference>
-    <Reference Include="OpenTK">
-      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\OpenTK.dll</HintPath>
-    </Reference>
-    <Reference Include="Syroot.BinaryData">
-      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Syroot.BinaryData.dll</HintPath>
-    </Reference>
+    <PackageReference Include="OpenTK" Version="3.1.0" />
     <Reference Include="Syroot.Maths">
       <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Syroot.Maths.dll</HintPath>
     </Reference>
@@ -32,13 +38,19 @@
     <Reference Include="Toolbox.Core">
       <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Toolbox.Core.dll</HintPath>
     </Reference>
-    <Reference Include="ZstdNet">
-      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\ZstdNet.dll</HintPath>
-    </Reference>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="ZstdSharp.Port" Version="0.8.8" />
+    <!-- Transitive runtime dep of the vendored Toolbox.Core.dll (was shipped as a loose Lib DLL). -->
+    <PackageReference Include="SharpYaml" Version="1.6.5" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -50,18 +62,127 @@
 
   <!-- Runtime content shared with Cafe Shader Studio (shaders, resources, natives). -->
   <ItemGroup>
-    <Content Include="$(CssRoot)\CafeShaderStudio\Shaders\**\*.*" LinkBase="Shaders" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\Resources\**\*.*" LinkBase="Resources" CopyToOutputDirectory="PreserveNewest" />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Shaders\**\*.*"
+      LinkBase="Shaders"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Resources\**\*.*"
+      LinkBase="Resources"
+      CopyToOutputDirectory="PreserveNewest"
+    />
     <!-- ImGuiController loads fonts from Lib/ relative to the exe. -->
-    <Content Include="$(CssRoot)\CafeShaderStudio\Lib\Font.ttf" Link="Lib\Font.ttf" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\Lib\OpenFontIcons.ttf" Link="Lib\OpenFontIcons.ttf" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\cimgui.dll" Link="cimgui.dll" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="$(CssRoot)\CafeShaderStudio\x64\libzstd.dll" Link="libzstd.dll" CopyToOutputDirectory="PreserveNewest" />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Lib\Font.ttf"
+      Link="Lib\Font.ttf"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\Lib\OpenFontIcons.ttf"
+      Link="Lib\OpenFontIcons.ttf"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\cimgui.dll"
+      Link="cimgui.dll"
+      CopyToOutputDirectory="PreserveNewest"
+    />
+    <!-- Cross-platform ImGui natives (repo ships .so/.dylib). Copied under both the plain and
+         lib-prefixed names so the .NET loader finds cimgui however it probes. -->
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\cimgui.so"
+      Link="cimgui.so"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\cimgui.dylib"
+      Link="cimgui.dylib"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')"
+    />
+    <!-- Native file dialogs (tinyfiledialogs.dll is the x64 build). -->
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dll"
+      Link="tinyfiledialogs.dll"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dll')"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.so"
+      Link="tinyfiledialogs.so"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.so')"
+    />
+    <Content
+      Include="$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dylib"
+      Link="tinyfiledialogs.dylib"
+      CopyToOutputDirectory="PreserveNewest"
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\tinyfiledialogs.dylib')"
+    />
   </ItemGroup>
 
   <!-- Toolbox.Core's PluginManager discovers file formats by scanning <exe>/Plugins/*.dll,
        so BfresEditor (which contains the BFRES IFileFormat + IPlugin) must be copied there. -->
   <Target Name="CopyPluginDlls" AfterTargets="Build">
-    <Copy SourceFiles="$(OutDir)BfresEditor.dll" DestinationFolder="$(OutDir)Plugins" SkipUnchangedFiles="true" />
+    <Copy
+      SourceFiles="$(OutDir)BfresEditor.dll"
+      DestinationFolder="$(OutDir)Plugins"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+
+  <!-- Recreate the plugin scan directory in the publish output. Source BfresEditor.dll from the
+       loose build output ($(OutDir)) rather than $(PublishDir): under single-file publish the DLL
+       is bundled into the exe and no longer sits loose in $(PublishDir), but the pre-bundle build
+       copy in $(OutDir) is always present. -->
+  <Target Name="CopyPluginDllsOnPublish" AfterTargets="Publish">
+    <Copy
+      SourceFiles="$(OutDir)BfresEditor.dll"
+      DestinationFolder="$(PublishDir)Plugins"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(OutDir)BfresEditor.dll')"
+    />
+    <!-- PluginManager reads its own assembly from disk (ExecutableDir\Toolbox.Core.dll) to scan
+         built-in formats. Single-file bundles it into the exe, so drop a loose copy beside the exe;
+         the runtime still loads the bundled one, this is only for the scanner. -->
+    <Copy
+      SourceFiles="$(OutDir)Toolbox.Core.dll"
+      DestinationFiles="$(PublishDir)Toolbox.Core.dll"
+      SkipUnchangedFiles="true"
+      Condition="Exists('$(OutDir)Toolbox.Core.dll') And !Exists('$(PublishDir)Toolbox.Core.dll')"
+    />
+  </Target>
+
+  <!-- Also drop cimgui under the lib-prefixed name in case the loader probes libcimgui.so
+       (the plain-name copies above cover the other probe order). -->
+  <Target Name="CopyNativeImGuiBuild" AfterTargets="Build">
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.so"
+      DestinationFiles="$(OutDir)libcimgui.so"
+      SkipUnchangedFiles="true"
+    />
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.dylib"
+      DestinationFiles="$(OutDir)libcimgui.dylib"
+      SkipUnchangedFiles="true"
+    />
+  </Target>
+  <Target Name="CopyNativeImGuiPublish" AfterTargets="Publish">
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.so')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.so"
+      DestinationFiles="$(PublishDir)libcimgui.so"
+      SkipUnchangedFiles="true"
+    />
+    <Copy
+      Condition="Exists('$(CssRoot)\CafeShaderStudio\cimgui.dylib')"
+      SourceFiles="$(CssRoot)\CafeShaderStudio\cimgui.dylib"
+      DestinationFiles="$(PublishDir)libcimgui.dylib"
+      SkipUnchangedFiles="true"
+    />
   </Target>
 </Project>

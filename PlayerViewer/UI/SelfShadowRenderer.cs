@@ -1,7 +1,7 @@
 using System;
+using GLFrameworkEngine;
 using OpenTK;
 using OpenTK.Graphics.OpenGL;
-using GLFrameworkEngine;
 using PlayerViewer.Player;
 
 namespace PlayerViewer.UI
@@ -39,9 +39,19 @@ namespace PlayerViewer.UI
             if (_lightFbo != null)
                 return;
 
-            _lightFbo = new Framebuffer(FramebufferTarget.Framebuffer,
-                ShadowMapSize, ShadowMapSize, PixelInternalFormat.Rgba8, 1, useDepth: false);
-            _lightDepth = new DepthTexture(ShadowMapSize, ShadowMapSize, PixelInternalFormat.DepthComponent24);
+            _lightFbo = new Framebuffer(
+                FramebufferTarget.Framebuffer,
+                ShadowMapSize,
+                ShadowMapSize,
+                PixelInternalFormat.Rgba8,
+                1,
+                useDepth: false
+            );
+            _lightDepth = new DepthTexture(
+                ShadowMapSize,
+                ShadowMapSize,
+                PixelInternalFormat.DepthComponent24
+            );
             _lightFbo.AddAttachment(FramebufferAttachment.DepthAttachment, _lightDepth);
 
             //Match the game's cascade-map sampler: linear filtering with LEQUAL
@@ -51,14 +61,26 @@ namespace PlayerViewer.UI
             _lightDepth.MinFilter = TextureMinFilter.Linear;
             _lightDepth.MagFilter = TextureMagFilter.Linear;
             _lightDepth.UpdateParameters();
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareMode,
-                (int)TextureCompareMode.CompareRefToTexture);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureCompareFunc,
-                (int)All.Lequal);
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureCompareMode,
+                (int)TextureCompareMode.CompareRefToTexture
+            );
+            GL.TexParameter(
+                TextureTarget.Texture2D,
+                TextureParameterName.TextureCompareFunc,
+                (int)All.Lequal
+            );
             _lightDepth.Unbind();
 
-            _prepassFbo = new Framebuffer(FramebufferTarget.Framebuffer,
-                4, 4, PixelInternalFormat.Rgba8, 1, useDepth: false);
+            _prepassFbo = new Framebuffer(
+                FramebufferTarget.Framebuffer,
+                4,
+                4,
+                PixelInternalFormat.Rgba8,
+                1,
+                useDepth: false
+            );
 
             string frag = System.IO.File.ReadAllText("Shaders/SelfShadowPrepass.frag");
             string vert = System.IO.File.ReadAllText("Shaders/SelfShadowPrepass.vert");
@@ -70,15 +92,14 @@ namespace PlayerViewer.UI
             _vao.AddAttribute(1, 2, VertexAttribPointerType.Float, false, 16, 8);
             _vao.Initialize();
 
-            float[] data =
-            {
-                -1,  1, 0, 1,
-                -1, -1, 0, 0,
-                 1,  1, 1, 1,
-                 1, -1, 1, 0,
-            };
+            float[] data = { -1, 1, 0, 1, -1, -1, 0, 0, 1, 1, 1, 1, 1, -1, 1, 0 };
             GL.BindBuffer(BufferTarget.ArrayBuffer, buffer);
-            GL.BufferData(BufferTarget.ArrayBuffer, sizeof(float) * data.Length, data, BufferUsageHint.StaticDraw);
+            GL.BufferData(
+                BufferTarget.ArrayBuffer,
+                sizeof(float) * data.Length,
+                data,
+                BufferUsageHint.StaticDraw
+            );
         }
 
         /// <summary>
@@ -103,7 +124,8 @@ namespace PlayerViewer.UI
             var camera = context.Camera;
             var savedView = camera.ViewMatrix;
             var savedProj = camera.ProjectionMatrix;
-            int savedWidth = context.Width, savedHeight = context.Height;
+            int savedWidth = context.Width,
+                savedHeight = context.Height;
 
             camera.SetCustomMatrices(view, proj);
             context.Width = ShadowMapSize;
@@ -134,8 +156,13 @@ namespace PlayerViewer.UI
         /// <summary>
         /// Builds the screen-space prepass from the main camera's depth texture.
         /// </summary>
-        public void GeneratePrepass(GLContext context, DepthTexture sceneDepth,
-            Matrix4 camViewProj, int width, int height)
+        public void GeneratePrepass(
+            GLContext context,
+            DepthTexture sceneDepth,
+            Matrix4 camViewProj,
+            int width,
+            int height
+        )
         {
             Init();
 

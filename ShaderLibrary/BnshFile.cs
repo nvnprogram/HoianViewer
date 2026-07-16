@@ -1,6 +1,4 @@
-﻿using ShaderLibrary.IO;
-using ShaderLibrary.Switch;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Dynamic;
 using System.IO;
@@ -8,6 +6,8 @@ using System.Linq;
 using System.Runtime;
 using System.Text;
 using System.Threading.Tasks;
+using ShaderLibrary.IO;
+using ShaderLibrary.Switch;
 
 namespace ShaderLibrary
 {
@@ -27,6 +27,7 @@ namespace ShaderLibrary
         /// Gets or sets the res file header.
         /// </summary>
         public BinaryHeader BinHeader; //A header shared between bnsh and other formats
+
         /// <summary>
         /// Gets or sets the shader header.
         /// </summary>
@@ -36,7 +37,8 @@ namespace ShaderLibrary
 
         internal Stream _stream;
 
-        public BnshFile() {
+        public BnshFile()
+        {
             Variations = new List<ShaderVariation>();
             BinHeader = new BinaryHeader();
             Header = new BnshHeader();
@@ -67,7 +69,7 @@ namespace ShaderLibrary
         /// Saves the binary to a file stream.
         /// </summary>
         /// <param name="filePath"></param>
-        public void Save(string  filePath)
+        public void Save(string filePath)
         {
             using (var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write))
                 Save(fs);
@@ -99,7 +101,7 @@ namespace ShaderLibrary
             bnsh.Save(filePath);
         }
 
-        public class ShaderVariation 
+        public class ShaderVariation
         {
             private BnshShaderProgram _program;
 
@@ -114,11 +116,13 @@ namespace ShaderLibrary
                     if (_program == null)
                         _program = BnshLoader.ReadBnshShaderProgram(this);
                     return _program;
-                } set => _program = value;
+                }
+                set => _program = value;
             }
 
             // Variation header
             internal VariationHeader header;
+
             // Stream to read program data
             internal Stream _stream;
 
@@ -135,28 +139,33 @@ namespace ShaderLibrary
             }
         }
 
-        public class BnshShaderProgram 
+        public class BnshShaderProgram
         {
             /// <summary>
             /// Gets or sets vertex shader code.
             /// </summary>
             public ShaderCode VertexShader { get; set; }
+
             /// <summary>
             /// Gets or sets fragment shader code.
             /// </summary>
             public ShaderCode FragmentShader { get; set; }
+
             /// <summary>
             /// Gets or sets geometry shader code.
             /// </summary>
             public ShaderCode GeometryShader { get; set; }
+
             /// <summary>
             /// Gets or sets compute shader code.
             /// </summary>
             public ShaderCode ComputeShader { get; set; }
+
             /// <summary>
             /// Gets or sets hull shader code.
             /// </summary>
             public ShaderCode TessellationControlShader { get; set; }
+
             /// <summary>
             /// Gets or sets domain shader code.
             /// </summary>
@@ -206,7 +215,8 @@ namespace ShaderLibrary
             {
                 header = new BnshShaderProgramHeader()
                 {
-                    Flags = 2, ObjectSize = 256,
+                    Flags = 2,
+                    ObjectSize = 256,
                     Reserved8 = 128104,
                 };
             }
@@ -332,7 +342,7 @@ namespace ShaderLibrary
 
             public int GetInputLocation(string key)
             {
-                 var index = this.Inputs.Keys.ToList().IndexOf(key);
+                var index = this.Inputs.Keys.ToList().IndexOf(key);
                 if (Slots.Length > index)
                     return Slots[index];
                 return -1;

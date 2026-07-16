@@ -22,16 +22,22 @@ namespace PlayerViewer.Player
         public GameDatabase Database;
 
         //--- Configuration
-        public int PlayerType { get; private set; } = 0;    //0=Inkling F,1=Inkling M,2=Octoling F,3=Octoling M
+        public int PlayerType { get; private set; } = 0; //0=Inkling F,1=Inkling M,2=Octoling F,3=Octoling M
         public bool IsFemale => PlayerType == 0 || PlayerType == 2;
         public string PlayerModelName => $"Player{PlayerType:00}";
 
-        public GearEntry CurrentHair, CurrentEyebrow, CurrentHead, CurrentClothes,
-            CurrentShoes, CurrentBottom, CurrentTank, CurrentWeapon;
-        public int EyeColor = 0;      //0..20 (Color_Eye TPA frame)
-        public int SkinTone = 0;      //0..8  (Color_Skin SPA frame)
+        public GearEntry CurrentHair,
+            CurrentEyebrow,
+            CurrentHead,
+            CurrentClothes,
+            CurrentShoes,
+            CurrentBottom,
+            CurrentTank,
+            CurrentWeapon;
+        public int EyeColor = 0; //0..20 (Color_Eye TPA frame)
+        public int SkinTone = 0; //0..8  (Color_Skin SPA frame)
         public int TeamColorIndex = 0;
-        public int TeamIndex = 0;     //0=Alpha 1=Bravo 2=Charlie
+        public int TeamIndex = 0; //0=Alpha 1=Bravo 2=Charlie
 
         //--- Runtime state
         public PartModel Human { get; private set; }
@@ -51,7 +57,7 @@ namespace PlayerViewer.Player
 
         int _renderIdCounter = 0;
         readonly AlphaMaskSystem _alphaMask = new();
-        List<FMAT> _bodyMaskMaterials;   //M_Body materials with the _o0 override active
+        List<FMAT> _bodyMaskMaterials; //M_Body materials with the _o0 override active
 
         //Hair cloth simulation (bphcl), one sim per cloth piece.
         public bool HairPhysicsEnabled = true;
@@ -76,7 +82,10 @@ namespace PlayerViewer.Player
                 Console.WriteLine($"[Scene] Model not found: {modelName}");
                 return null;
             }
-            var bfres = LoadModelData(data, Path.Combine(Romfs.Root, "Model", modelName + ".bfres"));
+            var bfres = LoadModelData(
+                data,
+                Path.Combine(Romfs.Root, "Model", modelName + ".bfres")
+            );
             if (bfres != null)
                 BfresHelpers.ResolveSharedAssets(bfres, data, Romfs);
             return bfres;
@@ -99,7 +108,8 @@ namespace PlayerViewer.Player
             }
 
             var render = (BfresRender)bfres.Renderer;
-            render.ID = (_renderIdCounter++).ToString() + "_" + Path.GetFileNameWithoutExtension(fakePath);
+            render.ID =
+                (_renderIdCounter++).ToString() + "_" + Path.GetFileNameWithoutExtension(fakePath);
             DataCache.ModelCache[render.ID] = render;
             return bfres;
         }
@@ -111,7 +121,7 @@ namespace PlayerViewer.Player
         //setters anyway.
         const int PartCacheCapacity = 5;
         readonly Dictionary<string, BFRES> _partCache = new();
-        readonly List<string> _partCacheLru = new();    //front = oldest
+        readonly List<string> _partCacheLru = new(); //front = oldest
 
         BFRES TakeCachedPart(string modelName)
         {
@@ -156,7 +166,12 @@ namespace PlayerViewer.Player
         /// subModel: name of the model inside the bfres when it contains several
         /// (dualies: Wmn_X + Wmn_X_L in one file). Other models get hidden.
         /// </summary>
-        PartModel CreatePart(PartKind kind, string modelName, BFRES loaded = null, string subModel = null)
+        PartModel CreatePart(
+            PartKind kind,
+            string modelName,
+            BFRES loaded = null,
+            string subModel = null
+        )
         {
             if (string.IsNullOrEmpty(modelName))
                 return null;
@@ -171,8 +186,11 @@ namespace PlayerViewer.Player
             var asset = (BfresModelAsset)render.Models[0];
             if (subModel != null && render.Models.Count > 1)
             {
-                asset = render.Models.OfType<BfresModelAsset>()
-                    .FirstOrDefault(m => m.ModelData.Name == subModel) ?? asset;
+                asset =
+                    render
+                        .Models.OfType<BfresModelAsset>()
+                        .FirstOrDefault(m => m.ModelData.Name == subModel)
+                    ?? asset;
             }
             //Hide all but the selected model (each part owns its own BFRES instance).
             foreach (var m in render.Models.OfType<BfresModelAsset>())
@@ -222,7 +240,9 @@ namespace PlayerViewer.Player
 
             //Animation parsing is pure CPU work (no GL), so it can run alongside the
             //human model load instead of after it.
-            var animTask = System.Threading.Tasks.Task.Run(() => Anims.Load(Romfs, PlayerModelName));
+            var animTask = System.Threading.Tasks.Task.Run(() =>
+                Anims.Load(Romfs, PlayerModelName)
+            );
 
             Human = CreatePart(PartKind.Human, PlayerModelName);
             if (Human == null)
@@ -230,14 +250,16 @@ namespace PlayerViewer.Player
 
             animTask.Wait();
 
-            //Defaults: id 0 rows. Weapon defaults to none ("Free" in game terms).
-            //Head defaults to Hed_INV000 (the game's invisible no-headgear actor,
-            //which still applies default hair-arrange presets).
+            //Defaults: id 0 rows. Weapon and Tank default to none so they can stay unequipped.
+            //Head defaults to Hed_INV000 (no-headgear actor, still applies hair-arrange presets).
             CurrentHead ??= Database.Head.FirstOrDefault(x => x.RowId == "Hed_INV000");
-            CurrentHair ??= Database.Hair.FirstOrDefault(x => x.Id == 0) ?? Database.Hair.FirstOrDefault();
-            CurrentEyebrow ??= Database.Eyebrow.FirstOrDefault(x => x.Id == 0) ?? Database.Eyebrow.FirstOrDefault();
-            CurrentBottom ??= Database.Bottom.FirstOrDefault(x => x.Id == 0) ?? Database.Bottom.FirstOrDefault();
-            CurrentTank ??= Database.Tank.FirstOrDefault(x => x.Id == 0) ?? Database.Tank.FirstOrDefault();
+            CurrentHair ??=
+                Database.Hair.FirstOrDefault(x => x.Id == 0) ?? Database.Hair.FirstOrDefault();
+            CurrentEyebrow ??=
+                Database.Eyebrow.FirstOrDefault(x => x.Id == 0)
+                ?? Database.Eyebrow.FirstOrDefault();
+            CurrentBottom ??=
+                Database.Bottom.FirstOrDefault(x => x.Id == 0) ?? Database.Bottom.FirstOrDefault();
 
             //Rebuild all parts against the new skeleton.
             SetHair(CurrentHair);
@@ -291,9 +313,15 @@ namespace PlayerViewer.Player
         {
             if (part?.Bfres == null || entry == null)
                 return;
-            var varAnim = part.Bfres.MaterialAnimations.FirstOrDefault(x => x.Name == part.ModelName);
+            var varAnim = part.Bfres.MaterialAnimations.FirstOrDefault(x =>
+                x.Name == part.ModelName
+            );
             if (varAnim != null)
-                ScopedAnimPlayer.ApplyMaterialAnim(varAnim, entry.Variation, new[] { part.ModelAsset });
+                ScopedAnimPlayer.ApplyMaterialAnim(
+                    varAnim,
+                    entry.Variation,
+                    new[] { part.ModelAsset }
+                );
         }
 
         #endregion
@@ -312,16 +340,25 @@ namespace PlayerViewer.Player
             CurrentHair = entry;
             DestroyPart(PartKind.Hair);
             _hairPhysics.Clear();
-            if (entry == null) { OnPartsChanged?.Invoke(); return; }
+            if (entry == null)
+            {
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
             string modelName = entry.IsCustom ? entry.RowId : entry.RowId + GenderSuffix;
             var part = entry.IsCustom
                 ? CreateCustomPart(PartKind.Hair, entry)
                 : CreatePart(PartKind.Hair, modelName);
-            if (part == null) { OnPartsChanged?.Invoke(); return; }
+            if (part == null)
+            {
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
             part.ResolveWelds(Human.Skeleton, HeadBoneMap);
-            part.AttachBone = part.Skeleton.SearchBone("Head_Root") ?? part.Skeleton.SearchBone("Root");
+            part.AttachBone =
+                part.Skeleton.SearchBone("Head_Root") ?? part.Skeleton.SearchBone("Root");
             Parts[PartKind.Hair] = part;
 
             LoadHairPhysics(entry, part);
@@ -355,7 +392,9 @@ namespace PlayerViewer.Player
                     if (sim != null)
                         _hairPhysics.Add(sim);
                 }
-                Console.WriteLine($"[Scene] Hair cloth: {_hairPhysics.Count} piece(s) for {entry.RowId}");
+                Console.WriteLine(
+                    $"[Scene] Hair cloth: {_hairPhysics.Count} piece(s) for {entry.RowId}"
+                );
             }
             catch (Exception ex)
             {
@@ -367,13 +406,21 @@ namespace PlayerViewer.Player
         {
             CurrentEyebrow = entry;
             DestroyPart(PartKind.Eyebrow);
-            if (entry == null) { OnPartsChanged?.Invoke(); return; }
+            if (entry == null)
+            {
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
             string modelName = entry.IsCustom ? entry.RowId : entry.RowId + GenderSuffix;
             var part = entry.IsCustom
                 ? CreateCustomPart(PartKind.Eyebrow, entry)
                 : CreatePart(PartKind.Eyebrow, modelName);
-            if (part == null) { OnPartsChanged?.Invoke(); return; }
+            if (part == null)
+            {
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
             part.ResolveWelds(Human.Skeleton, HeadBoneMap);
             part.AttachBone = part.Skeleton.SearchBone("Head_Root");
@@ -386,15 +433,31 @@ namespace PlayerViewer.Player
         {
             switch (slot)
             {
-                case GearSlot.Head: SetHead(entry); break;
-                case GearSlot.Clothes: SetClothes(entry); break;
-                case GearSlot.Shoes: SetShoes(entry); break;
-                case GearSlot.Hair: SetHair(entry); break;
-                case GearSlot.Eyebrow: SetEyebrow(entry); break;
-                case GearSlot.Bottom: SetBottom(entry); break;
-                case GearSlot.Tank: SetTank(entry); break;
+                case GearSlot.Head:
+                    SetHead(entry);
+                    break;
+                case GearSlot.Clothes:
+                    SetClothes(entry);
+                    break;
+                case GearSlot.Shoes:
+                    SetShoes(entry);
+                    break;
+                case GearSlot.Hair:
+                    SetHair(entry);
+                    break;
+                case GearSlot.Eyebrow:
+                    SetEyebrow(entry);
+                    break;
+                case GearSlot.Bottom:
+                    SetBottom(entry);
+                    break;
+                case GearSlot.Tank:
+                    SetTank(entry);
+                    break;
                 case GearSlot.MainWeapon:
-                case GearSlot.SpecialWeapon: SetWeapon(entry); break;
+                case GearSlot.SpecialWeapon:
+                    SetWeapon(entry);
+                    break;
             }
         }
 
@@ -410,7 +473,13 @@ namespace PlayerViewer.Player
             DestroyPart(PartKind.Head);
             //ApplyHeadgearParams also on removal: it resets hair arrange / ear hiding
             //back to defaults (otherwise no-head keeps the previous cap's arrange).
-            if (entry == null) { ApplyHeadgearParams(); UpdateAlphaMask(); OnPartsChanged?.Invoke(); return; }
+            if (entry == null)
+            {
+                ApplyHeadgearParams();
+                UpdateAlphaMask();
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
             PartModel part;
             if (entry.IsCustom)
@@ -418,10 +487,20 @@ namespace PlayerViewer.Player
             else
             {
                 string modelName = ResolveGearModelForEntry(entry);
-                if (modelName == null) { Console.WriteLine($"[Scene] No model for {entry.RowId}"); ApplyHeadgearParams(); return; }
+                if (modelName == null)
+                {
+                    Console.WriteLine($"[Scene] No model for {entry.RowId}");
+                    ApplyHeadgearParams();
+                    return;
+                }
                 part = CreatePart(PartKind.Head, modelName);
             }
-            if (part == null) { ApplyHeadgearParams(); OnPartsChanged?.Invoke(); return; }
+            if (part == null)
+            {
+                ApplyHeadgearParams();
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
             ApplyVariationAnim(part, entry);
             //Some headgear name their root after the model (Hed_EYE002) instead of
@@ -431,7 +510,8 @@ namespace PlayerViewer.Player
             if (rootBone != null && !headMap.ContainsKey(rootBone.Name))
                 headMap[rootBone.Name] = "Head";
             part.ResolveWelds(Human.Skeleton, headMap, uprightWeld: true);
-            part.AttachBone = part.Skeleton.SearchBone("Root")
+            part.AttachBone =
+                part.Skeleton.SearchBone("Root")
                 ?? part.Skeleton.SearchBone("Root_Model")
                 ?? part.Skeleton.SearchBone("Head_Root")
                 ?? rootBone;
@@ -469,7 +549,12 @@ namespace PlayerViewer.Player
             CurrentShoes = entry;
             DestroyPart(PartKind.ShoeLeft);
             DestroyPart(PartKind.ShoeRight);
-            if (entry == null) { UpdateAlphaMask(); OnPartsChanged?.Invoke(); return; }
+            if (entry == null)
+            {
+                UpdateAlphaMask();
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
             string modelName = entry.IsCustom ? null : ResolveGearModelForEntry(entry);
 
@@ -529,7 +614,9 @@ namespace PlayerViewer.Player
             {
                 //TankInfo rows point at their actor via SpecActor (PlayerTank_Jetpack
                 //-> ModelInfo -> Tnk_JetPack.bfres).
-                string actor = !string.IsNullOrEmpty(entry.ActorName) ? entry.ActorName : entry.RowId;
+                string actor = !string.IsNullOrEmpty(entry.ActorName)
+                    ? entry.ActorName
+                    : entry.RowId;
                 PartModel part = entry.IsCustom
                     ? CreateCustomPart(PartKind.Tank, entry)
                     : CreatePart(PartKind.Tank, Database.ResolveModelName(actor));
@@ -548,9 +635,14 @@ namespace PlayerViewer.Player
             CurrentWeapon = entry;
             DestroyPart(PartKind.WeaponMain);
             DestroyPart(PartKind.WeaponLeft);
-            if (entry == null) { OnPartsChanged?.Invoke(); return; }
+            if (entry == null)
+            {
+                OnPartsChanged?.Invoke();
+                return;
+            }
 
-            (string file, string model) mainModel, leftModel;
+            (string file, string model) mainModel,
+                leftModel;
             if (entry.IsCustom)
             {
                 mainModel = (entry.RowId, null);
@@ -559,8 +651,9 @@ namespace PlayerViewer.Player
             else
                 (mainModel, leftModel) = Database.ResolveWeaponModels(entry);
 
-            bool isStringer = !entry.IsCustom &&
-                (entry.ActorName.Contains("Stringer") || entry.RowId.Contains("_Strn_"));
+            bool isStringer =
+                !entry.IsCustom
+                && (entry.ActorName.Contains("Stringer") || entry.RowId.Contains("_Strn_"));
             string mainHandBone = isStringer ? "Weapon_L" : "Weapon_R";
 
             if (mainModel.file != null)
@@ -570,7 +663,11 @@ namespace PlayerViewer.Player
                     : CreatePart(PartKind.WeaponMain, mainModel.file, subModel: mainModel.model);
                 if (part != null)
                 {
-                    part.ResolveWelds(Human.Skeleton, new Dictionary<string, string> { { "Root", mainHandBone } }, mapOnly: true);
+                    part.ResolveWelds(
+                        Human.Skeleton,
+                        new Dictionary<string, string> { { "Root", mainHandBone } },
+                        mapOnly: true
+                    );
                     part.AttachBone = part.Skeleton.SearchBone("Root");
                     ApplyWeaponCarryPose(part);
                     Parts[PartKind.WeaponMain] = part;
@@ -578,14 +675,22 @@ namespace PlayerViewer.Player
             }
             if (leftModel.file != null)
             {
-                var part = CreatePart(PartKind.WeaponLeft, leftModel.file, subModel: leftModel.model);
+                var part = CreatePart(
+                    PartKind.WeaponLeft,
+                    leftModel.file,
+                    subModel: leftModel.model
+                );
                 if (part != null)
                 {
-                    part.ResolveWelds(Human.Skeleton, new Dictionary<string, string> { { "Root", "Weapon_L" } }, mapOnly: true);
+                    part.ResolveWelds(
+                        Human.Skeleton,
+                        new Dictionary<string, string> { { "Root", "Weapon_L" } },
+                        mapOnly: true
+                    );
                     part.AttachBone = part.Skeleton.SearchBone("Root");
 
-                    bool isMirrorCopy = leftModel.file == mainModel.file &&
-                                        leftModel.model == mainModel.model;
+                    bool isMirrorCopy =
+                        leftModel.file == mainModel.file && leftModel.model == mainModel.model;
                     if (isMirrorCopy)
                     {
                         //Same model reused for both hands (dualies without a _L mesh).
@@ -626,20 +731,23 @@ namespace PlayerViewer.Player
                         mesh.Shape.IsVisible = false;
                 }
                 var closeBone = part.Skeleton.SearchBone("Umbrella_Close");
-                if (closeBone != null) closeBone.Visible = true;
+                if (closeBone != null)
+                    closeBone.Visible = true;
                 var openBone = part.Skeleton.SearchBone("Umbrella_Open");
-                if (openBone != null) openBone.Visible = false;
+                if (openBone != null)
+                    openBone.Visible = false;
                 return;
             }
 
-            var anim = part.Bfres.SkeletalAnimations.FirstOrDefault(a => a.Name == "CloseOff")
+            var anim =
+                part.Bfres.SkeletalAnimations.FirstOrDefault(a => a.Name == "CloseOff")
                 ?? part.Bfres.SkeletalAnimations.FirstOrDefault(a => a.Name == "Close");
             if (anim == null)
                 return;
 
             anim.SkeletonOverride = part.Skeleton;
             anim.SetFrame(anim.FrameCount);
-            anim.NextFrame();   //writes the pose + runs skeleton.Update()
+            anim.NextFrame(); //writes the pose + runs skeleton.Update()
 
             // The animation's per-bone SSC flags are the ground truth for
             // whether parent scale should propagate.  STSkeleton.GetWorldMatrix
@@ -662,17 +770,21 @@ namespace PlayerViewer.Player
                 var ctrl = bone.AnimationController;
 
                 bool inAnim = anim.AnimGroups.Any(g => g.Name == bone.Name);
-                bool ssc = inAnim ? animSsc.Contains(bone.Name)
-                                  : bone.UseSegmentScaleCompensate;
+                bool ssc = inAnim ? animSsc.Contains(bone.Name) : bone.UseSegmentScaleCompensate;
 
-                Vector3 parentAccum = (bone.Parent != null &&
-                    accumScale.TryGetValue(bone.Parent.Name, out var pa)) ? pa : Vector3.One;
+                Vector3 parentAccum =
+                    (bone.Parent != null && accumScale.TryGetValue(bone.Parent.Name, out var pa))
+                        ? pa
+                        : Vector3.One;
 
                 Vector3 ownScale = ctrl.Scale;
-                Vector3 meshScale = ssc ? ownScale
-                    : new Vector3(ownScale.X * parentAccum.X,
-                                  ownScale.Y * parentAccum.Y,
-                                  ownScale.Z * parentAccum.Z);
+                Vector3 meshScale = ssc
+                    ? ownScale
+                    : new Vector3(
+                        ownScale.X * parentAccum.X,
+                        ownScale.Y * parentAccum.Y,
+                        ownScale.Z * parentAccum.Z
+                    );
                 accumScale[bone.Name] = meshScale;
 
                 part.PoseOverride[bone.Name] = new PartModel.PoseSrt
@@ -691,8 +803,11 @@ namespace PlayerViewer.Player
                 var raw = File.ReadAllBytes(entry.CustomPath);
                 raw = Romfs.Decompress(raw);
                 //Fake path inside romfs Model so shader lookup works.
-                string fakePath = Path.Combine(Romfs.Root, "Model",
-                    Path.GetFileNameWithoutExtension(entry.CustomPath.Replace(".zs", "")) + ".bfres");
+                string fakePath = Path.Combine(
+                    Romfs.Root,
+                    "Model",
+                    Path.GetFileNameWithoutExtension(entry.CustomPath.Replace(".zs", "")) + ".bfres"
+                );
                 var bfres = LoadModelData(raw, fakePath);
                 return bfres == null ? null : CreatePart(kind, entry.RowId, bfres);
             }
@@ -740,7 +855,8 @@ namespace PlayerViewer.Player
             if (paramData == null)
             {
                 string file = pack.FindFile(x => x.Contains("GearHeadParamSet"));
-                if (file != null) paramData = pack.GetFile(file);
+                if (file != null)
+                    paramData = pack.GetFile(file);
             }
             if (paramData == null)
                 return;
@@ -764,7 +880,10 @@ namespace PlayerViewer.Player
                 srt = Byml.AsHash(manualBind.GetValueOrDefault($"V{variation}_{hairKey}"));
 
             var variationSrt = Byml.AsHash(root.GetValueOrDefault("VariationSRT"));
-            var varEntry = variationSrt != null ? Byml.AsHash(variationSrt.GetValueOrDefault($"V{variation}")) : null;
+            var varEntry =
+                variationSrt != null
+                    ? Byml.AsHash(variationSrt.GetValueOrDefault($"V{variation}"))
+                    : null;
 
             //V0 entries usually only carry HideEar, but some gear (Hed_AMB020) puts a
             //real bind SRT there too; ReadSrt returns identity when no SRT keys exist.
@@ -783,8 +902,12 @@ namespace PlayerViewer.Player
             if (hair != null && hairKey != null)
             {
                 var hairArrange = Byml.AsHash(root.GetValueOrDefault("HairArrange"));
-                var varSet = hairArrange != null ? Byml.AsHash(hairArrange.GetValueOrDefault($"V{variation}")) : null;
-                var presetMap = varSet != null ? Byml.AsHash(varSet.GetValueOrDefault("PresetMap")) : null;
+                var varSet =
+                    hairArrange != null
+                        ? Byml.AsHash(hairArrange.GetValueOrDefault($"V{variation}"))
+                        : null;
+                var presetMap =
+                    varSet != null ? Byml.AsHash(varSet.GetValueOrDefault("PresetMap")) : null;
                 string arrangePath = presetMap != null ? Byml.GetString(presetMap, hairKey) : null;
 
                 if (!string.IsNullOrEmpty(arrangePath))
@@ -802,7 +925,14 @@ namespace PlayerViewer.Player
         //Afro-style hairs (Har_OCT003) contain one mesh shell per headgear family,
         //each hanging off a marker bone; the arrange preset's AfroType picks the
         //visible shell. Default (no headgear / no preset) = Base.
-        static readonly string[] AfroShells = { "Base", "Cap", "Fullface", "Headband", "HeadphoneA" };
+        static readonly string[] AfroShells =
+        {
+            "Base",
+            "Cap",
+            "Fullface",
+            "Headband",
+            "HeadphoneA",
+        };
 
         static void ApplyAfroShell(PartModel hair, string afroType)
         {
@@ -825,18 +955,24 @@ namespace PlayerViewer.Player
             if (CurrentHair == null || CurrentHair.IsCustom)
                 return null;
             string id = CurrentHair.RowId;
-            if (id.StartsWith("Har_")) id = id.Substring(4);
+            if (id.StartsWith("Har_"))
+                id = id.Substring(4);
             int sd = id.IndexOf("_SdodrCstm", StringComparison.Ordinal);
-            if (sd > 0) id = id.Substring(0, sd);
+            if (sd > 0)
+                id = id.Substring(0, sd);
             return id;
         }
 
-        static Dictionary<string, ArrangeBoneParam> ParseHairArrange(byte[] data, out string afroType)
+        static Dictionary<string, ArrangeBoneParam> ParseHairArrange(
+            byte[] data,
+            out string afroType
+        )
         {
             afroType = null;
             var result = new Dictionary<string, ArrangeBoneParam>();
             var root = Byml.AsHash(new Byml(data).Root);
-            if (root == null) return result;
+            if (root == null)
+                return result;
             afroType = Byml.GetString(root, "AfroType");
 
             if (root.GetValueOrDefault("BoneParamArray") is List<object> bones)
@@ -863,7 +999,8 @@ namespace PlayerViewer.Player
         static Vector3 ReadVec3(Dictionary<string, object> hash, string key, Vector3 def)
         {
             var v = Byml.AsHash(hash.GetValueOrDefault(key));
-            if (v == null) return def;
+            if (v == null)
+                return def;
             return new Vector3(Byml.GetFloat(v, "X"), Byml.GetFloat(v, "Y"), Byml.GetFloat(v, "Z"));
         }
 
@@ -871,21 +1008,40 @@ namespace PlayerViewer.Player
         {
             if (srt == null)
                 return Matrix4.Identity;
-            Vector3 scale = Vector3.One, rotate = Vector3.Zero, translate = Vector3.Zero;
+            Vector3 scale = Vector3.One,
+                rotate = Vector3.Zero,
+                translate = Vector3.Zero;
             var s = Byml.AsHash(srt.GetValueOrDefault("Scale"));
-            if (s != null) scale = new Vector3(Byml.GetFloat(s, "X", 1), Byml.GetFloat(s, "Y", 1), Byml.GetFloat(s, "Z", 1));
+            if (s != null)
+                scale = new Vector3(
+                    Byml.GetFloat(s, "X", 1),
+                    Byml.GetFloat(s, "Y", 1),
+                    Byml.GetFloat(s, "Z", 1)
+                );
             //ManualBindSRT uses "Rotate", VariationSRT uses "Rotation".
-            var r = Byml.AsHash(srt.GetValueOrDefault("Rotate")) ?? Byml.AsHash(srt.GetValueOrDefault("Rotation"));
-            if (r != null) rotate = new Vector3(Byml.GetFloat(r, "X"), Byml.GetFloat(r, "Y"), Byml.GetFloat(r, "Z"));
+            var r =
+                Byml.AsHash(srt.GetValueOrDefault("Rotate"))
+                ?? Byml.AsHash(srt.GetValueOrDefault("Rotation"));
+            if (r != null)
+                rotate = new Vector3(
+                    Byml.GetFloat(r, "X"),
+                    Byml.GetFloat(r, "Y"),
+                    Byml.GetFloat(r, "Z")
+                );
             var t = Byml.AsHash(srt.GetValueOrDefault("Translate"));
-            if (t != null) translate = new Vector3(Byml.GetFloat(t, "X"), Byml.GetFloat(t, "Y"), Byml.GetFloat(t, "Z"));
+            if (t != null)
+                translate = new Vector3(
+                    Byml.GetFloat(t, "X"),
+                    Byml.GetFloat(t, "Y"),
+                    Byml.GetFloat(t, "Z")
+                );
 
             //Euler XYZ, applied X first (row-vector convention).
-            return Matrix4.CreateScale(scale) *
-                Matrix4.CreateRotationX(MathHelper.DegreesToRadians(rotate.X)) *
-                Matrix4.CreateRotationY(MathHelper.DegreesToRadians(rotate.Y)) *
-                Matrix4.CreateRotationZ(MathHelper.DegreesToRadians(rotate.Z)) *
-                Matrix4.CreateTranslation(translate);
+            return Matrix4.CreateScale(scale)
+                * Matrix4.CreateRotationX(MathHelper.DegreesToRadians(rotate.X))
+                * Matrix4.CreateRotationY(MathHelper.DegreesToRadians(rotate.Y))
+                * Matrix4.CreateRotationZ(MathHelper.DegreesToRadians(rotate.Z))
+                * Matrix4.CreateTranslation(translate);
         }
 
         #endregion
@@ -903,10 +1059,14 @@ namespace PlayerViewer.Player
 
             string type = "S";
             bool hide = false;
-            if (CurrentClothes != null && Database.ClothesRows.TryGetValue(CurrentClothes.RowId, out var row))
+            if (
+                CurrentClothes != null
+                && Database.ClothesRows.TryGetValue(CurrentClothes.RowId, out var row)
+            )
             {
                 type = Byml.GetString(row, "HarnessType");
-                if (string.IsNullOrEmpty(type)) type = "S";
+                if (string.IsNullOrEmpty(type))
+                    type = "S";
                 hide = Byml.GetBool(row, "IsHideHarness");
             }
 
@@ -928,7 +1088,10 @@ namespace PlayerViewer.Player
         /// Mask texture name contributed by a gear entry: AlphaMaskV1 for variation
         /// rows when present, else the per-gender AlphaMaskF/AlphaMaskM.
         /// </summary>
-        string GetAlphaMaskName(GearEntry entry, Dictionary<string, Dictionary<string, object>> rows)
+        string GetAlphaMaskName(
+            GearEntry entry,
+            Dictionary<string, Dictionary<string, object>> rows
+        )
         {
             if (entry == null || entry.IsCustom || !rows.TryGetValue(entry.RowId, out var row))
                 return null;
@@ -972,10 +1135,11 @@ namespace PlayerViewer.Player
             };
 
             _bodyMaskActive = _alphaMask.Compose(Human, names.Where(x => x != null));
-            _bodyMaskMaterials = Human.ModelAsset.Meshes
-                .Select(m => (FMAT)m.Material)
+            _bodyMaskMaterials = Human
+                .ModelAsset.Meshes.Select(m => (FMAT)m.Material)
                 .Where(m => m.Name == "M_Body")
-                .Distinct().ToList();
+                .Distinct()
+                .ToList();
             ApplyBodyMaskSampler();
             //New parts start with the authored placeholder skin color.
             ApplyGearSkinColor();
@@ -1030,7 +1194,8 @@ namespace PlayerViewer.Player
         {
             if (Human == null)
                 return;
-            var body = Human.ModelAsset.Meshes.Select(m => (FMAT)m.Material)
+            var body = Human
+                .ModelAsset.Meshes.Select(m => (FMAT)m.Material)
                 .FirstOrDefault(m => m.Name == "M_Body");
             if (body == null)
                 return;
@@ -1078,11 +1243,18 @@ namespace PlayerViewer.Player
 
         public void ApplyTeamColor(TeamColorSet set, int team)
         {
-            if (set == null) return;
-            var color = team == 0 ? set.Alpha : team == 1 ? set.Bravo : set.Charlie;
+            if (set == null)
+                return;
+            var color =
+                team == 0 ? set.Alpha
+                : team == 1 ? set.Bravo
+                : set.Charlie;
             //The shader wants linear color (flexlion applies pow 2.2).
             var linear = new System.Numerics.Vector3(
-                MathF.Pow(color.X, 2.2f), MathF.Pow(color.Y, 2.2f), MathF.Pow(color.Z, 2.2f));
+                MathF.Pow(color.X, 2.2f),
+                MathF.Pow(color.Y, 2.2f),
+                MathF.Pow(color.Z, 2.2f)
+            );
             //Force the dumped uniform buffers in first; the lazy load on first draw
             //resets TeamAlphaColor to the dump's value and would clobber ours.
             HoianNXRender.LoadResourceData();
@@ -1093,7 +1265,11 @@ namespace PlayerViewer.Player
 
         #region Animation
 
-        public void PlayAnim(string name)
+        public void PlayAnim(string name) => PlayAnim(name, resetHair: true);
+
+        //resetHair=false keeps the cloth sim running across the switch, so an animation chain
+        //plays as one continuous take instead of snapping hair back to rest each step.
+        public void PlayAnim(string name, bool resetHair)
         {
             CurrentAnimName = name;
             AnimFrame = 0;
@@ -1123,12 +1299,15 @@ namespace PlayerViewer.Player
                 ApplySkinTone(SkinTone);
             }
 
-            //Pose jumps on anim switch; restart the cloth from the new pose.
-            ResetHairPhysics();
+            //Pose jumps on anim switch; restart the cloth from the new pose (unless a chain is
+            //driving continuous playback).
+            if (resetHair)
+                ResetHairPhysics();
         }
 
         //Mouth01..04 etc default hidden; captured at load time from the bfres bone data.
         readonly Dictionary<STBone, bool> _defaultBoneVisibility = new();
+
         bool IsBoneDefaultVisible(STBone bone)
         {
             if (_defaultBoneVisibility.TryGetValue(bone, out bool visible))
@@ -1160,14 +1339,22 @@ namespace PlayerViewer.Player
             if (CurrentSkeletal != null)
             {
                 CurrentSkeletal.SetFrame(AnimFrame);
-                CurrentSkeletal.NextFrame();   //updates Human.Skeleton (SkeletonOverride)
+                CurrentSkeletal.NextFrame(); //updates Human.Skeleton (SkeletonOverride)
             }
 
             if (CurrentTexPattern != null)
-                ScopedAnimPlayer.ApplyMaterialAnim(CurrentTexPattern, AnimFrame, new[] { Human.ModelAsset });
+                ScopedAnimPlayer.ApplyMaterialAnim(
+                    CurrentTexPattern,
+                    AnimFrame,
+                    new[] { Human.ModelAsset }
+                );
             //Shader param anims scale the eyeball down behind closed eyelids etc.
             if (CurrentShaderParam != null)
-                ScopedAnimPlayer.ApplyMaterialAnim(CurrentShaderParam, AnimFrame, new[] { Human.ModelAsset });
+                ScopedAnimPlayer.ApplyMaterialAnim(
+                    CurrentShaderParam,
+                    AnimFrame,
+                    new[] { Human.ModelAsset }
+                );
             if (CurrentBoneVis != null)
                 ScopedAnimPlayer.ApplyBoneVisAnim(CurrentBoneVis, AnimFrame, Human.Skeleton);
 
@@ -1215,14 +1402,23 @@ namespace PlayerViewer.Player
         /// </summary>
         void ApplyEarHide()
         {
-            bool hideL, hideR;
+            bool hideL,
+                hideR;
             switch (EarHideMode)
             {
-                case "HideAll": hideL = hideR = true; break;
-                case "HideLeft": hideL = true; hideR = false; break;
+                case "HideAll":
+                    hideL = hideR = true;
+                    break;
+                case "HideLeft":
+                    hideL = true;
+                    hideR = false;
+                    break;
                 //"Long" ears = inkling; octoling ears stay visible.
-                case "HideLong": hideL = hideR = PlayerType <= 1; break;
-                default: return;
+                case "HideLong":
+                    hideL = hideR = PlayerType <= 1;
+                    break;
+                default:
+                    return;
             }
 
             var squash = Matrix4.CreateScale(0.0001f);
@@ -1235,6 +1431,13 @@ namespace PlayerViewer.Player
         public void SetAnimFrame(float frame)
         {
             AnimFrame = frame;
+        }
+
+        /// <summary>Frame count of a skeletal animation by name (0 if unknown), for the chain timeline.</summary>
+        public int SkeletalFrameCount(string name)
+        {
+            var anim = name != null ? Anims.GetSkeletal(name) : null;
+            return anim != null ? Math.Max((int)Math.Round((float)anim.FrameCount), 1) : 0;
         }
 
         #endregion
@@ -1262,10 +1465,14 @@ namespace PlayerViewer.Player
                 if (!part.Visible)
                     continue;
                 if (part.Mirror)
-                    OpenTK.Graphics.OpenGL.GL.FrontFace(OpenTK.Graphics.OpenGL.FrontFaceDirection.Cw);
+                    OpenTK.Graphics.OpenGL.GL.FrontFace(
+                        OpenTK.Graphics.OpenGL.FrontFaceDirection.Cw
+                    );
                 part.Render.DrawModel(control, pass, Vector4.Zero);
                 if (part.Mirror)
-                    OpenTK.Graphics.OpenGL.GL.FrontFace(OpenTK.Graphics.OpenGL.FrontFaceDirection.Ccw);
+                    OpenTK.Graphics.OpenGL.GL.FrontFace(
+                        OpenTK.Graphics.OpenGL.FrontFaceDirection.Ccw
+                    );
             }
         }
 

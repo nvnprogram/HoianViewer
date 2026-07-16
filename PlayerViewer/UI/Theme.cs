@@ -18,6 +18,10 @@ namespace PlayerViewer.UI
         public static readonly Vector4 BgItemActive = new(0.28f, 0.24f, 0.15f, 1.00f);
         public static readonly Vector4 TextMain = new(0.92f, 0.91f, 0.88f, 1.00f);
         public static readonly Vector4 TextDim = new(0.55f, 0.54f, 0.52f, 1.00f);
+        public static readonly Vector4 Error = new(0.90f, 0.35f, 0.30f, 1.00f);
+        public static readonly Vector4 Success = new(0.40f, 0.85f, 0.40f, 1.00f);
+        public static readonly Vector4 RedButtonBg = new(0.55f, 0.12f, 0.10f, 1.00f);
+        public static readonly Vector4 RedButtonHover = new(0.70f, 0.16f, 0.13f, 1.00f);
 
         public static void Apply()
         {

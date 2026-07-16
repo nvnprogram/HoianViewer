@@ -19,7 +19,11 @@ namespace PlayerViewer.Player
         /// Applies a material animation (texture pattern and/or shader params) at the
         /// given frame, but only to materials of the provided models.
         /// </summary>
-        public static void ApplyMaterialAnim(BfresMaterialAnim anim, float frame, IEnumerable<BfresModelAsset> models)
+        public static void ApplyMaterialAnim(
+            BfresMaterialAnim anim,
+            float frame,
+            IEnumerable<BfresModelAsset> models
+        )
         {
             anim.SetFrame(frame);
             foreach (BfresMaterialAnim.MaterialAnimGroup group in anim.AnimGroups)
@@ -36,7 +40,12 @@ namespace PlayerViewer.Player
             }
         }
 
-        static void ApplyGroup(BfresMaterialAnim anim, STAnimGroup group, FMAT material, float frame)
+        static void ApplyGroup(
+            BfresMaterialAnim anim,
+            STAnimGroup group,
+            FMAT material,
+            float frame
+        )
         {
             foreach (var track in group.GetTracks())
             {
@@ -50,7 +59,12 @@ namespace PlayerViewer.Player
                 ApplyGroup(anim, subGroup, material, frame);
         }
 
-        static void ApplySamplerTrack(BfresMaterialAnim anim, FMAT material, BfresMaterialAnim.SamplerTrack track, float frame)
+        static void ApplySamplerTrack(
+            BfresMaterialAnim anim,
+            FMAT material,
+            BfresMaterialAnim.SamplerTrack track,
+            float frame
+        )
         {
             if (anim.TextureList.Count == 0)
                 return;
@@ -63,7 +77,12 @@ namespace PlayerViewer.Player
             material.AnimatedSamplers.Add(track.Sampler, anim.TextureList[value]);
         }
 
-        static void ApplyParamTrack(FMAT material, STAnimGroup group, BfresMaterialAnim.ParamTrack track, float frame)
+        static void ApplyParamTrack(
+            FMAT material,
+            STAnimGroup group,
+            BfresMaterialAnim.ParamTrack track,
+            float frame
+        )
         {
             if (!material.ShaderParams.ContainsKey(group.Name))
                 return;
@@ -89,26 +108,38 @@ namespace PlayerViewer.Player
             var param = material.AnimatedParams[group.Name];
             switch (targetParam.Type)
             {
-                case ShaderParamType.Float: param.DataValue = value; break;
+                case ShaderParamType.Float:
+                    param.DataValue = value;
+                    break;
                 case ShaderParamType.Float2:
                 case ShaderParamType.Float3:
                 case ShaderParamType.Float4:
                     var arr = (float[])param.DataValue;
-                    if (index < arr.Length) arr[index] = value;
+                    if (index < arr.Length)
+                        arr[index] = value;
                     break;
-                case ShaderParamType.Int: param.DataValue = (int)value; break;
+                case ShaderParamType.Int:
+                    param.DataValue = (int)value;
+                    break;
                 case ShaderParamType.TexSrt:
                 case ShaderParamType.TexSrtEx:
                     {
                         var texSrt = (TexSrt)param.DataValue;
-                        var scaleX = texSrt.Scaling.X; var scaleY = texSrt.Scaling.Y;
+                        var scaleX = texSrt.Scaling.X;
+                        var scaleY = texSrt.Scaling.Y;
                         var rotate = texSrt.Rotation;
-                        var transX = texSrt.Translation.X; var transY = texSrt.Translation.Y;
-                        if (track.ValueOffset == 4) scaleX = value;
-                        if (track.ValueOffset == 8) scaleY = value;
-                        if (track.ValueOffset == 12) rotate = value;
-                        if (track.ValueOffset == 16) transX = value;
-                        if (track.ValueOffset == 20) transY = value;
+                        var transX = texSrt.Translation.X;
+                        var transY = texSrt.Translation.Y;
+                        if (track.ValueOffset == 4)
+                            scaleX = value;
+                        if (track.ValueOffset == 8)
+                            scaleY = value;
+                        if (track.ValueOffset == 12)
+                            rotate = value;
+                        if (track.ValueOffset == 16)
+                            transX = value;
+                        if (track.ValueOffset == 20)
+                            transY = value;
                         param.DataValue = new TexSrt()
                         {
                             Mode = texSrt.Mode,
@@ -126,8 +157,12 @@ namespace PlayerViewer.Player
         /// Also applies to shape (FSHP) visibility when a track name matches a shape name
         /// but not a bone name (Splatoon 3 uses both patterns).
         /// </summary>
-        public static void ApplyBoneVisAnim(BfresVisibilityAnim anim, float frame,
-            STSkeleton skeleton, IEnumerable<BfresModelAsset> models = null)
+        public static void ApplyBoneVisAnim(
+            BfresVisibilityAnim anim,
+            float frame,
+            STSkeleton skeleton,
+            IEnumerable<BfresModelAsset> models = null
+        )
         {
             anim.SetFrame(frame);
             foreach (BfresVisibilityAnim.BoneAnimGroup group in anim.AnimGroups)
@@ -139,11 +174,12 @@ namespace PlayerViewer.Player
                     bone.Visible = val;
                     continue;
                 }
-                if (models == null) continue;
+                if (models == null)
+                    continue;
                 foreach (var model in models)
-                    foreach (var mesh in model.Meshes)
-                        if (mesh.Name == group.Name)
-                            mesh.Shape.IsVisible = val;
+                foreach (var mesh in model.Meshes)
+                    if (mesh.Name == group.Name)
+                        mesh.Shape.IsVisible = val;
             }
         }
 

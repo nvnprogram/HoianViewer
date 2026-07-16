@@ -2,8 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using BfresLibrary;
 using BfresEditor;
+using BfresLibrary;
 using PlayerViewer.Core;
 
 namespace PlayerViewer.Player
@@ -47,8 +47,14 @@ namespace PlayerViewer.Player
         /// </summary>
         public void Load(Romfs romfs, string playerModel)
         {
-            _skeletal.Clear(); _texPattern.Clear(); _shaderParam.Clear(); _boneVis.Clear();
-            _skeletalWrappers.Clear(); _texPatternWrappers.Clear(); _shaderParamWrappers.Clear(); _boneVisWrappers.Clear();
+            _skeletal.Clear();
+            _texPattern.Clear();
+            _shaderParam.Clear();
+            _boneVis.Clear();
+            _skeletalWrappers.Clear();
+            _texPatternWrappers.Clear();
+            _shaderParamWrappers.Clear();
+            _boneVisWrappers.Clear();
 
             var sources = new List<(string name, int priority)> { ("Player00", 0) };
             foreach (var variant in romfs.ListModelFiles("Player00_v-"))
@@ -61,16 +67,24 @@ namespace PlayerViewer.Player
             }
 
             //Parse uncached sources in parallel (independent files, no GL work).
-            var missing = sources.Where(s => !_parsed.ContainsKey(s.name)).Select(s => s.name).Distinct().ToArray();
+            var missing = sources
+                .Where(s => !_parsed.ContainsKey(s.name))
+                .Select(s => s.name)
+                .Distinct()
+                .ToArray();
             var parsed = new ResFile[missing.Length];
-            System.Threading.Tasks.Parallel.For(0, missing.Length, i =>
-            {
-                byte[] data = romfs.ReadModelFile(missing[i]);
-                if (data != null)
-                    parsed[i] = new ResFile(new MemoryStream(data));
-            });
+            System.Threading.Tasks.Parallel.For(
+                0,
+                missing.Length,
+                i =>
+                {
+                    byte[] data = romfs.ReadModelFile(missing[i]);
+                    if (data != null)
+                        parsed[i] = new ResFile(new MemoryStream(data));
+                }
+            );
             for (int i = 0; i < missing.Length; i++)
-                _parsed[missing[i]] = parsed[i];    //null = file absent; cached too
+                _parsed[missing[i]] = parsed[i]; //null = file absent; cached too
 
             foreach (var (name, priority) in sources)
             {
@@ -94,10 +108,21 @@ namespace PlayerViewer.Player
                 AnimNames.Insert(0, "Wait");
         }
 
-        static void Add<T>(Dictionary<string, Entry<T>> map, string name, T anim, ResFile file, int priority)
+        static void Add<T>(
+            Dictionary<string, Entry<T>> map,
+            string name,
+            T anim,
+            ResFile file,
+            int priority
+        )
         {
             if (!map.TryGetValue(name, out var existing) || priority >= existing.Priority)
-                map[name] = new Entry<T> { Anim = anim, File = file, Priority = priority };
+                map[name] = new Entry<T>
+                {
+                    Anim = anim,
+                    File = file,
+                    Priority = priority,
+                };
         }
 
         public bool HasAnim(string name) => _skeletal.ContainsKey(name);

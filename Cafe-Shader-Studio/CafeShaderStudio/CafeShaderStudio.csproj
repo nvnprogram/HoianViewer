@@ -3,7 +3,7 @@
   <PropertyGroup>
     
     <OutputType>Exe</OutputType>
-    <TargetFramework>net6.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Platforms>AnyCPU;x64;x86</Platforms>
   </PropertyGroup>
@@ -38,9 +38,7 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>Lib\ImGui.NET.dll</HintPath>
     </Reference>
-    <Reference Include="OpenTK">
-      <HintPath>Lib\OpenTK.dll</HintPath>
-    </Reference>
+    <PackageReference Include="OpenTK" Version="3.1.0" />
     <Reference Include="OpenTK.GLControl">
       <HintPath>Lib\OpenTK.GLControl.dll</HintPath>
     </Reference>
@@ -55,9 +53,6 @@
     </Reference>
     <Reference Include="TrackStudioLibrary">
       <HintPath>Lib\TrackStudioLibrary.dll</HintPath>
-    </Reference>
-    <Reference Include="ZstdNet">
-      <HintPath>Lib\ZstdNet.dll</HintPath>
     </Reference>
   </ItemGroup>
 
@@ -272,6 +267,9 @@
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+    <!-- The shared libs keep SDC private (PrivateAssets), so the app that actually runs the
+         GDI paths must reference it directly to ship System.Drawing.Common. -->
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AGraphicsLibrary\AGraphicsLibrary.csproj">
@@ -417,12 +415,6 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Update="tinyfiledialogs.so">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="x64\libzstd.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="x86\libzstd.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

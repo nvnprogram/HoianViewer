@@ -1,10 +1,10 @@
-﻿using ShaderLibrary.IO;
-using System;
+﻿using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Xml.Linq;
+using ShaderLibrary.IO;
 
 namespace ShaderLibrary
 {
@@ -27,13 +27,18 @@ namespace ShaderLibrary
 
     internal static class Utils
     {
-        public static Span<byte> AsSpan<T>(ref T val) where T : unmanaged
+        public static Span<byte> AsSpan<T>(ref T val)
+            where T : unmanaged
         {
             Span<T> valSpan = MemoryMarshal.CreateSpan(ref val, 1);
             return MemoryMarshal.Cast<T, byte>(valSpan);
         }
 
-        public static unsafe T BytesToStruct<T>(this byte[] buffer, bool isBigEndian = false, int offset = 0) 
+        public static unsafe T BytesToStruct<T>(
+            this byte[] buffer,
+            bool isBigEndian = false,
+            int offset = 0
+        )
         {
             AdjustBigEndianByteOrder(typeof(T), buffer, isBigEndian);
 
@@ -54,17 +59,28 @@ namespace ShaderLibrary
         }
 
         //Adjust byte order for big endian
-        private static void AdjustBigEndianByteOrder(Type type, byte[] buffer, bool isBigEndian, int startOffset = 0)
+        private static void AdjustBigEndianByteOrder(
+            Type type,
+            byte[] buffer,
+            bool isBigEndian,
+            int startOffset = 0
+        )
         {
             if (!isBigEndian)
                 return;
 
             if (type.IsPrimitive)
             {
-                if (type == typeof(short) || type == typeof(ushort) ||
-                 type == typeof(int) || type == typeof(uint) ||
-                 type == typeof(long) || type == typeof(ulong) ||
-                  type == typeof(double) || type == typeof(float))
+                if (
+                    type == typeof(short)
+                    || type == typeof(ushort)
+                    || type == typeof(int)
+                    || type == typeof(uint)
+                    || type == typeof(long)
+                    || type == typeof(ulong)
+                    || type == typeof(double)
+                    || type == typeof(float)
+                )
                 {
                     Array.Reverse(buffer);
                     return;
@@ -76,7 +92,8 @@ namespace ShaderLibrary
                 var fieldType = field.FieldType;
 
                 // Ignore static fields
-                if (field.IsStatic) continue;
+                if (field.IsStatic)
+                    continue;
 
                 if (fieldType.BaseType == typeof(Enum))
                     fieldType = fieldType.GetFields()[0].FieldType;
@@ -87,17 +104,25 @@ namespace ShaderLibrary
                     fieldType = Enum.GetUnderlyingType(fieldType);
 
                 // Check for sub-fields to recurse if necessary
-                var subFields = fieldType.GetFields().Where(subField => subField.IsStatic == false).ToArray();
+                var subFields = fieldType
+                    .GetFields()
+                    .Where(subField => subField.IsStatic == false)
+                    .ToArray();
                 var effectiveOffset = startOffset + offset;
 
-                if (fieldType == typeof(short) || fieldType == typeof(ushort) ||
-                    fieldType == typeof(int) || fieldType == typeof(uint) ||
-                    fieldType == typeof(long) || fieldType == typeof(ulong) ||
-                    fieldType == typeof(double) || fieldType == typeof(float))
+                if (
+                    fieldType == typeof(short)
+                    || fieldType == typeof(ushort)
+                    || fieldType == typeof(int)
+                    || fieldType == typeof(uint)
+                    || fieldType == typeof(long)
+                    || fieldType == typeof(ulong)
+                    || fieldType == typeof(double)
+                    || fieldType == typeof(float)
+                )
                 {
                     if (subFields.Length == 0)
                         Array.Reverse(buffer, effectiveOffset, Marshal.SizeOf(fieldType));
-
                 }
 
                 if (subFields.Length > 0)
@@ -105,7 +130,11 @@ namespace ShaderLibrary
             }
         }
 
-        public static TemporarySeekHandle TemporarySeek(this Stream stream, long offset, SeekOrigin origin)
+        public static TemporarySeekHandle TemporarySeek(
+            this Stream stream,
+            long offset,
+            SeekOrigin origin
+        )
         {
             long ret = stream.Position;
             stream.Seek(offset, origin);

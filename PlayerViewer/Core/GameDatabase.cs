@@ -23,15 +23,16 @@ namespace PlayerViewer.Core
     public class GearEntry
     {
         public GearSlot Slot;
-        public string RowId = "";       //RSDB row id, e.g. "Hed_ACC003" or "Blaster_LightLong_00"
+        public string RowId = ""; //RSDB row id, e.g. "Hed_ACC003" or "Blaster_LightLong_00"
         public int Id = -1;
-        public string Label = "";       //Localized-ish label (JP) from RSDB
-        public int Variation;           //Variation index (0 = default)
-        public int VariationCount;      //Total variations
-        public bool IsCustom;           //Loaded from a user file, not the romfs
-        public string CustomPath;       //Source path for custom entries
-        public string WeaponType = "";  //Weapon rows: Versus/Coop/Mission/...
-        public string ActorName = "";   //Actor pack name (weapons: from GameActor/SpecActor)
+        public string Label = ""; //Localized-ish label (JP) from RSDB
+        public int Variation; //Variation index (0 = default)
+        public int VariationCount; //Total variations
+        public bool IsCustom; //Loaded from a user file, not the romfs
+        public string CustomPath; //Source path for custom entries
+        public string WeaponType = ""; //Weapon rows: Versus/Coop/Mission/...
+        public string ActorName = ""; //Actor pack name (weapons: from GameActor/SpecActor)
+        public string Genre = ""; //Gear rows: Genre0 (Head_Cap, Shoes_Boots, ...) for foldering
 
         /// <summary>Display name for UI lists.</summary>
         public string DisplayName
@@ -39,8 +40,10 @@ namespace PlayerViewer.Core
             get
             {
                 string name = RowId;
-                if (Variation > 0) name += $" (v{Variation})";
-                if (IsCustom) name += "  [custom]";
+                if (Variation > 0)
+                    name += $" (v{Variation})";
+                if (IsCustom)
+                    name += "  [custom]";
                 return name;
             }
         }
@@ -49,7 +52,7 @@ namespace PlayerViewer.Core
     public class TeamColorSet
     {
         public string Name = "";
-        public System.Numerics.Vector3 Alpha;   //sRGB 0-1
+        public System.Numerics.Vector3 Alpha; //sRGB 0-1
         public System.Numerics.Vector3 Bravo;
         public System.Numerics.Vector3 Charlie;
         public System.Numerics.Vector3 Neutral;
@@ -85,19 +88,20 @@ namespace PlayerViewer.Core
             Load();
         }
 
-        public List<GearEntry> GetList(GearSlot slot) => slot switch
-        {
-            GearSlot.Head => Head,
-            GearSlot.Clothes => Clothes,
-            GearSlot.Shoes => Shoes,
-            GearSlot.Hair => Hair,
-            GearSlot.Eyebrow => Eyebrow,
-            GearSlot.Bottom => Bottom,
-            GearSlot.Tank => Tank,
-            GearSlot.MainWeapon => MainWeapons,
-            GearSlot.SpecialWeapon => SpecialWeapons,
-            _ => new List<GearEntry>(),
-        };
+        public List<GearEntry> GetList(GearSlot slot) =>
+            slot switch
+            {
+                GearSlot.Head => Head,
+                GearSlot.Clothes => Clothes,
+                GearSlot.Shoes => Shoes,
+                GearSlot.Hair => Hair,
+                GearSlot.Eyebrow => Eyebrow,
+                GearSlot.Bottom => Bottom,
+                GearSlot.Tank => Tank,
+                GearSlot.MainWeapon => MainWeapons,
+                GearSlot.SpecialWeapon => SpecialWeapons,
+                _ => new List<GearEntry>(),
+            };
 
         void Load()
         {
@@ -135,8 +139,12 @@ namespace PlayerViewer.Core
             return byml?.Root as List<object> ?? new List<object>();
         }
 
-        void LoadGearTable(string table, GearSlot slot, List<GearEntry> target,
-            Dictionary<string, Dictionary<string, object>> rawRows = null)
+        void LoadGearTable(
+            string table,
+            GearSlot slot,
+            List<GearEntry> target,
+            Dictionary<string, Dictionary<string, object>> rawRows = null
+        )
         {
             foreach (var row in ReadTable(table).OfType<Dictionary<string, object>>())
             {
@@ -149,23 +157,28 @@ namespace PlayerViewer.Core
                 int varNum = Byml.GetInt(row, "VariationNum", 0);
                 for (int v = 0; v <= varNum; v++)
                 {
-                    target.Add(new GearEntry
-                    {
-                        Slot = slot,
-                        RowId = rowId,
-                        Id = Byml.GetInt(row, "Id", -1),
-                        Label = Byml.GetString(row, "Label"),
-                        Variation = v,
-                        VariationCount = varNum + 1,
-                    });
+                    target.Add(
+                        new GearEntry
+                        {
+                            Slot = slot,
+                            RowId = rowId,
+                            Id = Byml.GetInt(row, "Id", -1),
+                            Label = Byml.GetString(row, "Label"),
+                            Variation = v,
+                            VariationCount = varNum + 1,
+                            Genre = Byml.GetString(row, "Genre0"),
+                        }
+                    );
                 }
             }
             //List.Sort is unstable; without the variation tiebreak v1 can land above v0.
-            target.Sort((a, b) =>
-            {
-                int c = string.Compare(a.RowId, b.RowId, StringComparison.OrdinalIgnoreCase);
-                return c != 0 ? c : a.Variation.CompareTo(b.Variation);
-            });
+            target.Sort(
+                (a, b) =>
+                {
+                    int c = string.Compare(a.RowId, b.RowId, StringComparison.OrdinalIgnoreCase);
+                    return c != 0 ? c : a.Variation.CompareTo(b.Variation);
+                }
+            );
         }
 
         void LoadSimpleTable(string table, GearSlot slot, List<GearEntry> target)
@@ -181,19 +194,24 @@ namespace PlayerViewer.Core
                 string actorRef = Byml.GetString(row, "SpecActor");
                 string actorName = Path.GetFileName(actorRef ?? "");
                 int actorDot = actorName.IndexOf('.');
-                if (actorDot >= 0) actorName = actorName.Substring(0, actorDot);
+                if (actorDot >= 0)
+                    actorName = actorName.Substring(0, actorDot);
 
-                target.Add(new GearEntry
-                {
-                    Slot = slot,
-                    RowId = rowId,
-                    Id = Byml.GetInt(row, "Id", -1),
-                    Label = Byml.GetString(row, "Label"),
-                    ActorName = actorName,
-                });
+                target.Add(
+                    new GearEntry
+                    {
+                        Slot = slot,
+                        RowId = rowId,
+                        Id = Byml.GetInt(row, "Id", -1),
+                        Label = Byml.GetString(row, "Label"),
+                        ActorName = actorName,
+                    }
+                );
             }
             //Hair/eyebrows have an Order field ordering them like the in-game UI.
-            target.Sort((a, b) => string.Compare(a.RowId, b.RowId, StringComparison.OrdinalIgnoreCase));
+            target.Sort(
+                (a, b) => string.Compare(a.RowId, b.RowId, StringComparison.OrdinalIgnoreCase)
+            );
         }
 
         void LoadWeaponTable(string table, GearSlot slot, List<GearEntry> target)
@@ -210,19 +228,24 @@ namespace PlayerViewer.Core
                     actorRef = Byml.GetString(row, "SpecActor");
                 string actorName = Path.GetFileName(actorRef ?? "");
                 int actorDot = actorName.IndexOf('.');
-                if (actorDot >= 0) actorName = actorName.Substring(0, actorDot);
+                if (actorDot >= 0)
+                    actorName = actorName.Substring(0, actorDot);
 
-                target.Add(new GearEntry
-                {
-                    Slot = slot,
-                    RowId = rowId,
-                    Id = Byml.GetInt(row, "Id", -1),
-                    Label = Byml.GetString(row, "Label"),
-                    WeaponType = Byml.GetString(row, "Type"),
-                    ActorName = actorName,
-                });
+                target.Add(
+                    new GearEntry
+                    {
+                        Slot = slot,
+                        RowId = rowId,
+                        Id = Byml.GetInt(row, "Id", -1),
+                        Label = Byml.GetString(row, "Label"),
+                        WeaponType = Byml.GetString(row, "Type"),
+                        ActorName = actorName,
+                    }
+                );
             }
-            target.Sort((a, b) => string.Compare(a.RowId, b.RowId, StringComparison.OrdinalIgnoreCase));
+            target.Sort(
+                (a, b) => string.Compare(a.RowId, b.RowId, StringComparison.OrdinalIgnoreCase)
+            );
         }
 
         void LoadTeamColors()
@@ -233,28 +256,38 @@ namespace PlayerViewer.Core
                 //RowId looks like Work/Gyml/<Name>.game__gfx__parameter__TeamColorDataSet.gyml
                 string name = rowId;
                 int slash = name.LastIndexOf('/');
-                if (slash >= 0) name = name.Substring(slash + 1);
+                if (slash >= 0)
+                    name = name.Substring(slash + 1);
                 int dot = name.IndexOf('.');
-                if (dot >= 0) name = name.Substring(0, dot);
+                if (dot >= 0)
+                    name = name.Substring(0, dot);
 
                 System.Numerics.Vector3 ReadColor(string key)
                 {
                     var c = Byml.AsHash(row.GetValueOrDefault(key));
                     return c == null
                         ? System.Numerics.Vector3.Zero
-                        : new System.Numerics.Vector3(Byml.GetFloat(c, "R"), Byml.GetFloat(c, "G"), Byml.GetFloat(c, "B"));
+                        : new System.Numerics.Vector3(
+                            Byml.GetFloat(c, "R"),
+                            Byml.GetFloat(c, "G"),
+                            Byml.GetFloat(c, "B")
+                        );
                 }
 
-                TeamColors.Add(new TeamColorSet
-                {
-                    Name = name,
-                    Alpha = ReadColor("AlphaTeamColor"),
-                    Bravo = ReadColor("BravoTeamColor"),
-                    Charlie = ReadColor("CharlieTeamColor"),
-                    Neutral = ReadColor("NeutralColor"),
-                });
+                TeamColors.Add(
+                    new TeamColorSet
+                    {
+                        Name = name,
+                        Alpha = ReadColor("AlphaTeamColor"),
+                        Bravo = ReadColor("BravoTeamColor"),
+                        Charlie = ReadColor("CharlieTeamColor"),
+                        Neutral = ReadColor("NeutralColor"),
+                    }
+                );
             }
-            TeamColors.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+            TeamColors.Sort(
+                (a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase)
+            );
         }
 
         #region model resolution
@@ -313,7 +346,10 @@ namespace PlayerViewer.Core
         /// Left model comes from the MirrorModel component (dualies etc) and usually
         /// lives as a second model inside the SAME bfres file (Wmn_X + Wmn_X_L).
         /// </summary>
-        public ((string file, string model) main, (string file, string model) left) ResolveWeaponModels(GearEntry weapon)
+        public (
+            (string file, string model) main,
+            (string file, string model) left
+        ) ResolveWeaponModels(GearEntry weapon)
         {
             string actorName = !string.IsNullOrEmpty(weapon.ActorName)
                 ? weapon.ActorName
@@ -324,7 +360,8 @@ namespace PlayerViewer.Core
             if (pack == null)
                 pack = Romfs.GetActorPack(weapon.RowId);
 
-            (string, string) main = (null, null), left = (null, null);
+            (string, string) main = (null, null),
+                left = (null, null);
 
             //Walk this pack and parent packs for ModelInfo / MirrorModel components.
             var visited = new HashSet<string>();
@@ -332,7 +369,8 @@ namespace PlayerViewer.Core
             string currentName = actorName;
             for (int depth = 0; depth < 4 && current != null; depth++)
             {
-                if (!visited.Add(currentName)) break;
+                if (!visited.Add(currentName))
+                    break;
 
                 string mirror = current.FindFile(x => x.StartsWith("Component/MirrorModel/"));
                 if (mirror != null && (main.Item1 == null || left.Item1 == null))
@@ -364,18 +402,23 @@ namespace PlayerViewer.Core
                     break;
 
                 //Follow the $parent actor chain.
-                string actorParam = current.FindFile(x => x.StartsWith("Actor/") && x.Contains(currentName));
+                string actorParam = current.FindFile(x =>
+                    x.StartsWith("Actor/") && x.Contains(currentName)
+                );
                 actorParam ??= current.FindFile(x => x.StartsWith("Actor/"));
-                if (actorParam == null) break;
+                if (actorParam == null)
+                    break;
 
                 var actorByml = new Byml(current.GetFile(actorParam));
                 string parent = Byml.GetString(Byml.AsHash(actorByml.Root), "$parent");
-                if (string.IsNullOrEmpty(parent)) break;
+                if (string.IsNullOrEmpty(parent))
+                    break;
 
                 //Work/Actor/WeaponManeuverDual.engine__actor__ActorParam.gyml -> WeaponManeuverDual
                 string parentName = Path.GetFileName(parent);
                 int dot = parentName.IndexOf('.');
-                if (dot >= 0) parentName = parentName.Substring(0, dot);
+                if (dot >= 0)
+                    parentName = parentName.Substring(0, dot);
 
                 current = Romfs.GetActorPack(parentName);
                 currentName = parentName;

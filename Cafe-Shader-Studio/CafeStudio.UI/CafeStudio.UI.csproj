@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.1</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Platforms>AnyCPU;x86</Platforms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
@@ -23,14 +23,15 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="System.Drawing.Common" Version="5.0.2" />
+    <PackageReference Include="System.Drawing.Common" Version="8.0.0" PrivateAssets="all" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AGraphicsLibrary\AGraphicsLibrary.csproj" />
     <ProjectReference Include="..\GLFrameworkEngine\GLFrameworkEngine.csproj" />
   </ItemGroup>
-  
+
   <ItemGroup>
     <Reference Include="CurveEditorLibrary">
       <HintPath>..\CafeShaderStudio\Lib\CurveEditorLibrary.dll</HintPath>
@@ -38,17 +39,12 @@
     <Reference Include="ImGui.NET">
       <HintPath>..\CafeShaderStudio\Lib\ImGui.NET.dll</HintPath>
     </Reference>
-    <Reference Include="OpenTK">
-      <HintPath>..\CafeShaderStudio\Lib\OpenTK.dll</HintPath>
-    </Reference>
+    <PackageReference Include="OpenTK" Version="3.1.0" />
     <Reference Include="Syroot.BinaryData">
       <HintPath>..\CafeShaderStudio\Lib\Syroot.BinaryData.dll</HintPath>
     </Reference>
     <Reference Include="Syroot.Maths">
       <HintPath>..\CafeShaderStudio\Lib\Syroot.Maths.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Runtime.CompilerServices.Unsafe, Version=4.0.3.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <HintPath>..\packages\System.Runtime.CompilerServices.Unsafe.4.4.0\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
     </Reference>
     <Reference Include="Toolbox.Core">
       <HintPath>..\CafeShaderStudio\Lib\Toolbox.Core.dll</HintPath>

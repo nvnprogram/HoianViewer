@@ -1,16 +1,16 @@
 ﻿using System;
-using System.Numerics;
-using System.Linq;
-using System.Text;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
+using System.Numerics;
+using System.Text;
 
 namespace ShaderLibrary
 {
     public class ResDictUpdateWiiU
     {
-        static internal Node[] UpdateNodes(List<string> keys)
+        internal static Node[] UpdateNodes(List<string> keys)
         {
             List<Node> _nodes = new Node[keys.Count + 1].ToList();
             for (ushort i = 1; i < keys.Count + 1; i++)
@@ -31,13 +31,17 @@ namespace ShaderLibrary
                 while (parent.Reference > child.Reference)
                 {
                     parent = child;
-                    child = GetDirection(curKey, child.Reference) == 1 ? _nodes[child.IdxRight] : _nodes[child.IdxLeft];
+                    child =
+                        GetDirection(curKey, child.Reference) == 1
+                            ? _nodes[child.IdxRight]
+                            : _nodes[child.IdxLeft];
                 }
                 uint reference = (uint)Math.Max(curKey.Length, child.Key.Length) * 8;
                 // Check for duplicate keys.
                 while (GetDirection(child.Key, reference) == GetDirection(curKey, reference))
                 {
-                    if (reference == 0) throw new Exception($"Duplicate key \"{curKey}\".");
+                    if (reference == 0)
+                        throw new Exception($"Duplicate key \"{curKey}\".");
                     reference--;
                 }
                 current.Reference = reference;
@@ -49,7 +53,10 @@ namespace ShaderLibrary
                 while (parent.Reference > child.Reference && child.Reference > reference)
                 {
                     parent = child;
-                    child = GetDirection(curKey, child.Reference) == 1 ? _nodes[child.IdxRight] : _nodes[child.IdxLeft];
+                    child =
+                        GetDirection(curKey, child.Reference) == 1
+                            ? _nodes[child.IdxRight]
+                            : _nodes[child.IdxLeft];
                 }
                 // Attach left or right depending on the resulting direction bit.
                 if (GetDirection(curKey, current.Reference) == 1)
