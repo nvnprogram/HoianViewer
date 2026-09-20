@@ -58,6 +58,7 @@ namespace ShaderBundler
             "V11",
             "V12",
             "V13",
+            "V14",
         };
 
         static readonly Regex GateRe = new(
@@ -102,6 +103,47 @@ namespace ShaderBundler
                     return path;
             }
             return null;
+        }
+
+        /// <summary>
+        /// The codegen version the specialiser stamps into every control blob it writes, or
+        /// <see cref="BundleStamp.Unstamped"/> when it does not answer.
+        /// </summary>
+        public static int QueryCodegen(string executablePath)
+        {
+            if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
+                return BundleStamp.Unstamped;
+            try
+            {
+                var psi = new ProcessStartInfo(executablePath)
+                {
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                };
+                psi.ArgumentList.Add("codegen");
+                using var p = Process.Start(psi);
+                if (p == null)
+                    return BundleStamp.Unstamped;
+                string so = p.StandardOutput.ReadToEnd();
+                p.StandardError.ReadToEnd();
+                if (!p.WaitForExit(10000))
+                {
+                    try
+                    {
+                        p.Kill(true);
+                    }
+                    catch { }
+                    return BundleStamp.Unstamped;
+                }
+                if (p.ExitCode != 0 || !int.TryParse(so.Trim(), out int version))
+                    return BundleStamp.Unstamped;
+                return version;
+            }
+            catch
+            {
+                return BundleStamp.Unstamped;
+            }
         }
 
         /// <summary>Removes the per invocation directories a crash or a kill left behind.</summary>
@@ -295,9 +337,14 @@ namespace ShaderBundler
 
             int passed = Named(gates, "PASS").Count;
             int skipped = ExpectedGates.Length - passed;
+            var binary = new ShaderBinary(File.ReadAllBytes(code), File.ReadAllBytes(control));
+
+            if (BundleStamp.Codegen == BundleStamp.Unstamped)
+                BundleStamp.Codegen = BundleStamp.Read(binary.ControlCode);
+
             return new UberspecResult
             {
-                Binary = new ShaderBinary(File.ReadAllBytes(code), File.ReadAllBytes(control)),
+                Binary = binary,
                 GateSummary = skipped == 0 ? $"{passed} pass" : $"{passed} pass, {skipped} not run",
             };
         }

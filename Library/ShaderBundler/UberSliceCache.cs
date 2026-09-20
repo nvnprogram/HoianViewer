@@ -10,8 +10,8 @@ namespace ShaderBundler
     /// made from. A fragment splice costs about 3s seconds, so a hit is the difference between a
     /// responsive editor and an unusable one.
     ///
-    /// Same scheme as the GLSL shader cache: a version constant, a version.txt beside the
-    /// entries, and a purge of the whole directory on a mismatch.
+    /// Same scheme as the GLSL shader cache: a version, a version.txt beside the entries,
+    /// and a purge of the whole directory on a mismatch.
     ///
     /// Preview splices live in a `preview` sub-directory of the same cache. Same keys, so a
     /// pair is addressed by (key, preview) and nothing that walks the full splices can pick one
@@ -21,17 +21,19 @@ namespace ShaderBundler
     /// </summary>
     public sealed class UberSliceCache
     {
-        public const int CacheVersion = 1;
+        public const int FormatVersion = 2;
 
         readonly string _dir;
         readonly string _previewDir;
+        readonly string _version;
         bool _versionChecked;
         readonly object _lock = new();
 
-        public UberSliceCache(string directory)
+        public UberSliceCache(string directory, int codegenVersion)
         {
             _dir = directory ?? throw new ArgumentNullException(nameof(directory));
             _previewDir = Path.Combine(_dir, "preview");
+            _version = $"{FormatVersion}.{codegenVersion}";
         }
 
         public string Directory => _dir;
@@ -133,14 +135,14 @@ namespace ShaderBundler
                 System.IO.Directory.CreateDirectory(_previewDir);
                 if (fresh)
                 {
-                    File.WriteAllText(versionPath, CacheVersion.ToString());
+                    File.WriteAllText(versionPath, _version);
                     return;
                 }
 
-                int existing = 0;
-                if (File.Exists(versionPath))
-                    int.TryParse(File.ReadAllText(versionPath).Trim(), out existing);
-                if (existing == CacheVersion)
+                string existing = File.Exists(versionPath)
+                    ? File.ReadAllText(versionPath).Trim()
+                    : "";
+                if (existing == _version)
                     return;
 
                 //Both directories, or a purge would leave the preview splices of the previous
@@ -152,7 +154,7 @@ namespace ShaderBundler
                         File.Delete(f);
                     }
                     catch { }
-                File.WriteAllText(versionPath, CacheVersion.ToString());
+                File.WriteAllText(versionPath, _version);
             }
         }
     }

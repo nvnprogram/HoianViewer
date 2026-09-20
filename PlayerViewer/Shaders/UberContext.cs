@@ -36,6 +36,7 @@ namespace PlayerViewer.Shaders
         public UberContext(Romfs romfs)
         {
             _romfs = romfs ?? throw new ArgumentNullException(nameof(romfs));
+            Cache = new UberSliceCache(AppPaths.UberSliceCacheDir, BundleStamp.Codegen);
         }
 
         public UberState State
@@ -64,12 +65,44 @@ namespace PlayerViewer.Shaders
         /// Nothing outside this set can ever be generated.</summary>
         public IReadOnlyList<string> AssignTypes { get; private set; } = Array.Empty<string>();
 
-        public UberSliceCache Cache { get; } = new UberSliceCache(AppPaths.UberSliceCacheDir);
+        public UberSliceCache Cache { get; }
 
         /// <summary>The specialiser beside the exe, or null. Everything except compiling
         /// works without it.</summary>
         public string SpecialiserPath { get; } =
             UberspecRunner.FindExecutable(AppContext.BaseDirectory);
+
+        /// <summary>The codegen version that specialiser stamps, or
+        /// <see cref="BundleStamp.Unstamped"/> when there is none.</summary>
+        public int Codegen => BundleStamp.Codegen;
+
+        HashSet<ulong> _codeHashes;
+
+        /// <summary>
+        /// The code hash of every ubershader program, built on first use
+        /// Needed to find programs our old splicer generated before stamps were added
+        /// </summary>
+        public ISet<ulong> CodeHashes
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    if (_codeHashes != null || Model?.BnshFile == null)
+                        return _codeHashes;
+                    var set = new HashSet<ulong>();
+                    foreach (var variation in Model.BnshFile.Variations)
+                    {
+                        var bp = variation.BinaryProgram;
+                        foreach (var code in new[] { bp?.VertexShader, bp?.FragmentShader })
+                            if (code?.ControlCode != null)
+                                set.Add(BundleStamp.CodeHash(code.ControlCode));
+                    }
+                    _codeHashes = set;
+                    return _codeHashes;
+                }
+            }
+        }
 
         public bool CanCompile => State == UberState.Ready && SpecialiserPath != null;
 

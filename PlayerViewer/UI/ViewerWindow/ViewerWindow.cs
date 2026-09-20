@@ -352,6 +352,8 @@ namespace PlayerViewer.UI
                 //Off for every model: on, it splices the whole model, which is minutes of CPU,
                 //and opening a file is usually to look at it.
                 SetSplicer(false);
+                _bundlePruned = false;
+                _bundleNote = null;
                 if (hadPrevious)
                     CompactHeap();
 

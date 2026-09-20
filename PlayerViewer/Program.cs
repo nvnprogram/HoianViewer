@@ -45,6 +45,9 @@ namespace PlayerViewer
 
             Directory.SetCurrentDirectory(AppContext.BaseDirectory);
             BfresEditor.TegraShaderDecoder.CacheDir = AppPaths.ShaderCacheDir;
+            ShaderBundler.BundleStamp.Codegen = ShaderBundler.UberspecRunner.QueryCodegen(
+                ShaderBundler.UberspecRunner.FindExecutable(AppContext.BaseDirectory)
+            );
 
             RenderResourceCreator.CreateTextureInstance += (sender, e) =>
             {

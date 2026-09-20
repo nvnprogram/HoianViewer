@@ -18,6 +18,9 @@ namespace PlayerViewer.UI
     {
         SpliceQueue _queue;
 
+        bool _bundlePruned;
+        string _bundleNote;
+
         //Created on first use, since a field initialiser cannot name instance methods.
         SpliceQueue Queue => _queue ??= new SpliceQueue(StandaloneModels, WeightsFor);
 
@@ -95,9 +98,34 @@ namespace PlayerViewer.UI
                 EnsureUberContext();
             bool enabled = _config.UseSplicer && _standalone != null;
             if (enabled && Queue.Ready)
+            {
+                PruneStaleBundle();
                 MigrateForeignMaterials();
+            }
             Queue.Pump(_selectedMaterial, _savePendingPath != null, _standalone?.Name, enabled);
             PumpSave();
+        }
+
+        /// <summary>
+        /// Drops the model's own shader archive when an older specialiser built it, so the
+        /// splicer generates its programs again.
+        /// </summary>
+        void PruneStaleBundle()
+        {
+            if (_bundlePruned)
+                return;
+            _bundlePruned = true;
+
+            var dropped = BundleFreshness.Prune(_standalone?.Bfres, _uber?.CodeHashes);
+            if (dropped.Count == 0)
+                return;
+
+            BundleFreshness.Reprobe(_standalone?.Bfres, StandaloneModels());
+
+            Queue.Reset();
+            _bundleNote =
+                $"{dropped.Count} embedded archive(s) came from an older specialiser and "
+                + "were dropped; the passes are being generated again.";
         }
 
         int SaveWorkOutstanding() => Queue.SaveWorkOutstanding();
@@ -360,6 +388,13 @@ namespace PlayerViewer.UI
                 );
                 ImGui.PopTextWrapPos();
                 return;
+            }
+
+            if (_bundleNote != null)
+            {
+                ImGui.PushTextWrapPos();
+                ImGui.TextColored(Theme.Gold, _bundleNote);
+                ImGui.PopTextWrapPos();
             }
 
             var active = _splicer.Active;

@@ -55,7 +55,7 @@ namespace PlayerViewer.Shaders
         readonly CancellationTokenSource _cancel = new();
         bool _stop;
 
-        const int Workers = 3;
+        static readonly int Workers = Math.Clamp(Environment.ProcessorCount - 2, 1, 6);
 
         //Two threads on top of the pool that only take previews, since a preview needs both
         //drawn passes and they are independent.

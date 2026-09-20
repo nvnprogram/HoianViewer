@@ -178,7 +178,13 @@ namespace PlayerViewer.Shaders
         /// Takes the outcomes, builds a few missing grids, rebuilds the demand and syncs the
         /// previews, the selected material first. Only the outcomes are taken while disabled.
         /// </summary>
-        public void Pump(FMAT selected, bool savePending, string modelName, bool enabled)
+        public void Pump(
+            FMAT selected,
+            bool savePending,
+            string modelName,
+            bool enabled,
+            bool preview = true
+        )
         {
             if (Scheduler == null)
                 return;
@@ -191,6 +197,9 @@ namespace PlayerViewer.Shaders
 
             PumpGrids();
             RebuildDemand(selected, savePending);
+
+            if (!preview)
+                return;
 
             //After the demand pass, so a splice that just landed is bound on the same frame.
             Preview.Advance(_models());
