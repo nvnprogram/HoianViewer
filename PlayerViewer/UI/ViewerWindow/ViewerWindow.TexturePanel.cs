@@ -57,17 +57,10 @@ namespace PlayerViewer.UI
                 Widgets.DimText("This model has no texture container, so nothing can be added.");
 
             Widgets.DisabledButton("Import texture...", haveContainer, ImportTexture);
-            Widgets.ItemTooltip(
-                "Adds an image to the model's texture container with a full mip chain, laid "
-                    + "out block linear the way the console packager does."
-            );
+            Widgets.ItemTooltip("Adds an image to the model's textures, with mips.");
             ImGui.SetNextItemWidth(-1);
             DrawFormatCombo("##importfmt", ref _importFormatIndex, true);
-            Widgets.ItemTooltip(
-                "Automatic reads the image: greyscale becomes BC4, one with alpha BC3, "
-                    + "anything else BC1 sRGB. Importing onto a sampler from the Materials tab "
-                    + "picks the format the shipped textures use for that sampler instead."
-            );
+            Widgets.ItemTooltip("Automatic: BC4 for greyscale, BC3 with alpha, else BC1 sRGB.");
 
             if (haveContainer && ImGui.TreeNode("New flat colour"))
             {
@@ -83,7 +76,7 @@ namespace PlayerViewer.UI
             FilterRow("##texsearch", ref _textureSearch);
             Widgets.DimText($"{_standalone.Render.Textures.Count} texture(s)");
 
-            ImGui.BeginChild("##texlist", new Vector2(0, 0), true);
+            Widgets.BeginList("##texlist", new Vector2(0, 0));
             var rows = new List<string>();
             foreach (
                 var entry in _standalone.Render.Textures.OrderBy(
@@ -96,6 +89,10 @@ namespace PlayerViewer.UI
                     continue;
 
                 rows.Add(entry.Key);
+                Widgets.RowFill(
+                    _selectedTexture == entry.Key,
+                    2 * ImGui.GetTextLineHeightWithSpacing()
+                );
                 if (ImGui.Selectable($"{entry.Key}##tex{entry.Key}", _selectedTexture == entry.Key))
                     SelectTexture(entry.Key);
                 Widgets.KeepRowVisible(TextureListId, _selectedTexture == entry.Key);
@@ -112,7 +109,7 @@ namespace PlayerViewer.UI
             int move = Widgets.ListNav(TextureListId, rows.Count, rows.IndexOf(_selectedTexture));
             if (move >= 0)
                 SelectTexture(rows[move]);
-            ImGui.EndChild();
+            Widgets.EndList();
         }
 
         const string TextureListId = "texlist";
@@ -133,23 +130,20 @@ namespace PlayerViewer.UI
         void DrawNewColourTexture()
         {
             ImGui.SetNextItemWidth(-1);
-            ImGui.InputText("##newcolname", ref _newColourName, 64);
+            Widgets.InputText("##newcolname", ref _newColourName, 64);
             ImGui.SetNextItemWidth(-1);
-            ImGui.ColorEdit4("##newcol", ref _newColour, ImGuiColorEditFlags.AlphaBar);
+            Widgets.ColorEdit4("##newcol", ref _newColour, ImGuiColorEditFlags.AlphaBar);
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.InputInt("##newcolsize", ref _newColourSize))
+            if (Widgets.Framed(() => ImGui.InputInt("##newcolsize", ref _newColourSize)))
                 _newColourSize = Math.Clamp(_newColourSize, 1, 512);
-            Widgets.ItemTooltip("Square, in pixels. Four is plenty for a constant.");
+            Widgets.ItemTooltip("Side in pixels");
 
             Widgets.DisabledButton(
                 "Create",
                 !string.IsNullOrWhiteSpace(_newColourName),
                 CreateColourTexture
             );
-            Widgets.ItemTooltip(
-                "One mip, uncompressed RGBA8. Useful as a stand-in for a map a material asks "
-                    + "for and does not have."
-            );
+            Widgets.ItemTooltip("A stand-in for a map a material lacks.");
         }
 
         void CreateColourTexture()
@@ -183,9 +177,8 @@ namespace PlayerViewer.UI
         }
 
         /// <summary>
-        /// The selected texture, in its own window beside the left panel. A preview big enough
-        /// to read does not fit in the panel: at 220px it pushed the list, which is the only
-        /// way back to another texture, off the bottom of a panel that could not scroll to it.
+        /// The selected texture, in its own window beside the left panel, where a readable
+        /// preview does not push the list away.
         /// </summary>
         void DrawTextureWindow()
         {
@@ -209,7 +202,7 @@ namespace PlayerViewer.UI
             //Fixed id so position and size survive switching texture. NoFocusOnAppearing
             //leaves the arrow keys with the list this window was opened from.
             if (
-                ImGui.Begin(
+                BeginCardWindow(
                     $"{_selectedTexture}###texviewer",
                     ref open,
                     ImGuiWindowFlags.NoFocusOnAppearing
@@ -217,7 +210,7 @@ namespace PlayerViewer.UI
             )
             {
                 ImGui.PushTextWrapPos();
-                ImGui.TextColored(Theme.GoldBright, _selectedTexture);
+                Widgets.ColoredText(Theme.GoldBright, _selectedTexture);
                 Widgets.DimText(
                     $"{tex.Platform.OutputFormat}  {tex.Width}x{tex.Height}  "
                         + $"{tex.MipCount} mip(s)"
@@ -239,7 +232,7 @@ namespace PlayerViewer.UI
             var store = Textures;
             string name = _selectedTexture;
 
-            if (ImGui.Button("Export as PNG..."))
+            if (Widgets.Button("Export as PNG..."))
                 ExportTexture(tex, name);
             ImGui.SameLine();
             string refusal = TextureStore.ReplaceRefusal(tex);
@@ -248,19 +241,15 @@ namespace PlayerViewer.UI
                 store?.Bntx != null && refusal == null,
                 () => ReplaceTexture(name)
             );
-            Widgets.ItemTooltip(
-                refusal
-                    ?? "Reads an image over this texture, keeping the name so every material "
-                        + "that binds it follows."
-            );
+            Widgets.ItemTooltip(refusal ?? "Replaces the image, keeping the name.");
 
             if (refusal == null)
                 DrawReencode(tex, name);
             else
                 Widgets.DimText(refusal);
 
-            ImGui.SetNextItemWidth(-90);
-            ImGui.InputText("##rename", ref _renameDraft, 64);
+            ImGui.SetNextItemWidth(TextureActionFieldWidth());
+            Widgets.InputText("##rename", ref _renameDraft, 64);
             ImGui.SameLine();
             Widgets.DisabledButton(
                 "Rename",
@@ -269,10 +258,7 @@ namespace PlayerViewer.UI
                     && _renameDraft != name,
                 () => RenameTexture(name, _renameDraft.Trim())
             );
-            Widgets.ItemTooltip(
-                "Every material texture ref naming this texture is repointed, so a rename does "
-                    + "not unbind anything."
-            );
+            Widgets.ItemTooltip("Materials using it follow the new name.");
 
             var users = store?.UsedBy(name) ?? new System.Collections.Generic.List<string>();
             if (users.Count > 0)
@@ -291,7 +277,7 @@ namespace PlayerViewer.UI
                 float half = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) / 2;
                 Widgets.RedButton("Delete it", new Vector2(half, 0), () => DeleteTexture(name));
                 ImGui.SameLine();
-                if (ImGui.Button("Cancel", new Vector2(half, 0)))
+                if (Widgets.Button("Cancel", new Vector2(half, 0)))
                     _pendingDelete = null;
             }
             else
@@ -299,10 +285,8 @@ namespace PlayerViewer.UI
         }
 
         /// <summary>
-        /// Re-encodes the texture into another surface format. The pixels come back out of the
-        /// surface it already has, so this is a decode and a re-encode: block format to block
-        /// format loses a little every time. The current format is preselected, so the button
-        /// only lights up once something else is picked.
+        /// Re-encodes the texture into another format, a decode and an encode, so block format
+        /// to block format loses a little each time. The button lights once another is picked.
         /// </summary>
         void DrawReencode(STGenericTexture tex, string name)
         {
@@ -314,7 +298,7 @@ namespace PlayerViewer.UI
                     current == null ? -1 : Array.IndexOf(TextureFormats.All, current);
             }
 
-            ImGui.SetNextItemWidth(-90);
+            ImGui.SetNextItemWidth(TextureActionFieldWidth());
             DrawFormatCombo("##reencodefmt", ref _reencodeFormatIndex, false);
             ImGui.SameLine();
             bool changed =
@@ -327,12 +311,17 @@ namespace PlayerViewer.UI
             );
             Widgets.ItemTooltip(
                 current == null
-                    ? "This texture is stored in a format the editor cannot write, so "
-                        + "re-encoding it changes what it is."
-                    : "Decodes the texture and writes it back in the chosen format. Every "
-                        + "material that binds it follows, since the name does not change."
+                    ? "Its format can't be written, so this changes it."
+                    : "Rewrites the texture in the chosen format, keeping the name."
             );
         }
+
+        //The rename and re-encode fields leave room for the wider of their two buttons.
+        static float TextureActionFieldWidth() =>
+            -(
+                MathF.Max(Widgets.ButtonWidth("Rename"), Widgets.ButtonWidth("Re-encode"))
+                + ImGui.GetStyle().ItemSpacing.X
+            );
 
         void Reencode(STGenericTexture tex, string name, TextureFormat format)
         {
@@ -378,7 +367,7 @@ namespace PlayerViewer.UI
                     ? TextureFormats.All[index].Name
                     : "Automatic";
 
-            if (!ImGui.BeginCombo(id, label))
+            if (!Widgets.BeginCombo(id, label))
                 return;
 
             //Automatic is row 0 when it is offered, so the arrows count from -1 in that case.
@@ -442,10 +431,8 @@ namespace PlayerViewer.UI
         }
 
         /// <summary>
-        /// Reads an image over the texture a material sampler is already bound to. The
-        /// difference from an import is the whole point of it: nothing is added to the
-        /// container and no binding moves, so every other material naming the same texture
-        /// follows the edit.
+        /// Reads an image over the texture a sampler is bound to. Unlike an import nothing is
+        /// added and no binding moves, so every material naming the texture follows.
         /// </summary>
         void ReplaceOnSampler(string name)
         {

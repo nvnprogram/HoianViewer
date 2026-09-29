@@ -77,6 +77,11 @@ namespace PlayerViewer.Player
             public Vector3 Scale;
         }
 
+        //The part's own skeletal anim when one plays (a weapon following the player). It
+        //writes the bones' animation controllers, which then replace the rest and carry pose,
+        //and its root local applies on top of the attach bone.
+        public BfresSkeletalAnim SkeletalAnim;
+
         //Per-bone weld target resolved once at attach time. Index = bone index in
         //Skeleton.Bones. Null entry = no human match (posed from parent instead).
         public STBone[] WeldTargets;
@@ -265,6 +270,15 @@ namespace PlayerViewer.Player
                     //bone's local frame, translate in model space, scale is the
                     //bone's own (compensated) scale.
                     scale = Vector3.One;
+                    if (SkeletalAnim != null && bone == AttachBone)
+                    {
+                        var ctrl = bone.AnimationController;
+                        rt =
+                            Matrix4.CreateFromQuaternion(ctrl.Rotation)
+                            * Matrix4.CreateTranslation(ctrl.Position)
+                            * rt;
+                        scale = ctrl.Scale;
+                    }
                     if (HairArrange != null && HairArrange.TryGetValue(bone.Name, out var rootArr))
                     {
                         rt = ArrangeRotation(rootArr) * rt;
@@ -290,7 +304,11 @@ namespace PlayerViewer.Player
                     //The engine's Maya composition: the parent's scale stays on the
                     //offset; a compensating bone takes it off its own axes with the
                     //inverse between its rotation and its translation.
-                    Matrix4 compensate = bone.UseSegmentScaleCompensate
+                    bool ssc =
+                        SkeletalAnim != null
+                            ? bone.AnimationController.UseSegmentScaleCompensate
+                            : bone.UseSegmentScaleCompensate;
+                    Matrix4 compensate = ssc
                         ? Matrix4.CreateScale(
                             1.0f / parentScale.X,
                             1.0f / parentScale.Y,
@@ -331,7 +349,14 @@ namespace PlayerViewer.Player
             rot = bone.Rotation;
             pos = bone.Position;
 
-            if (PoseOverride != null && PoseOverride.TryGetValue(bone.Name, out var pose))
+            if (SkeletalAnim != null)
+            {
+                var ctrl = bone.AnimationController;
+                scale = ctrl.Scale;
+                rot = ctrl.Rotation;
+                pos = ctrl.Position;
+            }
+            else if (PoseOverride != null && PoseOverride.TryGetValue(bone.Name, out var pose))
             {
                 scale = pose.Scale;
                 rot = pose.Rotation;

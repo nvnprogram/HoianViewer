@@ -1,6 +1,7 @@
 .vs/
 bin/
 obj/
+!Toolbox.Core/src/FileFormats/OBJ/
 EffectLibrary/
 EffectLibrary.Test/
 CurveEditorLibraryCore/

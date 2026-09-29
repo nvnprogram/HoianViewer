@@ -12,7 +12,7 @@ namespace CafeStudio.UI
     /// A modified version of Veldrid.ImGui's ImGuiRenderer.
     /// Manages input for ImGui and handles rendering ImGui's DrawLists with Veldrid.
     /// </summary>
-    public class ImGuiController : IDisposable
+    public partial class ImGuiController : IDisposable
     {
         public static bool ApplicationHasFocus = true;
 
@@ -48,7 +48,45 @@ namespace CafeStudio.UI
             ImGui.SetCurrentContext(context);
             var io = ImGui.GetIO();
             io.ConfigFlags |= ImGuiConfigFlags.DockingEnable;
+            unsafe
+            {
+                io.NativePtr->IniFilename = null;
+            }
 
+            AddFonts(io);
+
+            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
+
+            CreateDeviceResources();
+            SetKeyMappings();
+
+            SetPerFrameImGuiData(1f / 60f);
+
+            ImGui.NewFrame();
+            _frameBegun = true;
+        }
+
+        /// <summary>
+        /// Runs after the built in fonts are added, for fonts of the app's own. The main font
+        /// stays the first, so it stays the default.
+        /// </summary>
+        public static Action<ImFontAtlasPtr> ExtraFonts;
+
+        /// <summary>
+        /// Builds the atlas again, picking up a changed <see cref="ExtraFonts"/>. Call it
+        /// between frames: the atlas is locked from NewFrame until Render.
+        /// </summary>
+        public void RebuildFonts()
+        {
+            var io = ImGui.GetIO();
+            io.Fonts.Clear();
+            AddFonts(io);
+            _fontTexture?.Dispose();
+            RecreateFontDeviceTexture();
+        }
+
+        static void AddFonts(ImGuiIOPtr io)
+        {
             //Load the main font file
             unsafe
             {
@@ -76,15 +114,7 @@ namespace CafeStudio.UI
             //Store the default font for monospaced UI (ie hex viewer)
             DefaultFont = io.Fonts.AddFontDefault();
 
-            io.BackendFlags |= ImGuiBackendFlags.RendererHasVtxOffset;
-
-            CreateDeviceResources();
-            SetKeyMappings();
-
-            SetPerFrameImGuiData(1f / 60f);
-
-            ImGui.NewFrame();
-            _frameBegun = true;
+            ExtraFonts?.Invoke(io.Fonts);
         }
 
         public static void AddFontFromFileTTF(string filename,
@@ -236,6 +266,7 @@ void main()
 
             SetPerFrameImGuiData(deltaSeconds);
             UpdateImGuiInput(wnd);
+            TestInput(ImGui.GetIO());
 
             _frameBegun = true;
             ImGui.NewFrame();
@@ -255,7 +286,7 @@ void main()
             io.DeltaTime = deltaSeconds; // DeltaTime is in seconds.
         }
 
-        MouseState PrevMouseState;
+        System.Numerics.Vector2 _wheel, _scrollTotal;
         readonly List<char> PressedChars = new List<char>();
 
         readonly HashSet<Key> KeysHeld = new HashSet<Key>();
@@ -266,12 +297,24 @@ void main()
         public void KeyUp(Key key) => KeysHeld.Remove(key);
 
         /// <summary>
-        /// Drops whatever the OS accumulated while the render loop was not running, on the
-        /// next frame. The wheel is a delta against the cumulative counter Mouse.GetCursorState
-        /// reports, and a modal native dialog blocks this thread, so without this everything
-        /// scrolled over the dialog arrives as one jump the moment it closes.
+        /// A wheel event of the window, with the window's running scroll total. The OS sends the
+        /// wheel only to the window it scrolls, so a window lying over this one keeps its own.
+        /// </summary>
+        public void MouseWheel(float totalX, float totalY)
+        {
+            var total = new System.Numerics.Vector2(totalX, totalY);
+            _wheel += total - _scrollTotal;
+            _scrollTotal = total;
+        }
+
+        /// <summary>
+        /// Drops the key state and typing from while the render loop was not running, on the next
+        /// frame. A modal native dialog blocks this thread and takes the key releases meant for us.
         /// </summary>
         public static bool DiscardPendingInput;
+
+        /// <summary>Runs after the window's input is read, before the frame, in a test build only.</summary>
+        partial void TestInput(ImGuiIOPtr io);
 
         private void UpdateImGuiInput(GameWindow wnd)
         {
@@ -279,7 +322,7 @@ void main()
 
             if (!wnd.Focused)
             {
-                PrevMouseState = Mouse.GetCursorState();
+                _wheel = default;
                 io.MouseWheel = 0;
                 io.MouseWheelH = 0;
                 ClearKeys(io);
@@ -293,7 +336,7 @@ void main()
             if (discard)
             {
                 DiscardPendingInput = false;
-                PrevMouseState = MouseState;
+                _wheel = default;
                 PressedChars.Clear();
             }
 
@@ -305,8 +348,9 @@ void main()
             var point = wnd.PointToClient(screenPoint);
             io.MousePos = new System.Numerics.Vector2(point.X, point.Y);
 
-            io.MouseWheel = MouseState.Scroll.Y - PrevMouseState.Scroll.Y;
-            io.MouseWheelH = MouseState.Scroll.X - PrevMouseState.Scroll.X;
+            io.MouseWheel = _wheel.Y;
+            io.MouseWheelH = _wheel.X;
+            _wheel = default;
 
             if (discard)
                 ClearKeys(io);
@@ -327,7 +371,6 @@ void main()
             io.KeyShift = !discard && (KeysHeld.Contains(Key.ShiftLeft) || KeysHeld.Contains(Key.ShiftRight));
             io.KeySuper = !discard && (KeysHeld.Contains(Key.WinLeft) || KeysHeld.Contains(Key.WinRight));
 
-            PrevMouseState = MouseState;
         }
 
         void ClearKeys(ImGuiIOPtr io)
@@ -367,47 +410,47 @@ void main()
             io.KeyMap[(int)ImGuiKey.Z] = (int)Key.Z;
         }
 
+        /// <summary>
+        /// GL programs drawn in place of the default for commands whose texture is a key here. They
+        /// take the default's vertex inputs and its projection_matrix uniform.
+        /// </summary>
+        public static readonly Dictionary<IntPtr, int> TexturePrograms = new Dictionary<IntPtr, int>();
+
         private void RenderImDrawData(ImDrawDataPtr draw_data)
         {
-            uint vertexOffsetInVertices = 0;
-            uint indexOffsetInElements = 0;
-
             if (draw_data.CmdListsCount == 0)
             {
                 return;
             }
 
+            //Every list goes into one buffer at its own offset, the buffer orphaned once a frame,
+            //so no upload waits on the draws of the list before it.
+            int vertexSize = draw_data.TotalVtxCount * Unsafe.SizeOf<ImDrawVert>();
+            int indexSize = draw_data.TotalIdxCount * sizeof(ushort);
+            if (vertexSize > _vertexBufferSize)
+                _vertexBufferSize = (int)Math.Max(_vertexBufferSize * 1.5f, vertexSize);
+            if (indexSize > _indexBufferSize)
+                _indexBufferSize = (int)Math.Max(_indexBufferSize * 1.5f, indexSize);
 
+            GL.BindVertexArray(_vertexArray);
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
+            GL.BufferData(BufferTarget.ArrayBuffer, _vertexBufferSize, IntPtr.Zero, BufferUsageHint.StreamDraw);
+            GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
+            GL.BufferData(BufferTarget.ElementArrayBuffer, _indexBufferSize, IntPtr.Zero, BufferUsageHint.StreamDraw);
+
+            int vertexBytes = 0,
+                indexBytes = 0;
             for (int i = 0; i < draw_data.CmdListsCount; i++)
             {
                 ImDrawListPtr cmd_list = draw_data.CmdListsRange[i];
-
-                int vertexSize = cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>();
-                if (vertexSize > _vertexBufferSize)
-                {
-                    int newSize = (int)Math.Max(_vertexBufferSize * 1.5f, vertexSize);
-
-                    GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-                    GL.BufferData(BufferTarget.ArrayBuffer, newSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-
-                    _vertexBufferSize = newSize;
-
-                    Console.WriteLine($"Resized dear imgui vertex buffer to new size {_vertexBufferSize}");
-                }
-
-                int indexSize = cmd_list.IdxBuffer.Size * sizeof(ushort);
-                if (indexSize > _indexBufferSize)
-                {
-                    int newSize = (int)Math.Max(_indexBufferSize * 1.5f, indexSize);
-
-                    GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
-                    GL.BufferData(BufferTarget.ElementArrayBuffer, newSize, IntPtr.Zero, BufferUsageHint.DynamicDraw);
-
-                    _indexBufferSize = newSize;
-
-                    Console.WriteLine($"Resized dear imgui index buffer to new size {_indexBufferSize}");
-                }
+                int vtx = cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>();
+                int idx = cmd_list.IdxBuffer.Size * sizeof(ushort);
+                GL.BufferSubData(BufferTarget.ArrayBuffer, (IntPtr)vertexBytes, vtx, cmd_list.VtxBuffer.Data);
+                GL.BufferSubData(BufferTarget.ElementArrayBuffer, (IntPtr)indexBytes, idx, cmd_list.IdxBuffer.Data);
+                vertexBytes += vtx;
+                indexBytes += idx;
             }
+            Util.CheckGLError("Data");
 
             // Setup orthographic projection matrix into our constant buffer
             ImGuiIOPtr io = ImGui.GetIO();
@@ -437,21 +480,14 @@ void main()
             GL.Disable(EnableCap.DepthTest);
             Util.CheckGLError($"Render state");
 
-            // Render command lists
+            GL.ActiveTexture(TextureUnit.Texture0);
+            int listVertices = 0,
+                listIndices = 0;
+            IntPtr boundTexture = (IntPtr)(-1);
+            int boundProgram = _shader.Program;
             for (int n = 0; n < draw_data.CmdListsCount; n++)
             {
                 ImDrawListPtr cmd_list = draw_data.CmdListsRange[n];
-
-                GL.BindBuffer(BufferTarget.ArrayBuffer, _vertexBuffer);
-                GL.BufferSubData(BufferTarget.ArrayBuffer, IntPtr.Zero, cmd_list.VtxBuffer.Size * Unsafe.SizeOf<ImDrawVert>(), cmd_list.VtxBuffer.Data);
-                Util.CheckGLError($"Data Vert {n}");
-
-                GL.BindBuffer(BufferTarget.ElementArrayBuffer, _indexBuffer);
-                GL.BufferSubData(BufferTarget.ElementArrayBuffer, IntPtr.Zero, cmd_list.IdxBuffer.Size * sizeof(ushort), cmd_list.IdxBuffer.Data);
-                Util.CheckGLError($"Data Idx {n}");
-
-                int vtx_offset = 0;
-                int idx_offset = 0;
 
                 for (int cmd_i = 0; cmd_i < cmd_list.CmdBuffer.Size; cmd_i++)
                 {
@@ -460,31 +496,38 @@ void main()
                     {
                         throw new NotImplementedException();
                     }
-                    else
+                    if (pcmd.ElemCount == 0)
+                        continue;
+
+                    if (pcmd.TextureId != boundTexture)
                     {
-                        GL.ActiveTexture(TextureUnit.Texture0);
                         GL.BindTexture(TextureTarget.Texture2D, (int)pcmd.TextureId);
-                        Util.CheckGLError("Texture");
-
-                        // We do _windowHeight - (int)clip.W instead of (int)clip.Y because gl has flipped Y when it comes to these coordinates
-                        var clip = pcmd.ClipRect;
-                        GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
-                        Util.CheckGLError("Scissor");
-
-                        if ((io.BackendFlags & ImGuiBackendFlags.RendererHasVtxOffset) != 0)
+                        boundTexture = pcmd.TextureId;
+                        int program = TexturePrograms.TryGetValue(pcmd.TextureId, out int custom) ? custom : _shader.Program;
+                        if (program != boundProgram)
                         {
-                            GL.DrawElementsBaseVertex(PrimitiveType.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (IntPtr)(idx_offset * sizeof(ushort)), vtx_offset);
+                            GL.UseProgram(program);
+                            if (program != _shader.Program)
+                                GL.UniformMatrix4(GL.GetUniformLocation(program, "projection_matrix"), false, ref mvp);
+                            boundProgram = program;
                         }
-                        else
-                        {
-                            GL.DrawElements(BeginMode.Triangles, (int)pcmd.ElemCount, DrawElementsType.UnsignedShort, (int)pcmd.IdxOffset * sizeof(ushort));
-                        }
-                        Util.CheckGLError("Draw");
                     }
 
-                    idx_offset += (int)pcmd.ElemCount;
+                    // We do _windowHeight - (int)clip.W instead of (int)clip.Y because gl has flipped Y when it comes to these coordinates
+                    var clip = pcmd.ClipRect;
+                    GL.Scissor((int)clip.X, _windowHeight - (int)clip.W, (int)(clip.Z - clip.X), (int)(clip.W - clip.Y));
+
+                    GL.DrawElementsBaseVertex(
+                        PrimitiveType.Triangles,
+                        (int)pcmd.ElemCount,
+                        DrawElementsType.UnsignedShort,
+                        (IntPtr)((listIndices + (int)pcmd.IdxOffset) * sizeof(ushort)),
+                        listVertices + (int)pcmd.VtxOffset
+                    );
+                    Util.CheckGLError("Draw");
                 }
-                vtx_offset += cmd_list.VtxBuffer.Size;
+                listVertices += cmd_list.VtxBuffer.Size;
+                listIndices += cmd_list.IdxBuffer.Size;
             }
 
             GL.ActiveTexture(TextureUnit.Texture0);

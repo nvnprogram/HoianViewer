@@ -20,13 +20,17 @@ namespace PlayerViewer.UI
             ("2160 x 3840 (4K portrait)", 2160, 3840),
         };
 
-        static readonly string[] ExportFormatLabels =
+        //The format combo's rows; the config stores the row index. A still has no animation format.
+        static readonly (string Label, string Button, OutputFormat? Anim)[] ExportFormats =
         {
-            "PNG (current frame)",
-            "MP4",
-            "WebP (transparent)",
-            "WebM (transparent)",
+            ("PNG (current frame)", "Export PNG", null),
+            ("MP4", "Export MP4", OutputFormat.Mp4),
+            ("WebP (transparent)", "Export WebP", OutputFormat.WebpTransparent),
+            ("WebM (transparent)", "Export WebM", OutputFormat.WebmTransparent),
+            ("PNG sequence", "Export PNG sequence", OutputFormat.PngSequence),
         };
+
+        static readonly string[] ExportFormatLabels = Array.ConvertAll(ExportFormats, f => f.Label);
 
         static readonly string[] BgModeLabels = { "Transparent", "Color", "Image" };
         static readonly string[] BgScaleLabels = { "Fill", "Fit", "Stretch" };
@@ -83,9 +87,15 @@ namespace PlayerViewer.UI
                     _scene.SetAnimFrame(value);
             }
 
-            ImGui.TextColored(Theme.GoldBright, currentAnim ?? "(none)");
+            if (SideOrderControls.On)
+            {
+                DrawPlaybackSideOrder(paused, speed, rawFrameCount, SetPaused, SetSpeed, SetFrame);
+                return;
+            }
 
-            if (ImGui.Button(paused ? "  Play  " : " Pause "))
+            Widgets.ColoredText(Theme.GoldBright, currentAnim ?? "(none)");
+
+            if (Widgets.Button(paused ? "  Play  " : " Pause "))
                 SetPaused(!paused);
             ImGui.SameLine();
             ImGui.SetNextItemWidth(-1);
@@ -94,7 +104,7 @@ namespace PlayerViewer.UI
 
             float frameCount = Math.Max(rawFrameCount - 1, 1);
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.SliderFloat("##frame", ref _uiFrame, 0, frameCount, "frame %.0f"))
+            if (Widgets.SliderFloat("##frame", ref _uiFrame, 0, frameCount, "frame %.0f"))
             {
                 SetFrame(_uiFrame);
                 SetPaused(true);
@@ -105,7 +115,58 @@ namespace PlayerViewer.UI
             Widgets.DimText("Search");
             ImGui.SameLine();
             ImGui.SetNextItemWidth(-1);
-            ImGui.InputText("##animsearch", ref _animSearch, 64);
+            Widgets.InputText("##animsearch", ref _animSearch, 64);
+        }
+
+        //The Side Order animation card: the current animation on a pill, the round play button
+        //beside the speed and frame sliders, and the search field over the list.
+        void DrawPlaybackSideOrder(
+            bool paused,
+            float speed,
+            float rawFrameCount,
+            Action<bool> setPaused,
+            Action<float> setSpeed,
+            Action<float> setFrame
+        )
+        {
+            ImGui.SetNextItemWidth(-1);
+            Widgets.LabelPill(PlaybackCurrentAnim ?? "(none)");
+
+            var style = ImGui.GetStyle();
+            float row = ImGui.GetFrameHeight();
+            var start = ImGui.GetCursorScreenPos();
+            if (Widgets.RoundPlayButton("##playpause", !paused, out float sliderX))
+                setPaused(!paused);
+            Widgets.ItemTooltip(paused ? "Play" : "Pause");
+
+            float column = ImGui.CalcTextSize("Speed 10.00x").X + 12;
+            ImGui.SetNextItemWidth(-1);
+            if (
+                Widgets.SliderFloat("##speed", ref speed, 0.01f, 10.0f, "Speed %.2fx", true, column)
+            )
+                setSpeed(speed);
+
+            float frameCount = Math.Max(rawFrameCount - 1, 1);
+            ImGui.SetCursorScreenPos(new Vector2(sliderX, start.Y + row + style.ItemSpacing.Y));
+            ImGui.SetNextItemWidth(-1);
+            if (
+                Widgets.SliderFloat(
+                    "##frame",
+                    ref _uiFrame,
+                    0,
+                    frameCount,
+                    "frame %.0f",
+                    true,
+                    column
+                )
+            )
+            {
+                setFrame(_uiFrame);
+                setPaused(true);
+            }
+
+            ImGui.Dummy(new Vector2(0, 4));
+            Widgets.SearchField("##animsearch", ref _animSearch, "Search", -1);
         }
 
         void DrawAnimList(float height)
@@ -130,52 +191,77 @@ namespace PlayerViewer.UI
                     _scene.PlayAnim(name);
             }
 
-            ImGui.BeginChild("##animlist", new Vector2(0, height), true);
+            Widgets.BeginList("##animlist", new Vector2(0, height));
             if (animNames.Count == 0)
             {
                 Widgets.DimText("no skeletal animations");
-                ImGui.EndChild();
+                Widgets.EndList();
                 return;
             }
 
-            //null is the blank row, and it is a row the arrows can land on like any other.
-            var rows = new List<string>();
             void Pick(string name)
             {
                 Play(name);
                 SetPaused(name == null);
             }
 
-            if (standalone)
-            {
-                rows.Add(null);
-                if (ImGui.Selectable("<BLANK>", currentAnim == null))
-                    Pick(null);
-                Widgets.KeepRowVisible(AnimListId, currentAnim == null);
-            }
-            foreach (var name in animNames)
-            {
-                if (
-                    !string.IsNullOrEmpty(_animSearch)
-                    && !name.Contains(_animSearch, StringComparison.OrdinalIgnoreCase)
-                )
-                    continue;
-                rows.Add(name);
-                if (ImGui.Selectable(name, name == currentAnim))
-                    Pick(name);
-                Widgets.KeepRowVisible(AnimListId, name == currentAnim);
-            }
+            //null is the blank row, and it is a row the arrows can land on like any other.
+            var rows = AnimRows(animNames, standalone);
+            int currentRow = rows.IndexOf(currentAnim);
 
-            int move = Widgets.ListNav(AnimListId, rows.Count, rows.IndexOf(currentAnim));
+            int move = Widgets.VirtualRows(
+                AnimListId,
+                rows.Count,
+                currentRow,
+                r =>
+                {
+                    string name = rows[r];
+                    if (Widgets.ListRow(name ?? "<BLANK>", name == currentAnim))
+                        Pick(name);
+                }
+            );
             if (move >= 0)
                 Pick(rows[move]);
-            ImGui.EndChild();
+            Widgets.EndList();
+        }
+
+        //The animation list's rows after the search, kept until the names or the search change.
+        List<string> _animRows = new();
+        List<string> _animRowsFrom;
+        int _animRowsCount = -1;
+        string _animRowsSearch;
+        bool _animRowsBlank;
+
+        List<string> AnimRows(List<string> animNames, bool blank)
+        {
+            if (
+                _animRowsFrom == animNames
+                && _animRowsCount == animNames.Count
+                && _animRowsSearch == _animSearch
+                && _animRowsBlank == blank
+            )
+                return _animRows;
+            _animRows = new List<string>(animNames.Count + 1);
+            if (blank)
+                _animRows.Add(null);
+            foreach (var name in animNames)
+                if (
+                    string.IsNullOrEmpty(_animSearch)
+                    || name.Contains(_animSearch, StringComparison.OrdinalIgnoreCase)
+                )
+                    _animRows.Add(name);
+            (_animRowsFrom, _animRowsCount, _animRowsSearch, _animRowsBlank) = (
+                animNames,
+                animNames.Count,
+                _animSearch,
+                blank
+            );
+            return _animRows;
         }
 
         const string AnimListId = "animlist";
 
-        //Mirrors the capture-panel selections into the config and persists them; called whenever
-        //one changes so they stick between runs.
+        //Stores the capture panel's choices in the config.
         void SaveCaptureSettings()
         {
             _config.CaptureResIndex = _captureRes;
@@ -185,8 +271,7 @@ namespace PlayerViewer.UI
             _config.Save();
         }
 
-        //Background lives on the preset (_config.Player.Background). Persist to settings.json and
-        //flag the live viewport preview for a rebuild so it matches the exported composite.
+        //The background is part of the preset: saves it and has the viewport's preview rebuilt.
         void BackgroundChanged()
         {
             _bgDirty = true;
@@ -195,9 +280,8 @@ namespace PlayerViewer.UI
 
         System.Numerics.Vector3 BgColorVec => new(Bg.Color[0], Bg.Color[1], Bg.Color[2]);
 
-        //Keeps the viewport's live background in sync with the settings (rebuilt only when the
-        //settings or the viewport size change). Uses the same BuildBackground as export, so the
-        //preview matches the exported composite. Transparent mode clears it (neutral framing).
+        //Rebuilds the viewport's background when the settings or the viewport size change, with
+        //the export's BuildBackground so the two match. Transparent clears it.
         void UpdateBackgroundPreview()
         {
             if (Bg.Mode == 0)
@@ -221,9 +305,7 @@ namespace PlayerViewer.UI
             }
         }
 
-        //Unified background selector (left panel, part of the preset): Transparent (alpha where
-        //supported, black on MP4), Color (green = the old greenscreen), or an imported Image with
-        //scale/tile. Drives both the live viewport preview and the exported composite.
+        //Transparent, a colour or an image, previewed in the viewport as an export composites it.
         void DrawBackgroundSection()
         {
             Widgets.SectionHeader("Background");
@@ -231,7 +313,7 @@ namespace PlayerViewer.UI
             ImGui.SetNextItemWidth(-1);
             Widgets.Combo("##bgmode", Bg.Mode, BgModeLabels, v => Bg.Mode = v, BackgroundChanged);
 
-            if (Bg.Mode == 0 && _exportFormat == 1)
+            if (Bg.Mode == 0 && ExportFormats[_exportFormat].Anim == OutputFormat.Mp4)
                 Widgets.DimText("MP4 has no alpha; transparent exports as black.");
 
             if (Bg.Mode == 1)
@@ -247,7 +329,7 @@ namespace PlayerViewer.UI
             }
             else if (Bg.Mode == 2)
             {
-                if (ImGui.Button("Browse image..."))
+                if (Widgets.Button("Browse image..."))
                 {
                     string p = NativeFolderPicker.OpenFile(
                         "Background image",
@@ -320,13 +402,13 @@ namespace PlayerViewer.UI
 
             bool haveFfmpeg = ExportUtil.FfmpegAvailable;
 
-            //--- Busy states: render phase or encode phase, each with its own bar.
+            //While busy, a bar for the render and then one for the encode.
             if (_animExporting)
             {
                 float progress =
                     _animExportTotal > 0 ? Math.Min(_animExportIndex / _animExportTotal, 1f) : 0f;
                 int shown = (int)Math.Min(_animExportIndex + 1, _animExportTotal);
-                ImGui.ProgressBar(
+                Widgets.ProgressBar(
                     progress,
                     new Vector2(-1, 0),
                     $"Rendering {shown}/{_animExportTotal}"
@@ -341,13 +423,13 @@ namespace PlayerViewer.UI
                     var ex = _bufferedExporter;
                     int total = ex.EncodeTotal;
                     if (total > 0)
-                        ImGui.ProgressBar(
+                        Widgets.ProgressBar(
                             Math.Min(ex.EncodeProgress / (float)total, 1f),
                             new Vector2(-1, 0),
                             $"{ex.EncodeStage} {ex.EncodeProgress}/{total}"
                         );
                     else
-                        ImGui.ProgressBar(
+                        Widgets.ProgressBar(
                             (float)(ImGui.GetTime() % 1.0),
                             new Vector2(-1, 0),
                             ex.EncodeStage
@@ -358,9 +440,8 @@ namespace PlayerViewer.UI
                 FinishBufferedExport();
             }
 
-            //--- Idle: resolution + format options, then one Export button.
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.BeginCombo("##capres", CaptureSizes[_captureRes].Label))
+            if (Widgets.BeginCombo("##capres", CaptureSizes[_captureRes].Label))
             {
                 Widgets.PopupRows(
                     "capres",
@@ -377,31 +458,25 @@ namespace PlayerViewer.UI
             }
 
             ImGui.SetNextItemWidth(-1);
-            if (
-                ImGui.Combo(
-                    "##exportformat",
-                    ref _exportFormat,
-                    ExportFormatLabels,
-                    ExportFormatLabels.Length
-                )
-            )
+            if (Widgets.ComboIndex("##exportformat", ref _exportFormat, ExportFormatLabels))
                 SaveCaptureSettings();
 
-            bool isPng = _exportFormat == 0;
-            bool isAnim = _exportFormat >= 1 && _exportFormat <= 3;
+            var format = ExportFormats[_exportFormat];
+            bool isAnim = format.Anim != null;
 
             if (isAnim)
             {
                 ImGui.AlignTextToFramePadding();
+                Widgets.IndentLineStart();
                 Widgets.DimText("FPS");
                 ImGui.SameLine();
-                if (ImGui.RadioButton("30", _exportFps == 30))
+                if (Widgets.RadioButton("30", _exportFps == 30))
                 {
                     _exportFps = 30;
                     SaveCaptureSettings();
                 }
                 ImGui.SameLine();
-                if (ImGui.RadioButton("60", _exportFps == 60))
+                if (Widgets.RadioButton("60", _exportFps == 60))
                 {
                     _exportFps = 60;
                     SaveCaptureSettings();
@@ -409,16 +484,26 @@ namespace PlayerViewer.UI
             }
 
             //The render is always transparent (alpha oracle), so trim applies whenever it's on.
-            bool trimApplies = _config.TrimDeadspace;
+            //An effect over a background is rendered opaque, which leaves nothing to trim.
+            bool trimApplies =
+                _config.TrimDeadspace && (_effect == null || EffectKeepsAlpha(format.Anim));
+            if (trimApplies || _config.TrimDeadspace)
+                Widgets.IndentLineStart();
             if (trimApplies)
                 Widgets.DimText($"Trim deadspace on (+{_config.TrimMarginPx}px)");
+            else if (_config.TrimDeadspace)
+                Widgets.DimText("No trim: the effect renders over its background.");
 
             //In Sequence mode an animation export runs the whole chain instead of the current anim.
-            bool exportChain = _animMode == 1 && isAnim;
-            bool animReady = exportChain ? _animChain.Count > 0 : PlaybackHasAnim;
-            bool needFfmpeg = !isPng;
+            bool exportChain = _animMode == 1 && isAnim && _effect == null;
+            bool animReady =
+                _effect != null ? EffectPlay?.Set != null
+                : exportChain ? _animChain.Count > 0
+                : PlaybackHasAnim;
+            bool needFfmpeg = isAnim;
             bool canExport = (!needFfmpeg || haveFfmpeg) && (!isAnim || animReady);
-            Widgets.DisabledButton(ExportButtonLabel(exportChain), canExport, DoExport);
+            string button = exportChain ? format.Button + " (all steps)" : format.Button;
+            Widgets.AccentButton(button, canExport, DoExport);
 
             if (needFfmpeg && !haveFfmpeg)
                 Widgets.DimText("ffmpeg not found (data folder or PATH)");
@@ -428,37 +513,17 @@ namespace PlayerViewer.UI
                 );
         }
 
-        string ExportButtonLabel(bool sequence) =>
-            _exportFormat switch
-            {
-                0 => "Export PNG",
-                1 => sequence ? "Export MP4 (sequence)" : "Export MP4",
-                2 => sequence ? "Export WebP (sequence)" : "Export WebP",
-                _ => sequence ? "Export WebM (sequence)" : "Export WebM",
-            };
-
         void DoExport()
         {
-            switch (_exportFormat)
-            {
-                case 0:
-                    SaveScreenshot();
-                    break;
-                case 1:
-                    StartAnimExport(OutputFormat.Mp4);
-                    break;
-                case 2:
-                    StartAnimExport(OutputFormat.WebpTransparent);
-                    break;
-                case 3:
-                    StartAnimExport(OutputFormat.WebmTransparent);
-                    break;
-            }
+            if (ExportFormats[_exportFormat].Anim is { } format)
+                StartAnimExport(format);
+            else
+                SaveScreenshot();
         }
 
         void SaveScreenshot()
         {
-            string def = ExportUtil.Timestamped("player", ".png");
+            string def = ExportUtil.Timestamped(_effect != null ? "effect" : "player", ".png");
             string path = NativeFolderPicker.SaveFile(
                 "Save Screenshot",
                 def,
@@ -472,16 +537,19 @@ namespace PlayerViewer.UI
             WriteScreenshot(path);
         }
 
-        //Renders and saves a still (no dialog). The scene always renders transparent (alpha
-        //oracle); Transparent mode saves that directly, while Color/Image composite it over a
-        //matching crop of the background buffer. The capture size is what lands on disk and the
-        //render is that times ss, which is antialiasing that is averaged back off. With trim on
-        //the whole frame is rendered so the crop is found at full internal detail, then the crop
-        //is resolved down by ss on the CPU; without trim the pipeline resolves.
+        //Renders and saves a still without a dialog. The render is transparent, and Color or
+        //Image composite it over the background. It renders at ss times the capture size; with
+        //trim on the crop is found at that size and resolved down on the CPU, else the pipeline
+        //resolves.
         void WriteScreenshot(string path)
         {
             var (_, w, h) = CaptureSizes[_captureRes];
             int ss = ScenePipeline.ClampSupersample(_config.ExportSupersample, w, h);
+            if (_effect != null && !EffectKeepsAlpha(null))
+            {
+                WriteEffectOverBackground(path, w, h, ss);
+                return;
+            }
             bool trim = _config.TrimDeadspace;
             using (
                 var img = trim
@@ -549,6 +617,31 @@ namespace PlayerViewer.UI
             ReleaseExportMemory();
         }
 
+        //An effect over a background is rendered straight over it, the way the game blends it.
+        void WriteEffectOverBackground(string path, int w, int h, int ss)
+        {
+            if (Bg.Mode == 2)
+                _pipeline.SetBackgroundBuffer(
+                    ExportUtil.BuildBackground(w, h, Bg, bottomUp: true),
+                    w,
+                    h
+                );
+            else
+                _pipeline.SetBackgroundBuffer(null, 0, 0);
+            _bgDirty = true;
+            using (var img = _pipeline.Capture(ActiveScene, w, h, EffectBackground(), false, ss))
+            {
+                if (img == null)
+                {
+                    Console.WriteLine($"[UI] Capture failed at {w * ss}x{h * ss}");
+                    return;
+                }
+                img.SaveAsPng(path);
+                Console.WriteLine($"[UI] Saved {path}");
+            }
+            ReleaseExportMemory();
+        }
+
         static void ReleaseExportMemory()
         {
             SixLabors.ImageSharp.Configuration.Default.MemoryAllocator.ReleaseRetainedResources();
@@ -608,8 +701,7 @@ namespace PlayerViewer.UI
             return rect;
         }
 
-        //--- Playback bridge: both scene types expose the same animation surface but
-        //share no interface for it, so route through the active one.
+        //Playback of the active scene; the two scene types share no interface for it.
         bool PlaybackHasAnim =>
             (_standalone != null ? _standalone.CurrentSkeletal : _scene?.CurrentSkeletal) != null;
         int PlaybackFrameCount =>
@@ -645,7 +737,7 @@ namespace PlayerViewer.UI
         void PlaybackUpdate(float dt, float hairConvergeWeight = 0)
         {
             if (_standalone != null)
-                _standalone.Update(dt);
+                UpdateStandalone(dt);
             else
                 _scene?.Update(dt, hairConvergeWeight);
         }
@@ -653,7 +745,11 @@ namespace PlayerViewer.UI
         void PlaybackPlay(string name, bool resetHair)
         {
             if (_standalone != null)
+            {
                 _standalone.PlayAnim(name);
+                if (resetHair)
+                    _clothRuntime.Reset();
+            }
             else
                 _scene?.PlayAnim(name, resetHair);
         }
@@ -662,14 +758,12 @@ namespace PlayerViewer.UI
         {
             if (_standalone == null)
                 _scene?.ResetHairPhysics();
+            else
+                _clothRuntime.Reset();
         }
 
         string PlaybackCurrentAnim =>
             _standalone != null ? _standalone.CurrentAnimName : _scene?.CurrentAnimName;
-        List<string> PlaybackAnimNames =>
-            _standalone != null
-                ? _standalone.AnimNames
-                : (_scene?.Anims.AnimNames ?? new List<string>());
 
         int PlaybackFrameCountOf(string name) =>
             _standalone != null
@@ -678,13 +772,17 @@ namespace PlayerViewer.UI
 
         void StartAnimExport(OutputFormat format)
         {
-            bool chain = _animMode == 1 && _animChain.Count > 0;
+            bool effect = _effect != null;
+            bool chain = !effect && _animMode == 1 && _animChain.Count > 0;
             if (_animExporting || _bufferedExporter != null)
                 return;
-            if (!chain && !PlaybackHasAnim)
+            if (effect ? EffectPlay?.Set == null : !chain && !PlaybackHasAnim)
                 return;
             StopAnimChain(); //deterministic export drives frames itself; don't let the preview fight it
-            int total = chain ? (int)Math.Round(ChainTotalFrames()) : PlaybackFrameCount;
+            int total =
+                effect ? EffectClip().Length
+                : chain ? (int)Math.Round(ChainTotalFrames())
+                : PlaybackFrameCount;
             if (total < 1)
                 return;
 
@@ -692,9 +790,10 @@ namespace PlayerViewer.UI
             {
                 OutputFormat.WebpTransparent => (".webp", "WebP image (*.webp)", "*.webp"),
                 OutputFormat.WebmTransparent => (".webm", "WebM video (*.webm)", "*.webm"),
+                OutputFormat.PngSequence => (".png", "PNG sequence (*.png)", "*.png"),
                 _ => (".mp4", "MP4 video (*.mp4)", "*.mp4"),
             };
-            string def = ExportUtil.Timestamped("animation", ext);
+            string def = ExportUtil.Timestamped(effect ? EffectPlay.Set.Name : "animation", ext);
             string path = NativeFolderPicker.SaveFile(
                 "Export Animation",
                 def,
@@ -709,30 +808,29 @@ namespace PlayerViewer.UI
             _animExportPrevPaused = PlaybackPaused;
             _animExportPrevFrame = PlaybackAnimFrame;
 
-            //Respect the speed slider by up/downsampling: at 2x we advance the animation
-            //cursor twice as far per output frame (fewer frames, shorter clip); at 0.5x,
-            //half as far (more frames). Snapshotted so mid-export slider moves don't matter.
+            //The speed slider scales how far each output frame moves the animation, taken once.
             float speed = PlaybackSpeed;
             _animExportAdvance = Math.Max(0.0001f, (60f / _exportFps) * speed);
             _animExportTotal = total;
             _animExportIndex = 0f;
-            //Keep alpha only where the format supports it AND Transparent mode is selected;
-            //otherwise the scene is composited over the background buffer.
+            //Alpha is kept only for Transparent on a format with alpha; else the background is
+            //composited in.
             bool keepAlpha =
                 Bg.Mode == 0
                 && (
-                    format == OutputFormat.WebpTransparent || format == OutputFormat.WebmTransparent
+                    format == OutputFormat.WebpTransparent
+                    || format == OutputFormat.WebmTransparent
+                    || format == OutputFormat.PngSequence
                 );
             _animExportFormat = format;
-            _animExportTrim = _config.TrimDeadspace;
+            _animExportTrim = _config.TrimDeadspace && (!effect || EffectKeepsAlpha(format));
             _animExportChain = chain;
+            if (effect)
+                BeginEffectExport(total);
 
-            //The video is the capture size, same as a still, and frames render at that times ss.
-            //ss is antialiasing that the pipeline's resolve pass averages away on the GPU before
-            //readback, so a captured frame is always output sized whether or not trim is on. Even
-            //dimensions keep the raw RGBA stride aligned with ffmpeg's -video_size.
-            //The pipeline stays at this size for the whole export (resize is frozen elsewhere) and
-            //the viewport draw resizes it back once _animExporting clears.
+            //Frames render at ss times the capture size and the pipeline resolves them before
+            //readback, so each is output sized. Even dimensions keep the RGBA stride aligned with
+            //ffmpeg's -video_size. The pipeline keeps this size until the export ends.
             var (_, capW, capH) = CaptureSizes[_captureRes];
             int outW = capW & ~1,
                 outH = capH & ~1;
@@ -749,6 +847,12 @@ namespace PlayerViewer.UI
             _animExportBg = keepAlpha
                 ? null
                 : ExportUtil.BuildBackground(outW, outH, Bg, bottomUp: true);
+            //An effect renders over the background itself rather than being composited on it.
+            if (effect && !EffectKeepsAlpha(format))
+            {
+                _pipeline.SetBackgroundBuffer(Bg.Mode == 2 ? _animExportBg : null, outW, outH);
+                _animExportBg = null;
+            }
 
             //Frames stream into ffmpeg as they are rendered. Always render transparent (alpha
             //oracle for the crop); the background is composited into each frame on the way out.
@@ -771,11 +875,15 @@ namespace PlayerViewer.UI
                 _bufferedExporter.Dispose();
                 _bufferedExporter = null;
                 _pipeline.ExportScaleOverride = 0;
+                if (effect)
+                    EndEffectExport();
                 return;
             }
 
             _animExporting = true;
             _convergeCaptured = false;
+            if (effect)
+                return;
             PlaybackSetPaused(true);
             //Restart cloth from rest so the first exported frame is reproducible; a chain resets
             //once here then runs continuously across steps (ChainSeek rebinds without a reset).
@@ -824,8 +932,8 @@ namespace PlayerViewer.UI
             return t * t * (3f - 2f * t);
         }
 
-        //Play first animation PrerollLoops times WITHOUT capturing, so the verlet sim is steady
-        //before recording. Runs synchronously (physics without GL) and mirrors 1/fps cloth dt.
+        //Plays the first animation PrerollLoops times without capturing, so the cloth is settled
+        //when recording starts. Runs synchronously at the export's 1/fps step.
         void RunPhysicsWarmup()
         {
             int loops = Math.Clamp(_config.PrerollLoops, 0, PrerollMaxLoops);
@@ -858,10 +966,16 @@ namespace PlayerViewer.UI
             //fringe against the solid background color in Color mode (keeps a green key clean),
             //otherwise a neutral color; the real background is composited on the writer thread.
             var matte = Bg.Mode == 1 ? BgColorVec : _pipeline.BackgroundColor;
+            bool transparent = true;
+            if (_effect != null && !EffectKeepsAlpha(_animExportFormat))
+            {
+                matte = EffectBackground();
+                transparent = false;
+            }
             var buf = _bufferedExporter.RentFrameBuffer();
             if (buf != null)
             {
-                _pipeline.CaptureFrameBytes(ActiveScene, matte, transparent: true, buf);
+                _pipeline.CaptureFrameBytes(ActiveScene, matte, transparent, buf);
                 _bufferedExporter.PushFrame(buf);
             }
 
@@ -870,28 +984,35 @@ namespace PlayerViewer.UI
                 FinishAnimExport();
         }
 
-        //Natural completion: the render/capture phase is done. Finishing runs on a worker; the
-        //panel polls _bufferedExporter for progress and clears it via FinishBufferedExport when
-        //encoding completes.
+        //Every frame is captured. The encode finishes on a worker, which the panel polls until
+        //FinishBufferedExport clears it.
         void FinishAnimExport()
         {
             _bufferedExporter.FinishCapture();
-            _pipeline.ExportScaleOverride = 0;
-            PlaybackSetPaused(_animExportPrevPaused);
-            PlaybackSetFrame(_animExportPrevFrame);
-            _animExporting = false;
+            RestoreAfterExport();
         }
 
-        //Cancel button: abort without finishing the encode
+        //Cancel: stops without finishing the encode.
         void AbortAnimExport()
         {
             _bufferedExporter?.Abort();
             _bufferedExporter?.Dispose();
             _bufferedExporter = null;
+            RestoreAfterExport();
+        }
+
+        //Hands the pipeline and the scene back as they were before the capture started.
+        void RestoreAfterExport()
+        {
             _pipeline.ExportScaleOverride = 0;
+            _animExporting = false;
+            if (_effect != null)
+            {
+                EndEffectExport();
+                return;
+            }
             PlaybackSetPaused(_animExportPrevPaused);
             PlaybackSetFrame(_animExportPrevFrame);
-            _animExporting = false;
         }
 
         void FinishBufferedExport()

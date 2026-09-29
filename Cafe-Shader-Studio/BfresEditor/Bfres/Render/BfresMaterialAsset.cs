@@ -199,21 +199,30 @@ namespace BfresEditor
             STGenericTextureMap textureMap, string name, int id)
         {
             GL.ActiveTexture(TextureUnit.Texture0 + id);
-            GL.BindTexture(TextureTarget.Texture2D, RenderTools.defaultTex.ID);
 
-            if (textures.ContainsKey(name))
-                return BindGLTexture(textures[name], textureMap, shader);
+            var found = FindTexture(textures, name);
+            if (found != null && BindGLTexture(found, textureMap, shader) is GLTexture bound)
+                return bound;
+
+            GL.BindTexture(TextureTarget.Texture2D, RenderTools.defaultTex.ID);
+            return null;
+        }
+
+        static STGenericTexture FindTexture(Dictionary<string, STGenericTexture> textures, string name)
+        {
+            if (textures.TryGetValue(name, out var texture))
+                return texture;
 
             foreach (var tex in Runtime.TextureCache)
             {
                 if (tex.Name == name)
-                    return BindGLTexture(tex, textureMap, shader);
+                    return tex;
             }
 
             foreach (var model in DataCache.ModelCache.Values)
             {
-                if (model.Textures.ContainsKey(name))
-                    return BindGLTexture(model.Textures[name], textureMap, shader);
+                if (model.Textures.TryGetValue(name, out texture))
+                    return texture;
             }
 
             return null;

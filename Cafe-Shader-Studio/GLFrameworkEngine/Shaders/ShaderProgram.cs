@@ -228,6 +228,7 @@ namespace GLFrameworkEngine
         public void Link()
         {
             GL.LinkProgram(program);
+            _intValues.Clear();
         }
 
         public void Enable() {
@@ -281,8 +282,29 @@ namespace GLFrameworkEngine
 
         public void SetInt(string name, int value)
         {
-            if (uniforms.ContainsKey(name))
-                GL.Uniform1(uniforms[name], value);
+            if (uniforms.TryGetValue(name, out int location))
+            {
+                GL.Uniform1(location, value);
+                if (_intValues.Count > 0)
+                    _intValues.Remove(location);
+            }
+        }
+
+        //Int uniforms last set through SetIntCached, by location. A link resets every uniform.
+        private readonly Dictionary<int, int> _intValues = new Dictionary<int, int>();
+
+        /// <summary>
+        /// Sets an int uniform, skipping the call when this program already holds the value.
+        /// Only for uniforms set through this or <see cref="SetInt"/>.
+        /// </summary>
+        public void SetIntCached(string name, int value)
+        {
+            if (!uniforms.TryGetValue(name, out int location))
+                return;
+            if (_intValues.TryGetValue(location, out int set) && set == value)
+                return;
+            GL.Uniform1(location, value);
+            _intValues[location] = value;
         }
 
         public void SetBool(string name, bool value)
@@ -324,6 +346,7 @@ namespace GLFrameworkEngine
         private void LoadUniorms(int program)
         {
             uniforms.Clear();
+            _intValues.Clear();
 
             GL.GetProgram(program, GetProgramParameterName.ActiveUniforms, out activeAttributeCount);
             for (int i = 0; i < activeAttributeCount; i++)

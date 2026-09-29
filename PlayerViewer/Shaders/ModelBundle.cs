@@ -779,24 +779,18 @@ namespace PlayerViewer.Shaders
             }
             if (compress)
             {
-                using var compressor = new ZstdSharp.Compressor(17);
+                using var compressor = new ZstdSharp.Compressor(12);
+                compressor.SetParameter(
+                    ZstdSharp.Unsafe.ZSTD_cParameter.ZSTD_c_nbWorkers,
+                    Math.Clamp(Environment.ProcessorCount / 2, 1, 4)
+                );
                 data = compressor.Wrap(data).ToArray();
             }
 
             string dir = System.IO.Path.GetDirectoryName(outPath);
             if (!string.IsNullOrEmpty(dir))
                 Directory.CreateDirectory(dir);
-            string temp = outPath + ".tmp";
-            try
-            {
-                File.WriteAllBytes(temp, data);
-                File.Move(temp, outPath, overwrite: true);
-            }
-            finally
-            {
-                if (File.Exists(temp))
-                    File.Delete(temp);
-            }
+            AtomicFile.Write(outPath, data);
             return data.LongLength;
         }
 

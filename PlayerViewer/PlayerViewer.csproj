@@ -15,8 +15,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="UI\Shaders\Resolve.vert" />
-    <EmbeddedResource Include="UI\Shaders\Resolve.frag" />
+    <EmbeddedResource Include="UI\Shaders\*.vert;UI\Shaders\*.frag" />
+    <EmbeddedResource Include="Effects\Gl\Shaders\*.vert;Effects\Gl\Shaders\*.frag" />
+    <EmbeddedResource Include="Effects\Resources\*.bin" />
+    <EmbeddedResource Include="UI\Fonts\*.otf" />
+    <EmbeddedResource Include="UI\SideOrder\Resources\*.png" />
+    <EmbeddedResource Include="Phive\HkTypeCatalog.json" />
+  </ItemGroup>
+
+  <!-- Test hooks and debug switches live in *.Test.cs files kept out of git. A single file
+       publish, or a build with -p:NoTestCode=true, leaves them out even where they exist. -->
+  <ItemGroup Condition="'$(PublishSingleFile)'=='true' Or '$(NoTestCode)'=='true'">
+    <Compile Remove="**\*.Test.cs" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(RuntimeIdentifier)' == ''">
@@ -52,6 +62,9 @@
     <Reference Include="Syroot.Maths">
       <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Syroot.Maths.dll</HintPath>
     </Reference>
+    <Reference Include="Syroot.BinaryData">
+      <HintPath>$(CssRoot)\CafeShaderStudio\Lib\Syroot.BinaryData.dll</HintPath>
+    </Reference>
     <Reference Include="Syroot.NintenTools.NSW.Bntx">
       <HintPath>$(CssRoot)\BfresEditor\Lib\Syroot.NintenTools.NSW.Bntx.dll</HintPath>
     </Reference>
@@ -78,6 +91,7 @@
     <ProjectReference Include="$(CssRoot)\CafeStudio.UI\CafeStudio.UI.csproj" />
     <ProjectReference Include="$(CssRoot)\GLFrameworkEngine\GLFrameworkEngine.csproj" />
     <ProjectReference Include="..\Library\ShaderBundler\ShaderBundler.csproj" />
+    <ProjectReference Include="..\Library\EffectLibrary\EffectLibrary.csproj" />
   </ItemGroup>
 
   <!-- Runtime content shared with Cafe Shader Studio (shaders, resources, natives). -->

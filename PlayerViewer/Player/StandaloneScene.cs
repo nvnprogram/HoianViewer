@@ -18,6 +18,29 @@ namespace PlayerViewer.Player
         void Draw(GLContext control, Pass pass);
     }
 
+    /// <summary>What a render is for and into what, told to an <see cref="ILayeredScene"/>.</summary>
+    /// <param name="KeepAlpha">The target keeps straight alpha for a transparent export.</param>
+    /// <param name="Viewport">The interactive viewport, not a capture or an export.</param>
+    public readonly record struct SceneRenderInfo(
+        bool KeepAlpha,
+        bool Viewport,
+        int Width,
+        int Height
+    );
+
+    /// <summary>
+    /// A scene that draws layers of its own inside the pipeline's passes and writes alpha
+    /// itself, so the pipeline does not mask it in the transparent pass.
+    /// </summary>
+    public interface ILayeredScene : IViewScene
+    {
+        /// <summary>Called at the start of every render, before either pass.</summary>
+        void BeginRender(in SceneRenderInfo info);
+
+        /// <summary>Whether the self shadow prepass is worth a second scene pass.</summary>
+        bool SelfShadow { get; }
+    }
+
     /// <summary>
     /// Views a single bfres model outside the player scope (dropped file or romfs
     /// model). Lists the model's own skeletal animations; playing one also plays
@@ -27,6 +50,9 @@ namespace PlayerViewer.Player
     {
         public string Name { get; private set; } = "";
         public string SourcePath { get; private set; } = "";
+
+        /// <summary>The decompressed file the model was loaded from.</summary>
+        public byte[] SourceData { get; private set; }
 
         public BFRES Bfres { get; private set; }
         public BfresRender Render { get; private set; }
@@ -40,6 +66,15 @@ namespace PlayerViewer.Player
         public float AnimFrame { get; private set; }
         public float AnimSpeed = 1.0f;
         public bool AnimPaused = false;
+
+        /// <summary>Applied above every root bone; the cloth editor's test motion moves the model with it.</summary>
+        public Matrix4 RootMotion = Matrix4.Identity;
+
+        /// <summary>
+        /// Recompute the pose every frame even with no animation playing. A cloth writes the
+        /// bones it drives, and the next frame has to start from the pose again.
+        /// </summary>
+        public bool RefreshPose;
 
         //Default state for reset: bone visibility and shape (FSHP) visibility.
         readonly Dictionary<STBone, bool> _defaultBoneVisibility = new();
@@ -61,6 +96,15 @@ namespace PlayerViewer.Player
             string fakePath = Path.Combine(romfs.Root, "Model", stem + ".bfres");
             return Load(raw, fakePath, stem, filePath, romfs);
         }
+
+        /// <summary>Loads a model from decompressed bytes, under the name the romfs would know it by.</summary>
+        public static StandaloneScene FromBytes(
+            byte[] data,
+            string name,
+            string sourcePath,
+            Romfs romfs
+        ) =>
+            Load(data, Path.Combine(romfs.Root, "Model", name + ".bfres"), name, sourcePath, romfs);
 
         /// <summary>Loads a model from the (layered) romfs by model name.</summary>
         public static StandaloneScene FromRomfs(string modelName, Romfs romfs)
@@ -100,6 +144,7 @@ namespace PlayerViewer.Player
             {
                 Name = name,
                 SourcePath = sourcePath,
+                SourceData = data,
                 Bfres = bfres,
                 Render = (BfresRender)bfres.Renderer,
             };
@@ -190,8 +235,16 @@ namespace PlayerViewer.Player
 
         public void Update(float deltaSeconds)
         {
+            foreach (var model in Render.Models.OfType<BfresModelAsset>())
+                model.ModelData.Skeleton.RootTransform = RootMotion;
+
             if (CurrentSkeletal == null)
+            {
+                if (RefreshPose)
+                    foreach (var model in Render.Models.OfType<BfresModelAsset>())
+                        model.ModelData.Skeleton.Update();
                 return;
+            }
 
             if (!AnimPaused)
             {
@@ -218,6 +271,10 @@ namespace PlayerViewer.Player
                         models
                     );
         }
+
+        /// <summary>The skeleton of every model in the file.</summary>
+        public List<STSkeleton> Skeletons() =>
+            Render.Models.OfType<BfresModelAsset>().Select(m => m.ModelData.Skeleton).ToList();
 
         public IEnumerable<BfresRender> AllRenders()
         {

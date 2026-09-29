@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <AssemblyName>EffectLibrary</AssemblyName>
+    <RootNamespace>EffectLibrary</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BfresLibrary\BfresLibrary.csproj" />
+    <ProjectReference Include="..\ShaderLibrary\ShaderLibrary.csproj" />
+    <Reference Include="Syroot.BinaryData">
+      <HintPath>..\..\Cafe-Shader-Studio\CafeShaderStudio\Lib\Syroot.BinaryData.dll</HintPath>
+    </Reference>
+    <Reference Include="Syroot.NintenTools.NSW.Bntx">
+      <HintPath>..\..\Cafe-Shader-Studio\BfresEditor\Lib\Syroot.NintenTools.NSW.Bntx.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

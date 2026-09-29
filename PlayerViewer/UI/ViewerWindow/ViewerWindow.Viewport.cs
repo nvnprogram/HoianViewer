@@ -11,11 +11,13 @@ namespace PlayerViewer.UI
     // Center viewport: renders the active scene and handles orbit/pan/zoom camera input.
     public partial class ViewerWindow
     {
-        //--- viewport camera input
         bool _viewportHovered;
         bool _mouseDown;
 
-        IViewScene ActiveScene => _standalone != null ? _standalone : _scene;
+        IViewScene ActiveScene =>
+            _effect != null ? _effect
+            : _standalone != null ? _standalone
+            : _scene;
 
         void DrawViewport()
         {
@@ -31,6 +33,7 @@ namespace PlayerViewer.UI
             if (!_animExporting)
             {
                 UpdateBackgroundPreview();
+                UpdateViewportBackground();
                 _pipeline.Render(ActiveScene);
             }
 
@@ -51,9 +54,40 @@ namespace PlayerViewer.UI
             }
 
             var pos = ImGui.GetCursorScreenPos();
-            ImGui.Image((IntPtr)_pipeline.ViewportTextureId, imgSize, uv0, uv1);
+            if (SideOrderControls.On)
+            {
+                //A dummy is the same unnamed item an image is, so hover and the camera behave alike.
+                ImGui.Dummy(imgSize);
+                var dl = ImGui.GetWindowDrawList();
+                dl.AddImageRounded(
+                    (IntPtr)_pipeline.ViewportTextureId,
+                    pos,
+                    pos + imgSize,
+                    uv0,
+                    uv1,
+                    0xFFFFFFFF,
+                    SideOrderLayout.ViewportRounding,
+                    ImDrawCornerFlags.All
+                );
+                SideOrderSurface.DrawBevel(
+                    dl,
+                    pos,
+                    pos + imgSize,
+                    SideOrderLayout.ViewportRounding
+                );
+            }
+            else
+                ImGui.Image((IntPtr)_pipeline.ViewportTextureId, imgSize, uv0, uv1);
 
             _viewportHovered = ImGui.IsItemHovered();
+            DrawClothOverlay(pos, imgSize, uv0, uv1, _viewportHovered);
+            DrawLimbBones(pos, imgSize, uv0, uv1);
+            DrawAimHandle(pos, imgSize, uv0, uv1, _viewportHovered);
+            DrawSkeletonViewport(pos, imgSize, uv0, uv1, _viewportHovered);
+            DrawBoneGizmo(pos, imgSize, uv0, uv1, _viewportHovered);
+            DrawEffectGizmo(pos, imgSize, uv0, uv1, _viewportHovered);
+            DrawLimbBrush(pos, imgSize, uv0, uv1, _viewportHovered);
+            UpdateHeadPreview();
             //Freeze the camera during a full-animation export so every frame shares
             //the exact same viewpoint.
             if (!_animExporting)
@@ -66,7 +100,12 @@ namespace PlayerViewer.UI
             var cam = _pipeline.Camera;
             bool changed = false;
 
-            bool leftDown = ImGui.IsMouseDown(ImGuiMouseButton.Left);
+            //A paint stroke or a gizmo drag takes the left button; right still orbits and middle pans.
+            bool leftDown =
+                ImGui.IsMouseDown(ImGuiMouseButton.Left)
+                && !_paintStroke
+                && !AimDragging
+                && !GizmoDragging;
             bool rightDown = ImGui.IsMouseDown(ImGuiMouseButton.Right);
             bool midDown = ImGui.IsMouseDown(ImGuiMouseButton.Middle);
             bool anyDown = leftDown || rightDown || midDown;
@@ -104,7 +143,8 @@ namespace PlayerViewer.UI
                 }
             }
 
-            if (_viewportHovered && Focused && io.MouseWheel != 0)
+            bool brushWheel = _pipeline.LimbPaint != null && io.KeyShift;
+            if (_viewportHovered && Focused && io.MouseWheel != 0 && !brushWheel)
             {
                 cam.TargetDistance = Math.Max(
                     0.05f,
@@ -130,7 +170,15 @@ namespace PlayerViewer.UI
                     dir += rot.Row0;
                 if (kb.IsKeyDown(Key.Space))
                     dir += rot.Row1;
-                if (kb.IsKeyDown(Key.ShiftLeft) || kb.IsKeyDown(Key.ShiftRight))
+                //While painting Shift sizes the brush and pans, and on the frame gizmo it turns
+                //snapping off: over it, dragging it, and until let go after a drag, it does not
+                //move the camera down. Nor while a transform gizmo is shown, where it frees snapping.
+                bool shift = kb.IsKeyDown(Key.ShiftLeft) || kb.IsKeyDown(Key.ShiftRight);
+                if (AimDragging || (shift && _aimShiftHeld) || AimHandleNear(io.MousePos))
+                    _aimShiftHeld = shift;
+                else if (!shift)
+                    _aimShiftHeld = false;
+                if (shift && _pipeline.LimbPaint == null && !_aimShiftHeld && !GizmoShown)
                     dir -= rot.Row1;
                 if (dir != OpenTK.Vector3.Zero)
                 {

@@ -64,7 +64,7 @@ namespace PlayerViewer.UI
             if (_migrationNotes.Count == 0)
                 return;
             ImGui.PushTextWrapPos();
-            ImGui.TextColored(
+            Widgets.ColoredText(
                 Theme.Cyan,
                 $"{_migrationNotes.Count} material(s) normalised for the ubershader"
             );

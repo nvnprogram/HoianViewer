@@ -118,9 +118,13 @@ namespace ShaderLibrary.Switch
             var bnshFileStream = new SubStream(reader.BaseStream, shaderFileOffset, bnshSize);
             shaderModel.BnshFile = new BnshFile(bnshFileStream);
 
+            //v9 keeps one symbol and one location per stage the shaders use, and a compute model
+            //has only the compute stage.
+            bool computeOnly = reader.Header.VersionMajor >= 9 && IsComputeOnly(shaderModel.BnshFile);
+
             shaderModel.Programs = ReadArray(reader,
                  (ulong)shaderProgramArrayOffset,
-                 programCount, ReadBfshaShaderProgram);
+                 programCount, r => ReadBfshaShaderProgram(r, computeOnly));
 
             foreach (var program in shaderModel.Programs)
                 program.ParentShader = shaderModel;
@@ -135,7 +139,7 @@ namespace ShaderLibrary.Switch
             if (symbolInfoOffset != 0)
             {
                 reader.SeekBegin(symbolInfoOffset);
-                shaderModel.SymbolData = ReadSymbolTable(reader, shaderModel);
+                shaderModel.SymbolData = ReadSymbolTable(reader, shaderModel, computeOnly);
             }
 
             //Compute variation index for saving
@@ -148,6 +152,21 @@ namespace ShaderLibrary.Switch
 
             reader.SeekBegin(pos);
             return shaderModel;
+        }
+
+        /// <summary>Whether the first variation has a compute stage and no vertex stage, read from
+        /// its program header without loading the program.</summary>
+        static bool IsComputeOnly(BnshFile bnsh)
+        {
+            var variation = bnsh.Variations.FirstOrDefault();
+            if (variation == null)
+                return false;
+            var programReader = new BinaryDataReader(variation._stream, false, true);
+            programReader.SeekBegin((long)variation.header.BinaryOffset + 8);
+            ulong vertexOffset = programReader.ReadUInt64();
+            programReader.SeekBegin((long)variation.header.BinaryOffset + 48);
+            ulong computeOffset = programReader.ReadUInt64();
+            return vertexOffset == 0 && computeOffset != 0;
         }
 
         static BfshaSampler ReadSampler(BinaryDataReader reader)
@@ -248,9 +267,10 @@ namespace ShaderLibrary.Switch
             };
         }
 
-        static BfshaShaderProgram ReadBfshaShaderProgram(BinaryDataReader reader)
+        static BfshaShaderProgram ReadBfshaShaderProgram(BinaryDataReader reader, bool computeOnly)
         {
             BfshaShaderProgram prog = new BfshaShaderProgram();
+            Func<BinaryDataReader, ShaderIndexHeader> ReadShaderLocations = r => ReadShaderLocationsPerStage(r, computeOnly);
 
             if (reader.Header.VersionMajor >= 8)
             {
@@ -305,10 +325,12 @@ namespace ShaderLibrary.Switch
             return prog;
         }
 
-        static ShaderIndexHeader ReadShaderLocations(BinaryDataReader reader)
+        static ShaderIndexHeader ReadShaderLocationsPerStage(BinaryDataReader reader, bool computeOnly)
         {
             ShaderIndexHeader header = new ShaderIndexHeader();
-            if (reader.Header.VersionMajor >= 9)
+            if (reader.Header.VersionMajor >= 9 && computeOnly)
+                header.ComputeLocation = reader.ReadInt32();
+            else if (reader.Header.VersionMajor >= 9)
             {
                 header.VertexLocation = reader.ReadInt32();
                 header.FragmentLocation = reader.ReadInt32();
@@ -329,9 +351,10 @@ namespace ShaderLibrary.Switch
             return header;
         }
 
-        static SymbolData ReadSymbolTable(BinaryDataReader reader, ShaderModel shaderModel)
+        static SymbolData ReadSymbolTable(BinaryDataReader reader, ShaderModel shaderModel, bool computeOnly)
         {
             SymbolData symbolTable = new();
+            Func<BinaryDataReader, SymbolData.SymbolEntry> ReadSymbol = r => ReadSymbolPerStage(r, computeOnly);
 
             if (reader.Header.VersionMajor >= 8)
             {
@@ -357,7 +380,7 @@ namespace ShaderLibrary.Switch
             return symbolTable;
         }
 
-        static SymbolData.SymbolEntry ReadSymbol(BinaryDataReader reader)
+        static SymbolData.SymbolEntry ReadSymbolPerStage(BinaryDataReader reader, bool computeOnly)
         {
             SymbolData.SymbolEntry symbol = new();
             symbol.Name1 = reader.LoadString();
@@ -372,7 +395,7 @@ namespace ShaderLibrary.Switch
                 symbol.Name3 = reader.LoadString();
                 symbol.Value3 = reader.LoadString();
             }
-            if (reader.Header.VersionMajor == 9)
+            if (reader.Header.VersionMajor == 9 && !computeOnly)
             {
                 symbol.Value1 = reader.LoadString();
             }

@@ -123,14 +123,10 @@ namespace PlayerViewer.UI
             BundleFreshness.Reprobe(_standalone?.Bfres, StandaloneModels());
 
             Queue.Reset();
-            _bundleNote =
-                $"{dropped.Count} embedded archive(s) came from an older specialiser and "
-                + "were dropped; the passes are being generated again.";
+            _bundleNote = $"{dropped.Count} outdated embedded archive(s) dropped; regenerating.";
         }
 
         int SaveWorkOutstanding() => Queue.SaveWorkOutstanding();
-
-        //--- Drawing
 
         void DrawPipelineStages(FMAT material)
         {
@@ -194,8 +190,8 @@ namespace PlayerViewer.UI
 
             ImGui.PushTextWrapPos();
             Widgets.DimText(
-                "The splicer is off, so this is what the shipped archive already has. Turn it "
-                    + "on at the top of the Materials tab to generate the missing ones."
+                "Splicer off: what the shipped archive has. Turn it on in the Materials tab to "
+                    + "generate the rest."
             );
             ImGui.PopTextWrapPos();
             ImGui.Spacing();
@@ -210,10 +206,7 @@ namespace PlayerViewer.UI
                 Widgets.ErrorText("The ubershader has no code for this material:");
                 foreach (var u in v.Unsupported)
                     Widgets.ErrorText("  " + u);
-                Widgets.DimText(
-                    "Those stages are not queued. A splice made from this vector would compile "
-                        + "cleanly and silently be a different shader."
-                );
+                Widgets.DimText("Those stages are not queued.");
             }
             foreach (var d in v.Dropped)
                 Widgets.DimText("dropped: " + d);
@@ -231,29 +224,25 @@ namespace PlayerViewer.UI
         {
             ImGui.AlignTextToFramePadding();
             Widgets.DimText("Stages");
-            ImGui.SameLine(52);
-            if (ImGui.RadioButton("Auto", !v.Manual))
+            ImGui.SameLine(Widgets.Column(52));
+            if (Widgets.RadioButton("Auto", !v.Manual))
                 v.Manual = false;
-            Widgets.ItemTooltip(
-                "The measured pass policy decides. Its zero omission guarantee is measured on "
-                    + "stock content and says nothing about a material stock never shipped, "
-                    + "which is what this editor makes."
-            );
+            Widgets.ItemTooltip("Stages the pass policy picks. Proven on stock materials only.");
             ImGui.SameLine();
-            if (ImGui.RadioButton("Manual", v.Manual))
+            if (Widgets.RadioButton("Manual", v.Manual))
                 v.Manual = true;
             Widgets.ItemTooltip("Tick the stages to compile yourself.");
 
             if (v.Manual)
             {
-                if (ImGui.SmallButton("All 15"))
+                if (Widgets.SmallButton("All 15"))
                     foreach (var pass in _uber.AssignTypes)
                         v.ManualPasses.Add(pass);
                 ImGui.SameLine();
-                if (ImGui.SmallButton("None"))
+                if (Widgets.SmallButton("None"))
                     v.ManualPasses.Clear();
                 ImGui.SameLine();
-                if (ImGui.SmallButton("Policy"))
+                if (Widgets.SmallButton("Policy"))
                     v.ResetManualToPolicy();
             }
             ImGui.Spacing();
@@ -261,13 +250,13 @@ namespace PlayerViewer.UI
 
         void DrawStageRows(MaterialVariations v)
         {
-            //The rows are checkbox, name, status. Measure the first two rather than padding by
-            //eye: depth_silhouette is the longest name and ran into its status at a guess of 40.
-            float statusColumn =
+            //The rows are checkbox, name, status; depth_silhouette is the longest name.
+            float statusColumn = Widgets.Column(
                 ImGui.GetFrameHeight()
-                + ImGui.GetStyle().ItemSpacing.X * 2
-                + ImGui.CalcTextSize("depth_silhouette").X
-                + ImGui.GetStyle().ItemSpacing.X;
+                    + ImGui.GetStyle().ItemSpacing.X * 2
+                    + ImGui.CalcTextSize("depth_silhouette").X
+                    + ImGui.GetStyle().ItemSpacing.X
+            );
 
             foreach (string pass in v.AssignTypes)
             {
@@ -280,7 +269,7 @@ namespace PlayerViewer.UI
                 bool ticked = v.Manual ? v.ManualPasses.Contains(pass) : selected;
                 if (!v.Manual)
                     ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.5f);
-                if (ImGui.Checkbox("##sel", ref ticked) && v.Manual && !v.ExistenceOnly)
+                if (Widgets.CheckboxControl("##sel", ref ticked) && v.Manual && !v.ExistenceOnly)
                 {
                     if (ticked)
                         v.ManualPasses.Add(pass);
@@ -293,7 +282,7 @@ namespace PlayerViewer.UI
                 ImGui.SameLine();
                 ImGui.AlignTextToFramePadding();
                 bool lit = v.ExistenceOnly ? v.CellsOf(pass).Any(c => c.Exists) : selected;
-                ImGui.TextColored(lit ? Theme.TextMain : Theme.TextDim, DrawnPasses.Short(pass));
+                Widgets.ColoredText(lit ? Theme.TextMain : Theme.TextDim, DrawnPasses.Short(pass));
                 Widgets.ItemTooltip(PassTooltip(v, pass, selected));
 
                 ImGui.SameLine(statusColumn);
@@ -321,7 +310,7 @@ namespace PlayerViewer.UI
                         ? ($"in archive ({cells[i].ExistingProgram})", Theme.Success)
                         : ("missing", Theme.Error)
                     : CellStatus(cells[i], selected);
-                ImGui.TextColored(colour, perWeight ? $"w{cells[i].Weight} {text}" : text);
+                Widgets.ColoredText(colour, perWeight ? $"w{cells[i].Weight} {text}" : text);
                 if (cells[i].Failure != null)
                     Widgets.ItemTooltip(cells[i].Failure);
             }
@@ -332,7 +321,7 @@ namespace PlayerViewer.UI
             if (failed == null)
                 return;
             ImGui.SameLine(0, 8);
-            if (!ImGui.SmallButton("retry"))
+            if (!Widgets.SmallButton("retry"))
                 return;
             foreach (var c in cells.Where(x => x.State == CellState.Failed))
                 Queue.Forget(c);
@@ -382,10 +371,7 @@ namespace PlayerViewer.UI
             if (_uber.SpecialiserPath == null)
             {
                 ImGui.PushTextWrapPos();
-                Widgets.ErrorText(
-                    "No specialiser beside the exe, so nothing can be generated. Existence is "
-                        + "still exact."
-                );
+                Widgets.ErrorText("No specialiser beside the exe; nothing can be generated.");
                 ImGui.PopTextWrapPos();
                 return;
             }
@@ -393,7 +379,7 @@ namespace PlayerViewer.UI
             if (_bundleNote != null)
             {
                 ImGui.PushTextWrapPos();
-                ImGui.TextColored(Theme.Gold, _bundleNote);
+                Widgets.ColoredText(Theme.Gold, _bundleNote);
                 ImGui.PopTextWrapPos();
             }
 
@@ -401,7 +387,7 @@ namespace PlayerViewer.UI
             int queued = _splicer.Queued;
             if (active.Length > 0 || queued > 0)
             {
-                ImGui.TextColored(Theme.Gold, $"compiling {active.Length}, {queued} queued");
+                Widgets.ColoredText(Theme.Gold, $"compiling {active.Length}, {queued} queued");
                 foreach (var label in active)
                     Widgets.DimText("  " + label);
             }
@@ -444,11 +430,11 @@ namespace PlayerViewer.UI
 
             ImGui.PushTextWrapPos();
             if (parts.Count > 0)
-                ImGui.TextColored(Theme.Gold, string.Join("  ", parts));
+                Widgets.ColoredText(Theme.Gold, string.Join("  ", parts));
             else if (_preview.IsQuick(_selectedMaterial))
-                ImGui.TextColored(Theme.Cyan, "drawn from a quick splice");
+                Widgets.ColoredText(Theme.Cyan, "drawn from a quick splice");
             else if (_preview.IsPreviewing(_selectedMaterial))
-                ImGui.TextColored(Theme.Cyan, "drawn from the generated programs");
+                Widgets.ColoredText(Theme.Cyan, "drawn from the generated programs");
             else
                 Widgets.DimText("splicer idle");
             if (_preview.Error != null)

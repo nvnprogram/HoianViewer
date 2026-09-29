@@ -11,18 +11,14 @@ using OpenTK.Graphics;
 using OpenTK.Graphics.OpenGL;
 using OpenTK.Input;
 using PlayerViewer.Core;
+using PlayerViewer.Effects.Viewer;
 using PlayerViewer.Player;
 
 namespace PlayerViewer.UI
 {
     /// <summary>
-    /// Main interactive window: 3D viewport + player configuration UI.
-    ///
-    /// The class is split across several files by concern (all <c>partial class
-    /// ViewerWindow</c>): this file owns the window lifecycle and scene loading;
-    /// <c>ViewerWindow.Layout.cs</c> the top-level layout/menu; <c>*.PlayerPanel.cs</c>,
-    /// <c>*.Viewport.cs</c>, <c>*.CapturePanel.cs</c> and <c>*.Standalone.cs</c> the
-    /// respective UI sections.
+    /// The main window. This file holds its lifecycle and scene loading; the other
+    /// ViewerWindow files hold one panel each.
     /// </summary>
     public partial class ViewerWindow : GameWindow
     {
@@ -34,7 +30,6 @@ namespace PlayerViewer.UI
         GameDatabase _db;
         PlayerScene _scene;
 
-        //--- UI state
         string _romfsInput = "";
         string _sdodrInput = "";
         string _layeredInput = "";
@@ -56,20 +51,19 @@ namespace PlayerViewer.UI
         float _uiFrame; //frame slider mirror
         int _captureRes = 2; //index into CaptureSizes
 
-        //--- Standalone model viewing (dropped/browsed files, outside the player)
+        //A model opened on its own, outside the player.
         StandaloneScene _standalone;
         string _standaloneError;
 
         public string AutoOpenFile; //--open <file>: opens a standalone model right after load
 
-        //--- Deterministic full-animation export: drives the timeline frame-by-frame
-        //(ignoring wall clock) so every animation frame lands exactly once. Reuses the
-        //current camera and the chosen background (greenscreen for MP4, alpha for WebP).
+        //An animation export drives the timeline frame by frame rather than by the clock, so
+        //every frame lands exactly once.
         bool _animExporting;
         float _animExportIndex; //current animation-frame position being captured
         int _animExportTotal; //frame count of the animation
         float _animExportAdvance; //animation frames advanced per output frame ((60/fps) * speed)
-        int _exportFps = 60; //two-tick control: 30 or 60
+        int _exportFps = 60; //30 or 60
         bool _animExportTrim; //snapshot of TrimDeadspace taken at export start
         int _animExportSupersample; //snapshot of ExportSupersample taken at export start
         bool _animExportChain; //exporting the whole sequence (Sequence mode) vs a single anim
@@ -77,21 +71,27 @@ namespace PlayerViewer.UI
         byte[] _animExportBg; //full-frame composite background (null = keep alpha)
         bool _animExportPrevPaused;
         float _animExportPrevFrame;
-        BufferedAnimExporter _bufferedExporter; //non-null during the trim (buffered) export
+        BufferedAnimExporter _bufferedExporter; //capturing or encoding
 
-        //--- Unified capture UI
-        int _exportFormat; //0 PNG, 1 MP4, 2 WebP, 3 WebM
+        /// <summary>
+        /// An export is capturing or encoding. It drives the scene it started on until it ends,
+        /// so nothing opens or closes a scene meanwhile.
+        /// </summary>
+        bool ExportBusy => _animExporting || _bufferedExporter != null;
+
+        //A file dropped during an export, opened once the export has ended.
+        string _dropAfterExport;
+
+        int _exportFormat; //row of ExportFormats
         bool _showSettings;
 
-        //--- Background: the data lives on _config.Player.Background (saved with the preset);
-        //these only track when the live viewport preview buffer needs rebuilding.
+        //The background is saved with the preset; these track when the viewport's copy is rebuilt.
         Core.BackgroundConfig Bg => _config.Player.Background;
         bool _bgDirty = true; //rebuild the live preview buffer on next frame
         int _bgPreviewW = -1,
             _bgPreviewH = -1;
 
-        //Self-correcting layout: capture controls stay pinned, the animation list absorbs
-        //slack. We size the list from last frame's measured control height.
+        //Last frame's heights of the controls under the lists, which the lists are sized around.
         float _measuredCaptureHeight = 220;
         float _measuredStandaloneTailHeight = 160;
 
@@ -113,14 +113,14 @@ namespace PlayerViewer.UI
             _sdodrInput = config.SdodrRomfsPath ?? "";
             _layeredInput = config.LayeredFsPath ?? "";
 
-            //Restore persisted capture-panel selections (clamped in case ranges changed).
+            //Clamped in case the ranges changed.
             _captureRes = Math.Clamp(config.CaptureResIndex, 0, CaptureSizes.Length - 1);
-            _exportFormat = Math.Clamp(config.ExportFormat, 0, 3);
+            _exportFormat = Math.Clamp(config.ExportFormat, 0, ExportFormatLabels.Length - 1);
             _exportFps = config.ExportFps == 30 ? 30 : 60;
             _animMode = config.AnimMode == 1 ? 1 : 0;
 
-            //Background now lives on the player config (travels with presets); clamp on load.
             config.Normalize();
+            InstallTitleBar();
         }
 
         protected override void OnLoad(EventArgs e)
@@ -147,8 +147,7 @@ namespace PlayerViewer.UI
                 Path.AltDirectorySeparatorChar
             );
 
-            _imgui = new ImGuiController(Width, Height);
-            Theme.Apply();
+            InitAppearance();
             ImGui.GetIO().ConfigWindowsMoveFromTitleBarOnly = true;
 
             RenderTools.Init();
@@ -173,6 +172,8 @@ namespace PlayerViewer.UI
             _preserveStateOnLoad = false;
             try
             {
+                TearDownEffect();
+                _romfsEffects = null;
                 TearDownStandalone();
                 //The ubershader and its option table come out of the romfs being replaced.
                 DisposeVariations();
@@ -193,6 +194,9 @@ namespace PlayerViewer.UI
                 //Load default/cubemap textures now instead of during the first material render.
                 BfresEditor.HoianNXRender.InitTextures();
                 _db = new GameDatabase(_romfs);
+                if (_db.TeamColorOffsets != null)
+                    BfresEditor.TeamColorVariants.Offsets = _db.TeamColorOffsets;
+                InitLists();
 
                 _scene = new PlayerScene(_romfs, _db);
                 if (state != null)
@@ -326,10 +330,31 @@ namespace PlayerViewer.UI
             _imgui.KeyUp(e.Key);
         }
 
+        protected override void OnMouseWheel(MouseWheelEventArgs e)
+        {
+            base.OnMouseWheel(e);
+            _imgui.MouseWheel(e.Mouse.Scroll.X, e.Mouse.Scroll.Y);
+        }
+
         protected override void OnFileDrop(FileDropEventArgs e)
         {
             base.OnFileDrop(e);
-            string file = e.FileName;
+            OpenDroppedFile(e.FileName);
+        }
+
+        void OpenDroppedFile(string file)
+        {
+            if (ExportBusy)
+            {
+                _dropAfterExport = file;
+                Console.WriteLine($"[UI] {file} opens once the export has ended");
+                return;
+            }
+            if (EffectFile.IsEffectPath(file))
+            {
+                OpenEffect(file);
+                return;
+            }
             if (
                 file == null
                 || (
@@ -343,11 +368,12 @@ namespace PlayerViewer.UI
         /// <summary>Opens a loose bfres as a standalone model (no player).</summary>
         void OpenStandalone(string file)
         {
-            if (_romfs == null)
+            if (_scene == null || ExportBusy)
                 return;
             try
             {
-                bool hadPrevious = _standalone != null;
+                bool hadPrevious = _standalone != null || _effect != null;
+                TearDownEffect();
                 TearDownStandalone();
                 //Off for every model: on, it splices the whole model, which is minutes of CPU,
                 //and opening a file is usually to look at it.
@@ -361,6 +387,7 @@ namespace PlayerViewer.UI
                 _standaloneError = _standalone == null ? "Failed to load model" : null;
                 if (_standalone != null)
                 {
+                    DetectProvenance();
                     _animSearch = "";
                     _pipeline.FrameSphere(_standalone.GetBounding());
                 }
@@ -374,6 +401,8 @@ namespace PlayerViewer.UI
 
         void CloseStandalone()
         {
+            if (ExportBusy)
+                return;
             TearDownStandalone();
             CompactHeap();
             _pipeline.FramePlayer();
@@ -394,6 +423,9 @@ namespace PlayerViewer.UI
             _animSearch = "";
             ResetVariations();
             ResetMaterialEditor();
+            ResetClothEditor();
+            _authoringOpen = false;
+            ResetSkeletonTab();
             ReleaseShaderPrograms();
         }
 
@@ -414,17 +446,28 @@ namespace PlayerViewer.UI
             GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true, true);
         }
 
+        protected override void OnUnload(EventArgs e)
+        {
+            //Still has the GL context, which the icon textures need to be deleted.
+            DisposeLists();
+            _background?.Dispose();
+            base.OnUnload(e);
+        }
+
         protected override void OnClosed(EventArgs e)
         {
             //Aborts any in-flight capture/encode and deletes the temp raw buffer.
             _bufferedExporter?.Dispose();
+            //Stops the loop analysis thread.
+            _effectFile?.Dispose();
             //Kills any specialiser still running.
             DisposeVariations();
-            //Width/Height are 0 when closed while minimized; don't persist that.
+            //Width/Height are 0 when closed while minimized; don't persist that. The height is the
+            //OS bar's client, which the next launch creates the window with before the bar folds in.
             if (WindowState == WindowState.Normal && Width > 0 && Height > 0)
             {
                 _config.WindowWidth = Width;
-                _config.WindowHeight = Height;
+                _config.WindowHeight = NativeClientHeight;
             }
             _config.Save();
             //Save only marks the config dirty; write it out before the process goes away.
@@ -432,34 +475,94 @@ namespace PlayerViewer.UI
             base.OnClosed(e);
         }
 
+        //The frame's clock. GameWindow's e.Time does not know about the frames the title bar draws
+        //inside a move or resize, so after one it would count that time twice.
+        readonly System.Diagnostics.Stopwatch _frameClock = System.Diagnostics.Stopwatch.StartNew();
+        double _lastFrameTime = -1;
+
+        //A nested message loop inside a frame (a native dialog) must not start another one.
+        bool _inFrame;
+
         protected override void OnRenderFrame(FrameEventArgs e)
         {
-            base.OnRenderFrame(e);
+            if (_inFrame)
+                return;
+            _inFrame = true;
+            try
+            {
+                base.OnRenderFrame(e);
+                //Minimised, nothing can be seen, so the frame is skipped rather than spun,
+                //unless an export is running. The clock restarts, so the restore is no big step.
+                if (WindowState == WindowState.Minimized && !ExportBusy)
+                {
+                    _lastFrameTime = -1;
+                    _config.FlushPending();
+                    System.Threading.Thread.Sleep(50);
+                    return;
+                }
+                double now = _frameClock.Elapsed.TotalSeconds;
+                double dt =
+                    _lastFrameTime < 0 ? 1.0 / 60 : Math.Clamp(now - _lastFrameTime, 1e-5, 1);
+                _lastFrameTime = now;
+                RenderFrame((float)dt);
+            }
+            finally
+            {
+                _inFrame = false;
+            }
+        }
+
+        //Test hooks, implemented in files a release build leaves out; without them the calls
+        //compile away. The frame's end is once the UI has rendered, before the swap.
+        partial void TestHookFrameBegin();
+
+        partial void TestHookFrameEnd();
+
+        partial void TestHookFrameSwapped();
+
+        partial void TestHookOverride(string name, ref bool value);
+
+        partial void TestHookNote(string what, object data = null);
+
+        void RenderFrame(float dt)
+        {
+            TestHookFrameBegin();
             GLFrameworkEngine.ShaderProgram.FrameStamp++;
 
-            if (_needsLoad)
+            if (_needsLoad && !ExportBusy)
             {
                 LoadGame();
                 if (AutoOpenFile != null && _scene != null)
                 {
-                    OpenStandalone(AutoOpenFile);
+                    if (EffectFile.IsEffectPath(AutoOpenFile))
+                        OpenEffect(AutoOpenFile, AutoOpenSet);
+                    else
+                        OpenStandalone(AutoOpenFile);
                     AutoOpenFile = null;
                 }
             }
+            if (_dropAfterExport != null && !ExportBusy)
+            {
+                string waiting = _dropAfterExport;
+                _dropAfterExport = null;
+                OpenDroppedFile(waiting);
+            }
 
-            //Advance whichever scene is active. During export we drive the timeline
-            //deterministically (fixed frame + fixed dt) instead of by real time.
+            //Advances the active scene; an export sets the frame and the step itself.
+            var update = FramePerf.Section("update", gpu: false);
             if (_animExporting)
             {
                 //Chain export walks the concatenated sequence; single export scrubs one anim.
-                if (_animExportChain)
+                if (_effect != null)
+                    EffectPlay.Seek(_effectExportStart + (int)_animExportIndex);
+                else if (_animExportChain)
                     ChainSeek(_animExportIndex);
                 else
                     PlaybackSetFrame(_animExportIndex);
-                //Cloth dt is wall-clock per output frame (1/fps), independent of playback
-                //speed; matches the viewport, where the sim advances in real time and the
-                //speed slider only scales how fast the animation cursor moves.
-                PlaybackUpdate(1f / _exportFps, ConvergeWeight(_animExportIndex));
+                //Cloth steps 1/fps per output frame whatever the speed, as the viewport steps it
+                //in real time and the speed only moves the animation.
+                if (_effect == null)
+                    PlaybackUpdate(1f / _exportFps, ConvergeWeight(_animExportIndex));
                 //The pose to converge back to is the one the first exported frame ended on,
                 //so it is taken after that frame's step rather than before the export starts.
                 if (!_convergeCaptured)
@@ -469,33 +572,57 @@ namespace PlayerViewer.UI
                 }
                 _uiFrame = PlaybackAnimFrame;
             }
+            else if (_effect != null)
+            {
+                UpdateEffect(dt);
+            }
             else if (_chainActive)
             {
-                UpdateAnimChain((float)e.Time);
+                UpdateAnimChain(dt);
                 _uiFrame = PlaybackAnimFrame;
             }
             else if (_standalone != null)
             {
-                _standalone.Update((float)e.Time);
+                UpdateStandalone(dt);
                 _uiFrame = _standalone.AnimFrame;
             }
             else if (_scene != null)
             {
-                _scene.Update((float)e.Time);
+                _scene.Update(dt);
                 _uiFrame = _scene.AnimFrame;
             }
 
-            _imgui.Update(this, (float)e.Time);
-            DrawUI();
-            PumpVariations();
+            update.Dispose();
+
+            UpdateAppearance();
+            UpdateFonts();
+            UpdateSideOrder(dt);
+            using (FramePerf.Section("imgui new frame", gpu: false))
+                _imgui.Update(this, dt);
+            BeginBarFrame();
+            bool drawUi = true;
+            TestHookOverride("ui", ref drawUi);
+            if (drawUi)
+                using (FramePerf.Section("ui"))
+                    DrawUI();
+            EndBarFrame();
+            using (FramePerf.Section("pumps", gpu: false))
+            {
+                PumpVariations();
+                _icons?.Pump();
+            }
 
             GL.BindFramebuffer(FramebufferTarget.Framebuffer, 0);
             GL.Viewport(0, 0, Width, Height);
             GL.ClearColor(0.04f, 0.04f, 0.05f, 1);
             GL.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
-            _imgui.Render();
+            DrawSideOrderBackground();
+            using (FramePerf.Section("imgui render"))
+                _imgui.Render();
+            TestHookFrameEnd();
 
             SwapBuffers();
+            TestHookFrameSwapped();
 
             //Frame-exact export: capture this frame synchronously, then advance the timeline.
             if (_animExporting)

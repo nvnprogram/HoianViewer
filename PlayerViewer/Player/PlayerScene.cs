@@ -51,9 +51,14 @@ namespace PlayerViewer.Player
         public BfresMaterialAnim CurrentShaderParam { get; private set; }
         public BfresVisibilityAnim CurrentBoneVis { get; private set; }
         public float AnimFrame { get; private set; }
+
         //Frame clock for the gear's own looping animations; runs with the player
         //animation's pause and speed but not its frame.
         public float IdleFrame { get; private set; }
+
+        //Frames since the player animation started, not wrapped or held at its end, for a
+        //weapon animation that runs on its own length.
+        float _animClock;
         public float AnimSpeed = 1.0f;
         public bool AnimPaused = false;
 
@@ -63,14 +68,16 @@ namespace PlayerViewer.Player
         readonly AlphaMaskSystem _alphaMask = new();
         List<FMAT> _bodyMaskMaterials; //M_Body materials with the _o0 override active
 
-        //Hair cloth simulation (bphcl), one sim per cloth piece.
+        //Hair cloth simulation (bphcl), null for a hair without cloth.
         public bool HairPhysicsEnabled = true;
-        readonly List<HairPhysics> _hairPhysics = new();
+        HairCloth _hairCloth;
+        readonly Physics.ClothPacks _clothPacks;
 
         public PlayerScene(Romfs romfs, GameDatabase database)
         {
             Romfs = romfs;
             Database = database;
+            _clothPacks = new Physics.ClothPacks(romfs);
         }
 
         #region Model loading
@@ -381,7 +388,7 @@ namespace PlayerViewer.Player
         {
             CurrentHair = entry;
             DestroyPart(PartKind.Hair);
-            _hairPhysics.Clear();
+            _hairCloth = null;
             if (entry == null)
             {
                 OnPartsChanged?.Invoke();
@@ -414,9 +421,8 @@ namespace PlayerViewer.Player
         }
 
         /// <summary>
-        /// Loads the hair's cloth file (Phive/Cloth/*.bphcl in its actor pack) and
-        /// creates one simulation per cloth piece. Missing cloth is normal (many
-        /// hairs are rigid).
+        /// Loads the first cloth of the hair's ClothList and creates one simulation per cloth
+        /// piece. Missing cloth is normal (many hairs are rigid).
         /// </summary>
         void LoadHairPhysics(GearEntry entry, PartModel part)
         {
@@ -424,20 +430,13 @@ namespace PlayerViewer.Player
                 return;
             try
             {
-                var pack = Romfs.GetActorPack(entry.RowId + GenderSuffix);
-                string file = pack?.FindFile(x => x.StartsWith("Phive/Cloth/"));
-                if (file == null)
+                var bytes = _clothPacks.ClothOf(entry.RowId + GenderSuffix);
+                if (bytes == null)
                     return;
 
-                var cloth = HairClothData.Load(pack.GetFile(file));
-                foreach (var piece in cloth.Pieces)
-                {
-                    var sim = HairPhysics.Create(piece, part.Skeleton, Human.Skeleton);
-                    if (sim != null)
-                        _hairPhysics.Add(sim);
-                }
+                _hairCloth = HairCloth.Load(bytes, part.Skeleton, Human.Skeleton);
                 Console.WriteLine(
-                    $"[Scene] Hair cloth: {_hairPhysics.Count} piece(s) for {entry.RowId}"
+                    $"[Scene] Hair cloth: {_hairCloth.PieceCount} piece(s) for {entry.RowId}"
                 );
             }
             catch (Exception ex)
@@ -721,6 +720,7 @@ namespace PlayerViewer.Player
                     part.AttachBone = part.Skeleton.SearchBone("Root");
                     ApplyWeaponCarryPose(part);
                     Parts[PartKind.WeaponMain] = part;
+                    SelectWeaponAnim(part);
                 }
             }
             if (leftModel.file != null)
@@ -755,6 +755,7 @@ namespace PlayerViewer.Player
                         part.AttachOffset = Matrix4.CreateRotationX(MathHelper.Pi);
                     }
                     Parts[PartKind.WeaponLeft] = part;
+                    SelectWeaponAnim(part);
                 }
             }
             OnPartsChanged?.Invoke();
@@ -843,6 +844,88 @@ namespace PlayerViewer.Player
                     Rotation = ctrl.Rotation,
                     Scale = meshScale,
                 };
+            }
+        }
+
+        /// <summary>
+        /// Picks the weapon's own animation for the player's current one. An animation of the
+        /// same name plays in step with the player's (emotes, amiibo and shop poses, the
+        /// Stamper's charge). A stringer otherwise plays the state its weapon code requests
+        /// for the pose. Anything else keeps the carry pose.
+        /// </summary>
+        void SelectWeaponAnim(PartModel part)
+        {
+            var anims = part.Bfres?.SkeletalAnimations;
+            BfresSkeletalAnim anim = null;
+            string name = CurrentAnimName;
+            //A shared name without a suffix is a coincidence: Wait is a weapon state of the
+            //Luna Blaster and the Octobrush, not the player's idle.
+            if (anims != null && name != null && name.Contains('_'))
+                anim = anims.FirstOrDefault(a => a.Name == name);
+            if (anim == null && anims != null && anims.Any(a => a.Name == "ChargeWidth"))
+            {
+                string state = StringerState(name);
+                anim = anims.FirstOrDefault(a => a.Name == state);
+            }
+
+            if (anim == part.SkeletalAnim)
+                return;
+            ResetControllers(part.Skeleton);
+            part.SkeletalAnim = anim;
+        }
+
+        /// <summary>
+        /// The stringer's weapon command for a player animation: Charge while the bow is drawn,
+        /// with ChargeWidth for the sideways hold, Shoot on release and Default otherwise.
+        /// </summary>
+        static string StringerState(string playerAnim)
+        {
+            if (playerAnim == null || !playerAnim.Contains("_Strn"))
+                return "Default";
+            if (playerAnim.StartsWith("Shoot"))
+                return "Shoot";
+            if (playerAnim.Contains("ShootWidth"))
+                return "ChargeWidth";
+            if (playerAnim.Contains("Shoot"))
+                return "Charge";
+            return "Default";
+        }
+
+        static void ResetControllers(STSkeleton skeleton)
+        {
+            foreach (var bone in skeleton.Bones)
+            {
+                var ctrl = bone.AnimationController;
+                ctrl.Position = bone.Position;
+                ctrl.Rotation = bone.Rotation;
+                ctrl.Scale = bone.Scale;
+                ctrl.UseSegmentScaleCompensate = bone.UseSegmentScaleCompensate;
+            }
+        }
+
+        /// <summary>
+        /// Poses each weapon playing its own animation. A same named one follows the player's
+        /// frame; a charge is held drawn, as a full charge; any other runs from the start of
+        /// the player's animation on its own length.
+        /// </summary>
+        void UpdateWeaponAnims()
+        {
+            foreach (var kind in new[] { PartKind.WeaponMain, PartKind.WeaponLeft })
+            {
+                if (!Parts.TryGetValue(kind, out var part) || part.SkeletalAnim == null)
+                    continue;
+                var anim = part.SkeletalAnim;
+                float count = Math.Max(anim.FrameCount, 1);
+                float frame;
+                if (anim.Name == CurrentAnimName)
+                    frame = AnimFrame;
+                else if (anim.Name.StartsWith("Charge"))
+                    frame = count - 1;
+                else
+                    frame = anim.Loop ? _animClock % count : Math.Min(_animClock, count - 1);
+                anim.SkeletonOverride = part.Skeleton;
+                anim.SetFrame(frame);
+                anim.NextFrame();
             }
         }
 
@@ -1295,20 +1378,26 @@ namespace PlayerViewer.Player
         {
             if (set == null)
                 return;
-            var color =
-                team == 0 ? set.Alpha
-                : team == 1 ? set.Bravo
-                : set.Charlie;
-            //The shader wants linear color (flexlion applies pow 2.2).
-            var linear = new System.Numerics.Vector3(
-                MathF.Pow(color.X, 2.2f),
-                MathF.Pow(color.Y, 2.2f),
-                MathF.Pow(color.Z, 2.2f)
-            );
+            //The renderer's alpha slot is the player's own team, so the chosen team swaps
+            //places with alpha and the set's other teams fill the other slots.
+            var colors = new[] { set.Alpha, set.Bravo, set.Charlie };
+            var hues = new[] { set.Hue[0], set.Hue[1], set.Hue[2] };
+            team = Math.Clamp(team, 0, 2);
+            (colors[0], colors[team]) = (colors[team], colors[0]);
+            (hues[0], hues[team]) = (hues[team], hues[0]);
+
+            //The shader wants linear colour, so the set's colours go through pow 2.2.
+            static System.Numerics.Vector3 Linear(System.Numerics.Vector3 c) =>
+                new(MathF.Pow(c.X, 2.2f), MathF.Pow(c.Y, 2.2f), MathF.Pow(c.Z, 2.2f));
             //Force the dumped uniform buffers in first; the lazy load on first draw
-            //resets TeamAlphaColor to the dump's value and would clobber ours.
+            //resets the team colours to the dump's values and would clobber ours.
             HoianNXRender.LoadResourceData();
-            HoianNXRender.TeamAlphaColor = linear;
+            HoianNXRender.TeamAlphaColor = Linear(colors[0]);
+            HoianNXRender.TeamBravoColor = Linear(colors[1]);
+            HoianNXRender.TeamCharlieColor = Linear(colors[2]);
+            HoianNXRender.TeamAlphaHue = hues[0];
+            HoianNXRender.TeamBravoHue = hues[1];
+            HoianNXRender.TeamCharlieHue = hues[2];
         }
 
         #endregion
@@ -1323,6 +1412,7 @@ namespace PlayerViewer.Player
         {
             CurrentAnimName = name;
             AnimFrame = 0;
+            _animClock = 0;
 
             CurrentSkeletal = name != null ? Anims.GetSkeletal(name) : null;
             CurrentTexPattern = name != null ? Anims.GetTexPattern(name) : null;
@@ -1348,6 +1438,10 @@ namespace PlayerViewer.Player
                 ApplyEyeColor(EyeColor);
                 ApplySkinTone(SkinTone);
             }
+
+            foreach (var kind in new[] { PartKind.WeaponMain, PartKind.WeaponLeft })
+                if (Parts.TryGetValue(kind, out var weapon))
+                    SelectWeaponAnim(weapon);
 
             //Pose jumps on anim switch; restart the cloth from the new pose (unless a chain is
             //driving continuous playback).
@@ -1384,6 +1478,7 @@ namespace PlayerViewer.Player
             if (CurrentSkeletal != null && !AnimPaused)
             {
                 AnimFrame += deltaSeconds * 60.0f * AnimSpeed;
+                _animClock += deltaSeconds * 60.0f * AnimSpeed;
                 float frameCount = Math.Max(CurrentSkeletal.FrameCount, 1);
                 if (CurrentSkeletal.Loop)
                     AnimFrame %= frameCount;
@@ -1418,6 +1513,7 @@ namespace PlayerViewer.Player
 
             ApplyEarHide();
             UpdateIdleAnims();
+            UpdateWeaponAnims();
 
             //Weld all parts to the updated human skeleton.
             foreach (var part in Parts.Values)
@@ -1430,30 +1526,26 @@ namespace PlayerViewer.Player
             if (HairPhysicsEnabled)
             {
                 Parts.TryGetValue(PartKind.Hair, out var hairPart);
-                foreach (var sim in _hairPhysics)
-                    sim.Update(deltaSeconds, hairPart?.HairArrange, hairConvergeWeight);
+                _hairCloth?.Update(deltaSeconds, hairPart?.HairArrange, hairConvergeWeight);
             }
         }
 
         /// <summary>Restarts hair cloth from the current pose (e.g. anim switch).</summary>
         public void ResetHairPhysics()
         {
-            foreach (var sim in _hairPhysics)
-                sim.Reset();
+            _hairCloth?.Reset();
         }
 
         /// <summary>Records the current hair cloth pose as an export's convergence target.</summary>
         public void CaptureHairConvergeState()
         {
-            foreach (var sim in _hairPhysics)
-                sim.CaptureConvergeState();
+            _hairCloth?.CaptureConvergeState();
         }
 
         /// <summary>Debug: dumps all hair sim states.</summary>
         public void DumpHairPhysics()
         {
-            foreach (var sim in _hairPhysics)
-                sim.DebugDump();
+            _hairCloth?.DebugDump();
         }
 
         /// <summary>
@@ -1494,6 +1586,7 @@ namespace PlayerViewer.Player
         public void SetAnimFrame(float frame)
         {
             AnimFrame = frame;
+            _animClock = frame;
         }
 
         /// <summary>Frame count of a skeletal animation by name (0 if unknown), for the chain timeline.</summary>

@@ -75,10 +75,13 @@ namespace PlayerViewer.UI
                         + "material's programs. The rest carry no binding in them at all."
             );
             ImGui.PopTextWrapPos();
-            ImGui.Checkbox("Show the ones the shader does not read", ref _samplerShowUnread);
+            Widgets.CheckboxControl(
+                "Show the ones the shader does not read",
+                ref _samplerShowUnread
+            );
             FilterRow("##sampsearch", ref _samplerSearch);
 
-            ImGui.BeginChild("##samplist", new Vector2(0, 0), false);
+            Widgets.BeginScrollChild("##samplist", new Vector2(0, 0));
             foreach (string sampler in declared)
             {
                 bool isRead = read == null || read.Contains(sampler);
@@ -100,7 +103,7 @@ namespace PlayerViewer.UI
             bool changed = !engine && Baseline(material).SamplerChanged(mat, shaderSampler);
 
             ImGui.Separator();
-            ImGui.TextColored(
+            Widgets.ColoredText(
                 changed ? Theme.Cyan
                     : engine || !isRead ? Theme.TextDim
                     : Theme.TextMain,
@@ -113,7 +116,7 @@ namespace PlayerViewer.UI
             if (changed)
             {
                 ImGui.SameLine();
-                if (ImGui.SmallButton($"Reset##rs{shaderSampler}"))
+                if (Widgets.SmallButton($"Reset##rs{shaderSampler}"))
                 {
                     Bindings(material).Reset(shaderSampler);
                     MaterialEdited(material);

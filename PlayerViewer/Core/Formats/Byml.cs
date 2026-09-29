@@ -5,11 +5,36 @@ using System.Text;
 namespace PlayerViewer.Core.Formats
 {
     /// <summary>
-    /// Minimal little-endian BYML reader.
+    /// A binary node with an alignment (type 0xA2): u32 size, u32 alignment, then the bytes,
+    /// placed so the bytes start on the alignment. Read as a slice of the loaded file, since the
+    /// effect archives carry a hundred MB in one.
+    /// </summary>
+    public sealed class BymlBinary
+    {
+        public ArraySegment<byte> Data { get; }
+        public uint Alignment { get; }
+
+        public BymlBinary(ArraySegment<byte> data, uint alignment)
+        {
+            if (alignment == 0 || (alignment & (alignment - 1)) != 0)
+                throw new ArgumentException(
+                    "The alignment must be a power of two",
+                    nameof(alignment)
+                );
+            Data = data;
+            Alignment = alignment;
+        }
+    }
+
+    /// <summary>
+    /// Minimal little-endian BYML reader. Binary nodes come back as byte[] (0xA1) and
+    /// <see cref="BymlBinary"/> (0xA2).
     /// </summary>
     public class Byml
     {
         public object Root { get; private set; }
+
+        public ushort Version { get; private set; }
 
         readonly byte[] _data;
         string[] _hashKeys = Array.Empty<string>();
@@ -22,6 +47,7 @@ namespace PlayerViewer.Core.Formats
             if (data.Length < 16 || data[0] != 'Y' || data[1] != 'B')
                 throw new InvalidOperationException("Not a little-endian BYML file.");
 
+            Version = BitConverter.ToUInt16(data, 2);
             uint hashKeyTableOff = ReadU32(4);
             uint stringTableOff = ReadU32(8);
             uint rootOff = ReadU32(12);
@@ -69,6 +95,15 @@ namespace PlayerViewer.Core.Formats
                     Array.Copy(_data, (int)valueOrOffset + 4, bytes, 0, size);
                     return bytes;
                 }
+                case 0xA2:
+                {
+                    int size = (int)ReadU32((int)valueOrOffset);
+                    uint alignment = ReadU32((int)valueOrOffset + 4);
+                    return new BymlBinary(
+                        new ArraySegment<byte>(_data, (int)valueOrOffset + 8, size),
+                        alignment
+                    );
+                }
                 case 0xC0:
                     return ReadArray(valueOrOffset);
                 case 0xC1:
@@ -100,6 +135,7 @@ namespace PlayerViewer.Core.Formats
             switch (type)
             {
                 case 0xA1:
+                case 0xA2:
                 case 0xC0:
                 case 0xC1:
                 case 0xD4:

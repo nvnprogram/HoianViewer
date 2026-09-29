@@ -103,10 +103,20 @@ namespace GLFrameworkEngine
                 format, width, height, depth, 0, imageSize * depth, data);
         }
 
+        //Decoded texture data has unpadded rows, so a row that is not a multiple of 4 bytes (narrow
+        //R8/RG8 textures and their small mips) is read wrong at the default unpack alignment.
+        static void Unpadded(Action upload)
+        {
+            GL.GetInteger(GetPName.UnpackAlignment, out int alignment);
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, 1);
+            upload();
+            GL.PixelStore(PixelStoreParameter.UnpackAlignment, alignment);
+        }
+
         static void LoadImage2D(int mipLevel, int width, int height, GLFormatHelper.PixelFormatInfo formatInfo, byte[] data)
         {
-            GL.TexImage2D(TextureTarget.Texture2D, mipLevel, formatInfo.InternalFormat, width, height, 0,
-                  formatInfo.Format, formatInfo.Type, data);
+            Unpadded(() => GL.TexImage2D(TextureTarget.Texture2D, mipLevel, formatInfo.InternalFormat, width, height, 0,
+                  formatInfo.Format, formatInfo.Type, data));
         }
 
         static void LoadImage2D(int mipLevel, int width, int height, GLFormatHelper.PixelFormatInfo formatInfo, IntPtr data)
@@ -117,8 +127,8 @@ namespace GLFrameworkEngine
 
         static void LoadImage3D(TextureTarget target, int mipLevel, int depth, int width, int height, GLFormatHelper.PixelFormatInfo formatInfo, byte[] data)
         {
-            GL.TexImage3D(target, mipLevel, formatInfo.InternalFormat, width, height, depth, 0,
-              formatInfo.Format, formatInfo.Type, data);
+            Unpadded(() => GL.TexImage3D(target, mipLevel, formatInfo.InternalFormat, width, height, depth, 0,
+              formatInfo.Format, formatInfo.Type, data));
         }
 
         static void LoadImage3D(TextureTarget target, int mipLevel, int depth, int width, int height, GLFormatHelper.PixelFormatInfo formatInfo, IntPtr data)
@@ -129,8 +139,8 @@ namespace GLFrameworkEngine
 
         static void LoadImageCubemap2D(int mipLevel, int array, int width, int height, GLFormatHelper.PixelFormatInfo formatInfo, byte[] data)
         {
-            GL.TexImage2D(TextureTarget.TextureCubeMapPositiveX + array, mipLevel, formatInfo.InternalFormat, width, height, 0,
-                  formatInfo.Format, formatInfo.Type, data);
+            Unpadded(() => GL.TexImage2D(TextureTarget.TextureCubeMapPositiveX + array, mipLevel, formatInfo.InternalFormat, width, height, 0,
+                  formatInfo.Format, formatInfo.Type, data));
         }
 
         static void LoadCompressedImageCubemap2D(int mipLevel, int array, int width, int height, InternalFormat format, byte[] data)

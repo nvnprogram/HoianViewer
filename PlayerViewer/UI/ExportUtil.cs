@@ -17,6 +17,9 @@ namespace PlayerViewer.UI
 
         /// <summary>VP9 WebM that preserves the alpha channel (yuva420p).</summary>
         WebmTransparent,
+
+        /// <summary>Numbered RGBA PNGs, one per frame, next to the name picked.</summary>
+        PngSequence,
     }
 
     /// <summary>
@@ -104,8 +107,17 @@ namespace PlayerViewer.UI
                 int crf = Math.Clamp((100 - quality) * 63 / 100, 0, 63);
                 return $"-c:v libvpx-vp9 -pix_fmt yuva420p -b:v 0 -crf {crf} -cpu-used 4 -deadline good -an \"{outputPath}\"";
             }
+            if (format == OutputFormat.PngSequence)
+                return $"-c:v png -pix_fmt rgba -start_number 0 \"{SequencePattern(outputPath)}\"";
             return $"-c:v libx264 -preset veryfast -pix_fmt yuv420p -crf 16 \"{outputPath}\"";
         }
+
+        /// <summary>The numbered file pattern a PNG sequence picked as name.png is written to.</summary>
+        public static string SequencePattern(string outputPath) =>
+            Path.Combine(
+                Path.GetDirectoryName(outputPath) ?? "",
+                Path.GetFileNameWithoutExtension(outputPath) + "_%04d.png"
+            );
 
         /// <summary>Raw-RGBA input args for a pipe of the given size and rate.</summary>
         public static string RawInputArgs(int width, int height, int fps) =>
@@ -164,7 +176,7 @@ namespace PlayerViewer.UI
                 Fill();
                 return buf;
             } //Color
-            if (cfg.Mode != 2) //Transparent -> black
+            if (cfg.Mode != 2) //Transparent comes out black
             {
                 for (int i = 3; i < buf.Length; i += 4)
                     buf[i] = 255;

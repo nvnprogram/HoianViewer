@@ -6,8 +6,7 @@ using Vector4 = System.Numerics.Vector4;
 
 namespace PlayerViewer.UI
 {
-    // Settings window (opened from the menu bar): export/capture preferences persisted in
-    // AppConfig: deadspace trimming and WebP encode quality.
+    // The Settings window: appearance, lists and the export preferences.
     public partial class ViewerWindow
     {
         void DrawSettingsWindow()
@@ -17,7 +16,7 @@ namespace PlayerViewer.UI
 
             ImGui.SetNextWindowSize(new Vector2(420, 340), ImGuiCond.FirstUseEver);
             if (
-                !ImGui.Begin(
+                !BeginCardWindow(
                     "Settings",
                     ref _showSettings,
                     ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoDocking
@@ -30,12 +29,11 @@ namespace PlayerViewer.UI
 
             bool dirty = false;
 
+            DrawAppearanceSettings();
+            DrawListSettings();
+
             Widgets.SectionHeader("Trim deadspace");
-            ImGui.TextWrapped(
-                "Crops fully-transparent space off exported frames, shrinking "
-                    + "file size. Uses the transparent render to find the content, so it crops the "
-                    + "color/image background too. Applies to WebP, WebM, MP4, and PNG."
-            );
+            Widgets.WrappedText("Crops empty space off exports. Applies to every format.");
             ImGui.Spacing();
 
             Widgets.Checkbox(
@@ -53,21 +51,16 @@ namespace PlayerViewer.UI
                 () => dirty = true
             );
             ImGui.SameLine();
-            Widgets.DimText("transparent padding kept around the content");
+            Widgets.DimText("kept around the content");
 
             if (_config.TrimDeadspace)
-                ImGui.TextColored(
+                Widgets.ColoredText(
                     Theme.Gold,
-                    "Note: the crop is only known once every frame has been seen, so a trimmed "
-                        + "animation export writes a lossless intermediate to disk first and re-encodes "
-                        + "it. Transiently uses a few hundred MB, more at 4K."
+                    "Trimmed animations encode twice and use temporary disk space."
                 );
 
             Widgets.SectionHeader("WebP / WebM quality");
-            ImGui.TextWrapped(
-                "Quality for the transparent WebP and WebM (VP9) exports. 100 = "
-                    + "lossless (largest). Lower = lossy: smaller and faster to encode, with some quality loss."
-            );
+            Widgets.WrappedText("100 is lossless. Lower is smaller and faster to encode.");
             ImGui.Spacing();
 
             ImGui.SetNextItemWidth(-1);
@@ -82,30 +75,26 @@ namespace PlayerViewer.UI
                 qLabel
             );
 
-            if (ImGui.Button("Lossless"))
+            if (Widgets.Button("Lossless"))
             {
                 _config.WebpQuality = 100;
                 dirty = true;
             }
             ImGui.SameLine();
-            if (ImGui.Button("Near-lossless"))
+            if (Widgets.Button("Near-lossless"))
             {
                 _config.WebpQuality = 90;
                 dirty = true;
             }
             ImGui.SameLine();
-            if (ImGui.Button("Lossy"))
+            if (Widgets.Button("Lossy"))
             {
                 _config.WebpQuality = 75;
                 dirty = true;
             }
 
             Widgets.SectionHeader("Supersample (export quality)");
-            ImGui.TextWrapped(
-                "Renders exports at this multiple of the capture size. With trim on, "
-                    + "the crop keeps that full internal resolution, so you only need the camera angle "
-                    + "right; a small or loosely-framed subject still exports sharp."
-            );
+            Widgets.WrappedText("Renders exports at this multiple of the capture size.");
             ImGui.Spacing();
 
             ImGui.SetNextItemWidth(-1);
@@ -119,8 +108,7 @@ namespace PlayerViewer.UI
                 "%dx"
             );
 
-            //The factor multiplies the render target, which has to fit the driver's
-            //texture/renderbuffer limit.
+            //The render target has to fit the driver's size limit.
             int wantSs = _config.ExportSupersample;
             var (_, capW, capH) = CaptureSizes[_captureRes];
             int ss = ScenePipeline.ClampSupersample(wantSs, capW, capH);
@@ -136,18 +124,13 @@ namespace PlayerViewer.UI
             else if (ss >= 8)
                 Widgets.ErrorText("8x is extreme: may exhaust GPU memory at 4K");
             else if (ss > 4)
-                ImGui.TextColored(
+                Widgets.ColoredText(
                     Theme.Gold,
                     "Large GPU memory use (grows with the square of the factor)"
                 );
 
             Widgets.SectionHeader("Physics warm-up");
-            ImGui.TextWrapped(
-                "Plays the animation (/ first animation in the sequence) through "
-                    + "this many extra times before recording starts without capturing. Physics reset"
-                    + "whenever an animation loads, so frame 0 has a twitch each time the exported "
-                    + "WebP/WebM loops. A warm-up lets the sim settle first."
-            );
+            Widgets.WrappedText("Extra playthroughs before recording, so hair starts settled.");
             ImGui.Spacing();
 
             ImGui.SetNextItemWidth(-1);
@@ -169,20 +152,14 @@ namespace PlayerViewer.UI
                 v => _config.PhysicsConverge = v,
                 () => dirty = true
             );
-            ImGui.TextWrapped(
-                "An animation export records the hair pose on its first frame and eases back "
-                    + "to it over the last quarter second (or a quarter of the clip, whichever "
-                    + "is shorter), so a loop wraps without the hair jumping. Warm-up settles "
-                    + "the sim before recording; this closes the loop at the end."
-            );
+            Widgets.WrappedText("Eases hair back to its first pose so loops don't jump.");
 
             Widgets.SectionHeader("Data folder");
-            ImGui.TextWrapped(
-                "settings.json lives here. Drop an ffmpeg binary here to use it "
-                    + "instead of one on PATH."
+            Widgets.WrappedText(
+                "Holds settings.json. An ffmpeg here is used over the one on PATH."
             );
             Widgets.DimText(AppPaths.DataDir);
-            if (ImGui.Button("Open data folder"))
+            if (Widgets.Button("Open data folder"))
                 AppPaths.OpenDataDir();
 
             if (dirty)

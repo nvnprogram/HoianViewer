@@ -163,6 +163,50 @@ namespace PlayerViewer.Core
             return results;
         }
 
+        /// <summary>
+        /// The file a versioned resource such as <c>USen.Product.b30.sarc.zs</c> resolves to:
+        /// the layered overlay's when it has one, else the highest version.
+        /// Null if there is none.
+        /// </summary>
+        /// <param name="pattern">What follows the version, such as <c>sarc*</c>.</param>
+        public string FindProduct(string relativeDir, string name, string pattern)
+        {
+            string layeredDir = UseLayered
+                ? Path.GetFullPath(Path.Combine(LayeredRoot, relativeDir))
+                : null;
+            return FindFiles(relativeDir, $"{name}.Product.*.{pattern}")
+                .OrderBy(f =>
+                    layeredDir != null
+                    && string.Equals(
+                        Path.GetFullPath(Path.GetDirectoryName(f)),
+                        layeredDir,
+                        StringComparison.OrdinalIgnoreCase
+                    )
+                )
+                .ThenBy(f => ProductVersion(Path.GetFileName(f), name))
+                .LastOrDefault();
+        }
+
+        static long ProductVersion(string fileName, string name)
+        {
+            string rest = fileName.Substring(name.Length + ".Product.".Length);
+            int dot = rest.IndexOf('.');
+            return long.TryParse(
+                dot < 0 ? rest : rest[..dot],
+                System.Globalization.NumberStyles.HexNumber,
+                null,
+                out long v
+            )
+                ? v
+                : -1;
+        }
+
+        /// <summary>The decompressed bytes of <see cref="FindProduct"/>'s file, or null.</summary>
+        public byte[] ReadProduct(string relativeDir, string name, string pattern) =>
+            FindProduct(relativeDir, name, pattern) is string file
+                ? Decompress(File.ReadAllBytes(file))
+                : null;
+
         /// <summary>Lists model names (without extension) starting with the given prefix.</summary>
         public List<string> ListModelFiles(string prefix)
         {
@@ -188,6 +232,9 @@ namespace PlayerViewer.Core
             _packCache[actorName] = sarc;
             return sarc;
         }
+
+        /// <summary>Drops a cached actor pack, so the next read sees a pack written since.</summary>
+        public void ForgetActorPack(string actorName) => _packCache.Remove(actorName);
 
         /// <summary>Parses a byml file from the romfs (path may omit .zs).</summary>
         public Byml ReadByml(string relativePath)

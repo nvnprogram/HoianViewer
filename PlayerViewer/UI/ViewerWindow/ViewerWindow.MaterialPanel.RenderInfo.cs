@@ -32,7 +32,7 @@ namespace PlayerViewer.UI
                 material
             );
 
-            ImGui.Checkbox("Edit as raw text", ref _renderInfoRaw);
+            Widgets.CheckboxControl("Edit as raw text", ref _renderInfoRaw);
             Widgets.ItemTooltip(
                 "The choice lists are the engine's own where one exists and the values stock "
                     + "content uses everywhere else, so they are a suggestion rather than a "
@@ -44,7 +44,7 @@ namespace PlayerViewer.UI
             DrawAddRenderInfo(material);
             FilterRow("##risearch", ref _renderInfoSearch);
 
-            ImGui.BeginChild("##rilist", new Vector2(0, 0), false);
+            Widgets.BeginScrollChild("##rilist", new Vector2(0, 0));
             foreach (var entry in infos.ToArray())
                 if (Widgets.Matches(entry.Key, _renderInfoSearch))
                     DrawStoredRenderInfo(material, entry.Key, entry.Value);
@@ -168,7 +168,7 @@ namespace PlayerViewer.UI
             ImGui.AlignTextToFramePadding();
             Widgets.DimText(label);
             ImGui.SameLine();
-            if (ImGui.SmallButton($"Add##ri{known.Name}"))
+            if (Widgets.SmallButton($"Add##ri{known.Name}"))
                 AddRenderInfo(material, known, null);
             DrawResetButton($"ri{known.Name}", reset);
         }
@@ -198,7 +198,7 @@ namespace PlayerViewer.UI
         void DrawAddRenderInfo(FMAT material)
         {
             ImGui.SetNextItemWidth(-1);
-            ImGui.InputText("##rinew", ref _newRenderInfo, 64);
+            Widgets.InputText("##rinew", ref _newRenderInfo, 64);
             string newName = _newRenderInfo.Trim();
             bool taken = newName.Length > 0 && material.Material.RenderInfos.ContainsKey(newName);
             Widgets.DisabledButton(

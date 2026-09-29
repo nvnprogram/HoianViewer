@@ -437,7 +437,7 @@ namespace BfshaLibrary
     public class ShaderVariation
     {
         internal BnshFile.ShaderVariation _inner;
-        internal ShaderVariation(BnshFile.ShaderVariation inner) { _inner = inner; }
+        public ShaderVariation(BnshFile.ShaderVariation inner) { _inner = inner; }
 
         public BinaryProgram BinaryProgram => new BinaryProgram(_inner.BinaryProgram);
     }

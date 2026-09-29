@@ -11,6 +11,7 @@ namespace PlayerViewer.UI
     public partial class ViewerWindow
     {
         BundleSaveReport _saveReport;
+        DateTime _saveReportTime;
         bool _saveProblemsOpen;
 
         //The path the user picked while guarded splices were still outstanding. The save runs
@@ -26,16 +27,13 @@ namespace PlayerViewer.UI
                 SaveStandaloneAs
             );
             Widgets.ItemTooltip(
-                "Writes the edited model to a file. Generated shader "
-                    + "variations are embedded as a bfsha; a model with nothing generated, "
-                    + "or saved with the splicer off, is written without one.\n\n"
-                    + "Saving waits for the splices it will embed."
+                "Writes the edited model with any generated shaders. Waits for splices."
             );
 
             if (_savePendingPath != null)
             {
                 ImGui.PushTextWrapPos();
-                ImGui.TextColored(
+                Widgets.ColoredText(
                     Theme.Gold,
                     (
                         UberLoading()
@@ -44,7 +42,7 @@ namespace PlayerViewer.UI
                     ) + System.IO.Path.GetFileName(_savePendingPath)
                 );
                 ImGui.PopTextWrapPos();
-                if (ImGui.SmallButton("Cancel save"))
+                if (Widgets.SmallButton("Cancel save"))
                     _savePendingPath = null;
             }
 
@@ -57,15 +55,18 @@ namespace PlayerViewer.UI
                 Widgets.ErrorText("Save failed: " + r.Error);
             else
             {
-                Widgets.SuccessText(System.IO.Path.GetFileName(r.Path));
-                Widgets.DimText(Summary(r));
+                //Name and time; what went into the file is the tooltip.
+                Widgets.SuccessText(
+                    $"{System.IO.Path.GetFileName(r.Path)}, saved {_saveReportTime:HH:mm}"
+                );
+                Widgets.ItemTooltip(Summary(r));
                 if (r.VerifyFailed > 0)
                     Widgets.ErrorText($"{r.VerifyFailed} material pass(es) do not resolve");
             }
 
             if (r.Problems.Count > 0)
             {
-                if (ImGui.SmallButton(_saveProblemsOpen ? "Hide details" : "Details"))
+                if (Widgets.SmallButton(_saveProblemsOpen ? "Hide details" : "Details"))
                     _saveProblemsOpen = !_saveProblemsOpen;
                 ImGui.SameLine();
                 Widgets.ErrorText($"{r.Problems.Count} problem(s)");
@@ -118,6 +119,16 @@ namespace PlayerViewer.UI
             );
             if (string.IsNullOrEmpty(path))
                 return;
+            SaveStandaloneTo(path);
+        }
+
+        /// <summary>The save after the dialog: the name completed, then written once the queue allows.</summary>
+        void SaveStandaloneTo(string path)
+        {
+            _saveReport = null;
+            if (_standalone?.Bfres == null)
+                return;
+            EnsureUberContext();
             if (
                 path.EndsWith(".zs", StringComparison.OrdinalIgnoreCase)
                 && !path.EndsWith(".bfres.zs", StringComparison.OrdinalIgnoreCase)
@@ -164,6 +175,17 @@ namespace PlayerViewer.UI
 
         void WriteStandalone(string path)
         {
+            (Action Undo, string Note) meta = (null, null);
+            try
+            {
+                meta = EmbedProvenance(_standalone.Bfres.ResFile);
+            }
+            catch (Exception ex)
+            {
+                meta.Note = "physics metadata not written: " + ex.Message;
+                Console.WriteLine($"[Meta] {ex}");
+            }
+            _saveReportTime = DateTime.Now;
             _saveReport = ModelBundle.Save(
                 _standalone.Bfres,
                 path,
@@ -172,6 +194,10 @@ namespace PlayerViewer.UI
                 Textures
             );
             _saveProblemsOpen = _saveReport.VerifyFailed > 0 || !_saveReport.Ok;
+            if (!_saveReport.Ok)
+                meta.Undo?.Invoke();
+            else if (meta.Note != null)
+                _saveReport.Notes.Add(meta.Note);
 
             var r = _saveReport;
             Console.WriteLine(

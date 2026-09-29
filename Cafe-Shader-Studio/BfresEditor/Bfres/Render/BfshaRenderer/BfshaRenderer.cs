@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -343,9 +344,9 @@ namespace BfresEditor
                 shader.SetVector4("extraBlock.selectionColor", new Vector4(1, 1, 0.5f, 0.010f));
 
             //Alpha test emulation appended to decompiled pixel shaders.
-            shader.SetBool("css_alphaTest", bfresMaterial.BlendState.AlphaTest);
+            shader.SetIntCached("css_alphaTest", bfresMaterial.BlendState.AlphaTest ? 1 : 0);
             shader.SetFloat("css_alphaRef", bfresMaterial.BlendState.AlphaValue);
-            shader.SetInt("css_alphaFunc", BfresMaterialAsset.GetAlphaFunc(bfresMaterial.BlendState.AlphaFunction));
+            shader.SetIntCached("css_alphaFunc", BfresMaterialAsset.GetAlphaFunc(bfresMaterial.BlendState.AlphaFunction));
 
             //Set material raster state and texture samplers
             SetBlendState(bfresMaterial);
@@ -366,12 +367,23 @@ namespace BfresEditor
                 if (fragLocation == -1 && vertLocation == -1)
                     continue;
 
-                var shaderBlock = GetBlock(name + "vs", false);
+                var shaderBlock = GetBlock(name + "vs", false, IsFrameBlock(name));
 
-                //If a block is not cached, update it in the render loop.
+                //If a block is not cached, update it in the render loop, unless it was already
+                //built in this render or pass and depends on nothing that changed since.
                 if (!BlocksToCache.Contains(name)) {
-                    shaderBlock.Buffer.Clear();
-                    LoadUniformBlock(control, shader, i, shaderBlock, name, mesh);
+                    long epoch = BlockLifetime(name) switch
+                    {
+                        BlockReuse.Render => RenderEpoch,
+                        BlockReuse.Pass => PassEpoch,
+                        _ => 0,
+                    };
+                    if (epoch == 0 || shaderBlock.Epoch != epoch)
+                    {
+                        shaderBlock.Buffer.Clear();
+                        LoadUniformBlock(control, shader, i, shaderBlock, name, mesh);
+                        shaderBlock.Epoch = epoch;
+                    }
                 }
 
                 RenderBlock(shaderBlock, programID, vertLocation, fragLocation, binding++);
@@ -676,57 +688,86 @@ namespace BfresEditor
             block.Buffer.AddRange(mem.ToArray());
         }
 
+        //The material block as it is built, before it is copied into the uniform block.
+        byte[] _materialScratch = Array.Empty<byte>();
+
         /// <summary>
-        /// A helper method to set a material parameter block layout.
+        /// A helper method to set a material parameter block layout: each parameter at its
+        /// program offset, the block as long as the last one written.
         /// </summary>
         public virtual void SetMaterialBlock(FMAT mat, UniformBlock block)
         {
-            //Fill the buffer by program offsets
-            var mem = new System.IO.MemoryStream();
-            using (var writer = new Toolbox.Core.IO.FileWriter(mem))
+            var layout = GetLayout(BfshaLibrary.UniformBlock.BlockType.Material);
+            if (_materialScratch.Length < layout.Size)
+                _materialScratch = new byte[layout.Size];
+            Array.Clear(_materialScratch);
+            int end = 0;
+
+            Span<float> m = stackalloc float[12];
+            bool animated = mat.AnimatedParams.Count > 0;
+            foreach (var pair in mat.ShaderParams)
             {
-                writer.SeekBegin(0);
-                var matBlock = ShaderModel.UniformBlocks.Values.FirstOrDefault(x =>
-                    x.Type == BfshaLibrary.UniformBlock.BlockType.Material);
+                if (!layout.Offsets.TryGetValue(pair.Key, out int offset))
+                    continue;
+                var matParam = pair.Value;
+                if (animated && mat.AnimatedParams.TryGetValue(pair.Key, out var anim))
+                    matParam = anim;
 
-                int index = 0;
-                foreach (var param in matBlock.Uniforms.Values)
+                if (matParam.Type == BfresLibrary.ShaderParamType.TexSrtEx) //Texture matrix (texmtx)
                 {
-                    var uniformName = matBlock.Uniforms.GetKey(index++);
-
-                    writer.SeekBegin(param.Offset - 1);
-                    if (mat.ShaderParams.ContainsKey(uniformName))
-                    {
-                        var matParam = mat.ShaderParams[uniformName];
-                        if (mat.AnimatedParams.ContainsKey(uniformName))
-                            matParam = mat.AnimatedParams[uniformName];
-
-                        if (matParam.Type == BfresLibrary.ShaderParamType.TexSrtEx) //Texture matrix (texmtx)
-                            writer.Write(CalculateSRT3x4((BfresLibrary.TexSrt)matParam.DataValue));
-                        else if (matParam.Type == BfresLibrary.ShaderParamType.TexSrt)
-                            writer.Write(CalculateSRT2x3((BfresLibrary.TexSrt)matParam.DataValue));
-                        else if (matParam.DataValue is BfresLibrary.Srt2D) //Indirect SRT (ind_texmtx)
-                            writer.Write(CalculateSRT((BfresLibrary.Srt2D)matParam.DataValue));
-                        else if (matParam.DataValue is float)
-                            writer.Write((float)matParam.DataValue);
-                        else if (matParam.DataValue is float[])
-                            writer.Write((float[])matParam.DataValue);
-                        else if (matParam.DataValue is int[])
-                            writer.Write((int[])matParam.DataValue);
-                        else if (matParam.DataValue is uint[])
-                            writer.Write((uint[])matParam.DataValue);
-                        else if (matParam.DataValue is int)
-                            writer.Write((int)matParam.DataValue);
-                        else if (matParam.DataValue is uint)
-                            writer.Write((uint)matParam.DataValue);
-                        else
-                            throw new Exception($"Unsupported render type! {matParam.Type}");
-                    }
+                    CalculateSRT3x4((BfresLibrary.TexSrt)matParam.DataValue, m);
+                    WriteFloats(ref end, offset, m.Slice(0, 12));
                 }
+                else if (matParam.Type == BfresLibrary.ShaderParamType.TexSrt)
+                {
+                    CalculateSRT2x3((BfresLibrary.TexSrt)matParam.DataValue, m);
+                    WriteFloats(ref end, offset, m.Slice(0, 8));
+                }
+                else if (matParam.DataValue is BfresLibrary.Srt2D srt) //Indirect SRT (ind_texmtx)
+                {
+                    CalculateSRT(srt, m);
+                    WriteFloats(ref end, offset, m.Slice(0, 8));
+                }
+                else if (matParam.DataValue is float f)
+                    BinaryPrimitives.WriteSingleLittleEndian(MaterialSlot(ref end, offset, 4), f);
+                else if (matParam.DataValue is float[] floats)
+                    WriteFloats(ref end, offset, floats);
+                else if (matParam.DataValue is int[] ints)
+                {
+                    for (int i = 0; i < ints.Length; i++)
+                        BinaryPrimitives.WriteInt32LittleEndian(MaterialSlot(ref end, offset + i * 4, 4), ints[i]);
+                }
+                else if (matParam.DataValue is uint[] uints)
+                {
+                    for (int i = 0; i < uints.Length; i++)
+                        BinaryPrimitives.WriteUInt32LittleEndian(MaterialSlot(ref end, offset + i * 4, 4), uints[i]);
+                }
+                else if (matParam.DataValue is int n)
+                    BinaryPrimitives.WriteInt32LittleEndian(MaterialSlot(ref end, offset, 4), n);
+                else if (matParam.DataValue is uint u)
+                    BinaryPrimitives.WriteUInt32LittleEndian(MaterialSlot(ref end, offset, 4), u);
+                else
+                    throw new Exception($"Unsupported render type! {matParam.Type}");
             }
 
-            block.Buffer.Clear();
-            block.Buffer.AddRange(mem.ToArray());
+            block.SetData(_materialScratch.AsSpan(0, end), end);
+        }
+
+        //The scratch bytes for a value at offset, grown if a value runs past the block.
+        Span<byte> MaterialSlot(ref int end, int offset, int length)
+        {
+            int need = offset + length;
+            if (need > _materialScratch.Length)
+                Array.Resize(ref _materialScratch, need);
+            end = Math.Max(end, need);
+            return _materialScratch.AsSpan(offset, length);
+        }
+
+        void WriteFloats(ref int end, int offset, ReadOnlySpan<float> values)
+        {
+            var slot = MaterialSlot(ref end, offset, values.Length * 4);
+            for (int i = 0; i < values.Length; i++)
+                BinaryPrimitives.WriteSingleLittleEndian(slot.Slice(i * 4), values[i]);
         }
 
         public override void SetTextureUniforms(GLContext control, ShaderProgram shader, STGenericMaterial mat)
@@ -817,35 +858,106 @@ namespace BfresEditor
         private void RenderBlock(UniformBlock block, int programID, int vertexLocation, int fragmentLocation, int binding)
         {
             if (vertexLocation != -1)
-                block.RenderBuffer(programID, IsSwitch ? $"_vp_c{vertexLocation + 3}" : $"vp_{vertexLocation}", binding);
+                block.RenderBuffer(programID, BlockName(vertexLocation, true), binding);
 
             if (fragmentLocation != -1)
-                block.RenderBuffer(programID, IsSwitch ? $"_fp_c{fragmentLocation + 3}" : $"fp_{fragmentLocation}", binding);
+                block.RenderBuffer(programID, BlockName(fragmentLocation, false), binding);
         }
 
-        private UniformBlock GetBlock(string name, bool reset = true)
+        //The program's name for a block location, built once rather than per draw.
+        static readonly Dictionary<(int, bool, bool), string> _blockNames = new Dictionary<(int, bool, bool), string>();
+
+        string BlockName(int location, bool vertex)
         {
-            if (!UniformBlocks.ContainsKey(name))  {
-                UniformBlocks.Add(name, new UniformBlock());
+            if (!_blockNames.TryGetValue((location, vertex, IsSwitch), out var name))
+            {
+                name = IsSwitch
+                    ? (vertex ? $"_vp_c{location + 3}" : $"_fp_c{location + 3}")
+                    : (vertex ? $"vp_{location}" : $"fp_{location}");
+                _blockNames[(location, vertex, IsSwitch)] = name;
             }
+            return name;
+        }
+
+        //Blocks holding this material's own data, so one that has not changed is not uploaded
+        //again. Blocks every material fills alike stay in the shared UniformBlocks.
+        readonly Dictionary<string, UniformBlock> _ownBlocks = new Dictionary<string, UniformBlock>();
+
+        /// <summary>Whether a block holds the same data for every material, such as the camera or environment.</summary>
+        protected virtual bool IsFrameBlock(string name) => false;
+
+        /// <summary>How long a block's contents stay valid once built.</summary>
+        protected enum BlockReuse
+        {
+            //Rebuilt for every draw, as anything mesh dependent must be.
+            Draw,
+            //The same for the whole scene render: material data.
+            Render,
+            //The same for one pass: the camera and the frame's shared inputs.
+            Pass,
+        }
+
+        protected virtual BlockReuse BlockLifetime(string name) => BlockReuse.Draw;
+
+        private UniformBlock GetBlock(string name, bool reset = true, bool shared = false)
+        {
+            var blocks = shared ? UniformBlocks : _ownBlocks;
+            if (!blocks.TryGetValue(name, out var block))
+                blocks.Add(name, block = new UniformBlock());
 
             if (reset)
-                UniformBlocks[name].Buffer.Clear();
-            return UniformBlocks[name];
+                block.Buffer.Clear();
+            return block;
         }
 
-        private float[] CalculateSRT3x4(BfresLibrary.TexSrt texSrt)
+        /// <summary>A uniform block's size and each uniform's byte offset.</summary>
+        protected sealed class BlockLayout
         {
-            var m = CalculateSRT2x3(texSrt);
-            return new float[12]
-            {
-                m[0], m[2], m[4], 0.0f,
-                m[1], m[3], m[5], 0.0f,
-                0.0f, 0.0f, 1.0f, 0.0f,
-            };
+            public int Size;
+            public readonly Dictionary<string, int> Offsets = new Dictionary<string, int>();
         }
 
-        private float[] CalculateSRT2x3(BfresLibrary.TexSrt texSrt)
+        //Per shader model, the layout of each block by index.
+        static readonly System.Runtime.CompilerServices.ConditionalWeakTable<BfshaLibrary.ShaderModel, BlockLayout[]> _layouts =
+            new System.Runtime.CompilerServices.ConditionalWeakTable<BfshaLibrary.ShaderModel, BlockLayout[]>();
+
+        /// <summary>The layout of the uniform block at <paramref name="index"/> in the current shader model.</summary>
+        protected BlockLayout GetLayout(int index) => _layouts.GetValue(ShaderModel, BuildLayouts)[index];
+
+        /// <summary>The layout of the first block of <paramref name="type"/>, or null when there is none.</summary>
+        protected BlockLayout GetLayout(BfshaLibrary.UniformBlock.BlockType type)
+        {
+            for (int i = 0; i < ShaderModel.UniformBlocks.Count; i++)
+                if (ShaderModel.UniformBlocks[i].Type == type)
+                    return GetLayout(i);
+            return null;
+        }
+
+        static BlockLayout[] BuildLayouts(BfshaLibrary.ShaderModel model)
+        {
+            var layouts = new BlockLayout[model.UniformBlocks.Count];
+            for (int i = 0; i < layouts.Length; i++)
+            {
+                var block = model.UniformBlocks[i];
+                var layout = new BlockLayout { Size = block.Size };
+                int index = 0;
+                foreach (var param in block.Uniforms.Values)
+                    layout.Offsets[block.Uniforms.GetKey(index++)] = param.Offset - 1;
+                layouts[i] = layout;
+            }
+            return layouts;
+        }
+
+        private static void CalculateSRT3x4(BfresLibrary.TexSrt texSrt, Span<float> m)
+        {
+            Span<float> t = stackalloc float[8];
+            CalculateSRT2x3(texSrt, t);
+            m[0] = t[0]; m[1] = t[2]; m[2] = t[4]; m[3] = 0.0f;
+            m[4] = t[1]; m[5] = t[3]; m[6] = t[5]; m[7] = 0.0f;
+            m[8] = 0.0f; m[9] = 0.0f; m[10] = 1.0f; m[11] = 0.0f;
+        }
+
+        private static void CalculateSRT2x3(BfresLibrary.TexSrt texSrt, Span<float> m)
         {
             var scaling = texSrt.Scaling;
             var translate = texSrt.Translation;
@@ -860,46 +972,47 @@ namespace BfresEditor
             {
                 default:
                 case BfresLibrary.TexSrtMode.ModeMaya:
-                    return new float[8]
-                    {
-                        scalingXC, -scalingYS,
-                        scalingXS, scalingYC,
-                        -0.5f * (scalingXC + scalingXS - scaling.X) - scaling.X * translate.X, -0.5f * (scalingYC - scalingYS + scaling.Y) + scaling.Y * translate.Y + 1.0f,
-                        0.0f, 0.0f,
-                    };
+                    m[0] = scalingXC; m[1] = -scalingYS;
+                    m[2] = scalingXS; m[3] = scalingYC;
+                    m[4] = -0.5f * (scalingXC + scalingXS - scaling.X) - scaling.X * translate.X;
+                    m[5] = -0.5f * (scalingYC - scalingYS + scaling.Y) + scaling.Y * translate.Y + 1.0f;
+                    break;
                 case BfresLibrary.TexSrtMode.Mode3dsMax:
-                    return new float[8]
-                    {
-                        scalingXC, -scalingYS,
-                        scalingXS, scalingYC,
-                        -scalingXC * (translate.X + 0.5f) + scalingXS * (translate.Y - 0.5f) + 0.5f, scalingYS * (translate.X + 0.5f) + scalingYC * (translate.Y - 0.5f) + 0.5f,
-                        0.0f, 0.0f
-                    };
+                    m[0] = scalingXC; m[1] = -scalingYS;
+                    m[2] = scalingXS; m[3] = scalingYC;
+                    m[4] = -scalingXC * (translate.X + 0.5f) + scalingXS * (translate.Y - 0.5f) + 0.5f;
+                    m[5] = scalingYS * (translate.X + 0.5f) + scalingYC * (translate.Y - 0.5f) + 0.5f;
+                    break;
                 case BfresLibrary.TexSrtMode.ModeSoftimage:
-                    return new float[8]
-                    {
-                        scalingXC, scalingYS,
-                        -scalingXS, scalingYC,
-                        scalingXS - scalingXC * translate.X - scalingXS * translate.Y, -scalingYC - scalingYS * translate.X + scalingYC * translate.Y + 1.0f,
-                        0.0f, 0.0f,
-                    };
+                    m[0] = scalingXC; m[1] = scalingYS;
+                    m[2] = -scalingXS; m[3] = scalingYC;
+                    m[4] = scalingXS - scalingXC * translate.X - scalingXS * translate.Y;
+                    m[5] = -scalingYC - scalingYS * translate.X + scalingYC * translate.Y + 1.0f;
+                    break;
             }
+            m[6] = 0.0f; m[7] = 0.0f;
         }
 
-        private float[] CalculateSRT(BfresLibrary.Srt2D texSrt)
+        private static void CalculateSRT(BfresLibrary.Srt2D texSrt, Span<float> m)
         {
             var scaling = texSrt.Scaling;
             var translate = texSrt.Translation;
             float cosR = (float)Math.Cos(texSrt.Rotation);
             float sinR = (float)Math.Sin(texSrt.Rotation);
 
-            return new float[8]
-            {
-                scaling.X * cosR, scaling.X * sinR,
-                -scaling.Y * sinR, scaling.Y * cosR,
-                translate.X, translate.Y,
-                0.0f, 0.0f
-            };
+            m[0] = scaling.X * cosR; m[1] = scaling.X * sinR;
+            m[2] = -scaling.Y * sinR; m[3] = scaling.Y * cosR;
+            m[4] = translate.X; m[5] = translate.Y;
+            m[6] = 0.0f; m[7] = 0.0f;
+        }
+
+        static readonly Dictionary<(int, bool, bool), string> _samplerNames = new Dictionary<(int, bool, bool), string>();
+
+        protected string SamplerName(int id, bool vertexShader)
+        {
+            if (!_samplerNames.TryGetValue((id, vertexShader, IsSwitch), out var name))
+                _samplerNames[(id, vertexShader, IsSwitch)] = name = ConvertSamplerID(id, vertexShader);
+            return name;
         }
 
         public string ConvertSamplerID(int id, bool vertexShader = false)
@@ -921,8 +1034,11 @@ namespace BfresEditor
         {
             foreach (var block in UniformBlocks.Values)
                 block.Dispose();
+            foreach (var block in _ownBlocks.Values)
+                block.Dispose();
 
             UniformBlocks.Clear();
+            _ownBlocks.Clear();
             ReleasePrograms();
         }
     }

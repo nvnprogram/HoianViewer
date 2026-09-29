@@ -1,6 +1,6 @@
 # HoianViewer
 
-Standalone(as in, a separate exe, not part of the game) Splatoon 3 player viewer (and other models viewer), aiming to replicate Splatoon 3's PlayerCustomPart/Mgr stuff and rendering. You can see (almost exactly - there may be some bugs) how your player mods look like in game, or in general make promo-like player renders. You can also edit materials of Splatoon 3 models and generate brand new shader variations for them while previewing your changes live.
+Standalone(as in, a separate exe, not part of the game) Splatoon 3 player viewer (and other models viewer), aiming to replicate Splatoon 3's PlayerCustomPart/Mgr stuff and rendering. You can see (almost exactly - there may be some bugs) how your player mods look like in game, or in general make promo-like player renders. You can also edit materials of Splatoon 3 models and generate brand new shader variations for them while previewing your changes live. You can also create brand new Phive Cloth Collisions (intended for hair physics) with Physics Editor.
 
 ## Building
 
@@ -59,6 +59,10 @@ You can drag `.bfres` or `.bfres.zs` files onto the viewer window to open them a
 
 **Material Editor**: Edit models' materials and textures with a live preview, and for materials, you are able to generate brand new shader variations, embedding the bfsha directly within the model file.
 
+**Physics Editor**: Create new Phive Clothes (primarily intended for hair). Use “save to romfs mod dir” option, which saves both the actor pack and model to the selected directory in layeredfs layout.
+
+**Effect Viewer**: Visualize ptcl/vfx files from the game (actually rendered like ingame).
+
 ## Project layout
 
 ```
@@ -72,11 +76,11 @@ Library/Gsys/                  shared shaderopt derivation
 
 ## Credits
 
-The viewer itself, Splatoon 3 Renderer, Mat Editor, UberSlicer etc etc by [nvnprogram](https://github.com/nvnprogram).
+The viewer itself, Splatoon 3 Renderer, Mat Editor, UberSlicer, Effect Viewer, Phive Cloth Editor etc etc by [nvnprogram](https://github.com/nvnprogram).
 
 Various features (supersampler, anim loop export, etc) & CI by [AstroOrbis](https://github.com/AstroOrbis).
 
-Original versions of Cafe Shader Studio, ShaderLibrary & BfresLibrary by [KillzXGaming](https://github.com/killzxgaming).
+Original versions of Cafe Shader Studio, ShaderLibrary & BfresLibrary, plus reference for Effect formats by [KillzXGaming](https://github.com/killzxgaming).
 
 Base reference for loading the bphcl file (+ some bugfixes) by [RAMDRAGONS](https://github.com/RAMDRAGONS)
 

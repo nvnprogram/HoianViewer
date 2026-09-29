@@ -34,12 +34,18 @@ namespace PlayerViewer.Core
         public string ActorName = ""; //Actor pack name (weapons: from GameActor/SpecActor)
         public string Genre = ""; //Gear rows: Genre0 (Head_Cap, Shoes_Boots, ...) for foldering
 
+        public string LocalizedName; //The game's name in the chosen language, null without one
+        public string IconRowId; //Row whose icon stands in when this one has none, else null
+
+        /// <summary>The localized name when there is one, else the row id.</summary>
+        public string Name => LocalizedName ?? RowId;
+
         /// <summary>Display name for UI lists.</summary>
         public string DisplayName
         {
             get
             {
-                string name = RowId;
+                string name = Name;
                 if (Variation > 0)
                     name += $" (v{Variation})";
                 if (IsCustom)
@@ -56,6 +62,10 @@ namespace PlayerViewer.Core
         public System.Numerics.Vector3 Bravo;
         public System.Numerics.Vector3 Charlie;
         public System.Numerics.Vector3 Neutral;
+
+        /// <summary>The set's hue settings for Alpha, Bravo and Charlie.</summary>
+        public BfresEditor.TeamColorVariants.HueOffset[] Hue =
+            new BfresEditor.TeamColorVariants.HueOffset[3];
     }
 
     /// <summary>
@@ -76,6 +86,9 @@ namespace PlayerViewer.Core
         public List<GearEntry> MainWeapons = new();
         public List<GearEntry> SpecialWeapons = new();
         public List<TeamColorSet> TeamColors = new();
+
+        /// <summary>TeamColorOffset rows by name, or null when the romfs has no table.</summary>
+        public Dictionary<string, BfresEditor.TeamColorVariants.Offset> TeamColorOffsets;
 
         //RowId -> raw RSDB row for extra fields (HarnessType, AlphaMaskF/M/V1 etc)
         public Dictionary<string, Dictionary<string, object>> HeadRows = new();
@@ -128,16 +141,15 @@ namespace PlayerViewer.Core
             LoadWeaponTable("WeaponInfoMain", GearSlot.MainWeapon, MainWeapons);
             LoadWeaponTable("WeaponInfoSpecial", GearSlot.SpecialWeapon, SpecialWeapons);
             LoadTeamColors();
+            LoadTeamColorOffsets();
         }
 
         List<object> ReadTable(string table)
         {
-            //Version prefix (b20 etc) may change between game versions, and a layered
-            //mod may override the table; FindFiles handles both (layered wins).
-            var file = Romfs.FindFiles("RSDB", $"{table}.Product.*.rstbl.byml*").LastOrDefault();
-            if (file == null)
+            var data = Romfs.ReadProduct("RSDB", table, "rstbl.byml*");
+            if (data == null)
                 return new List<object>();
-            var byml = new Byml(Romfs.Decompress(File.ReadAllBytes(file)));
+            var byml = new Byml(data);
             return byml?.Root as List<object> ?? new List<object>();
         }
 
@@ -189,10 +201,10 @@ namespace PlayerViewer.Core
         /// </summary>
         void LoadHairTags()
         {
-            var file = Romfs.FindFiles("RSDB", "Tag.Product.*.rstbl.byml*").LastOrDefault();
-            if (file == null)
+            var data = Romfs.ReadProduct("RSDB", "Tag", "rstbl.byml*");
+            if (data == null)
                 return;
-            var root = Byml.AsHash(new Byml(Romfs.Decompress(File.ReadAllBytes(file))).Root);
+            var root = Byml.AsHash(new Byml(data).Root);
             if (
                 root == null
                 || root.GetValueOrDefault("TagList") is not List<object> tags
@@ -249,6 +261,8 @@ namespace PlayerViewer.Core
 
         void LoadWeaponTable(string table, GearSlot slot, List<GearEntry> target)
         {
+            //Use versus icons for coop weapons
+            var coopOf = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var row in ReadTable(table).OfType<Dictionary<string, object>>())
             {
                 string rowId = Byml.GetString(row, "__RowId");
@@ -264,6 +278,11 @@ namespace PlayerViewer.Core
                 if (actorDot >= 0)
                     actorName = actorName.Substring(0, actorDot);
 
+                string coop = Path.GetFileName(Byml.GetString(row, "WeaponInfoForCoop") ?? "");
+                int coopDot = coop.IndexOf('.');
+                if (coopDot > 0)
+                    coopOf.TryAdd(coop.Substring(0, coopDot), rowId);
+
                 target.Add(
                     new GearEntry
                     {
@@ -276,6 +295,9 @@ namespace PlayerViewer.Core
                     }
                 );
             }
+            foreach (var entry in target)
+                if (coopOf.TryGetValue(entry.RowId, out var versus))
+                    entry.IconRowId = versus;
             target.Sort(
                 (a, b) => string.Compare(a.RowId, b.RowId, StringComparison.OrdinalIgnoreCase)
             );
@@ -307,6 +329,27 @@ namespace PlayerViewer.Core
                         );
                 }
 
+                //The game zeroes every team's hue settings when HueOffsetEnable is off, and a
+                //team's detail flag replaces its HueOffset.
+                BfresEditor.TeamColorVariants.HueOffset ReadHue(string team)
+                {
+                    if (!Byml.GetBool(row, "HueOffsetEnable"))
+                        return default;
+                    if (Byml.GetBool(row, team + "HueOffsetDetailEnable"))
+                        return new BfresEditor.TeamColorVariants.HueOffset(
+                            true,
+                            0f,
+                            Byml.GetFloat(row, team + "HueOffsetDetailBright"),
+                            Byml.GetFloat(row, team + "HueOffsetDetailDark")
+                        );
+                    return new BfresEditor.TeamColorVariants.HueOffset(
+                        false,
+                        Byml.GetFloat(row, team + "HueOffset"),
+                        0f,
+                        0f
+                    );
+                }
+
                 TeamColors.Add(
                     new TeamColorSet
                     {
@@ -315,12 +358,33 @@ namespace PlayerViewer.Core
                         Bravo = ReadColor("BravoTeamColor"),
                         Charlie = ReadColor("CharlieTeamColor"),
                         Neutral = ReadColor("NeutralColor"),
+                        Hue = new[] { ReadHue("Alpha"), ReadHue("Bravo"), ReadHue("Charlie") },
                     }
                 );
             }
             TeamColors.Sort(
                 (a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase)
             );
+        }
+
+        void LoadTeamColorOffsets()
+        {
+            var offsets = new Dictionary<string, BfresEditor.TeamColorVariants.Offset>();
+            foreach (var row in ReadTable("TeamColorOffset").OfType<Dictionary<string, object>>())
+            {
+                //RowId looks like Work/Gyml/<Name>.game__gfx__parameter__TeamColorOffset.gyml
+                string name = Byml.GetString(row, "__RowId");
+                name = name.Substring(name.LastIndexOf('/') + 1);
+                int dot = name.IndexOf('.');
+                if (dot >= 0)
+                    name = name.Substring(0, dot);
+                offsets[name] = new BfresEditor.TeamColorVariants.Offset(
+                    Byml.GetFloat(row, "Hue"),
+                    Byml.GetFloat(row, "Saturation"),
+                    Byml.GetFloat(row, "Brightness")
+                );
+            }
+            TeamColorOffsets = offsets.Count > 0 ? offsets : null;
         }
 
         #region model resolution

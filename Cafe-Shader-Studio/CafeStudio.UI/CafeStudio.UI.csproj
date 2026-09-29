@@ -51,4 +51,8 @@
       <HintPath>..\CafeShaderStudio\Lib\TrackStudioLibrary.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup Condition="'$(PublishSingleFile)'=='true' Or '$(NoTestCode)'=='true'">
+    <Compile Remove="**\*.Test.cs" />
+  </ItemGroup>
+
 </Project>

@@ -63,6 +63,9 @@ namespace PlayerViewer
             int openArg = Array.IndexOf(args, "--open");
             if (openArg >= 0 && openArg + 1 < args.Length)
                 window.AutoOpenFile = args[openArg + 1];
+            int setArg = Array.IndexOf(args, "--set");
+            if (setArg >= 0 && setArg + 1 < args.Length)
+                window.AutoOpenSet = args[setArg + 1];
 
             window.Run();
         }

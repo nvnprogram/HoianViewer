@@ -75,8 +75,8 @@ namespace PlayerViewer.UI
         /// <summary>
         /// Called however a dialog ends, including a cancel and an exception. A dialog is
         /// modal and runs its own message loop, so the render loop is stopped for as long as
-        /// it is up, and the input that arrived meanwhile is not input for us: without this,
-        /// scrolling over a save dialog zooms the camera the moment it closes.
+        /// it is up, and the key releases that arrived meanwhile went to the dialog: without this,
+        /// a Ctrl held into a save dialog stays down when it closes.
         /// </summary>
         static void Dismissed() => CafeStudio.UI.ImGuiController.DiscardPendingInput = true;
 

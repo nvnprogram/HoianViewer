@@ -27,8 +27,34 @@ namespace BfresEditor
         /// </summary>
         public bool FirstRenderDone;
 
+        /// <summary>
+        /// Counters a host bumps at the start of each scene render and each pass of it, so blocks
+        /// that do not change within one can be built once. Zero, never bumped, reuses nothing.
+        /// </summary>
+        public static long RenderEpoch, PassEpoch;
+
+        /// <summary>A scene render starts: material data may have changed since the last.</summary>
+        public static void BeginRender()
+        {
+            RenderEpoch++;
+            PassEpoch++;
+        }
+
+        /// <summary>A pass starts: the camera or the frame's shared inputs may have changed.</summary>
+        public static void BeginPass() => PassEpoch++;
+
+        /// <summary>First renders done since startup, which stops rising once a load has settled.</summary>
+        public static int FirstRenders;
+
         static long _firstRenderFrame = -1;
-        static int _firstRenderCount;
+        static long _firstRenderStart;
+        static readonly System.Diagnostics.Stopwatch _firstRenderClock = System.Diagnostics.Stopwatch.StartNew();
+
+        /// <summary>
+        /// How long a frame may spend taking on new programs and first renders. One always
+        /// goes through, so a cold compile still costs one frame and a warm cache fills many.
+        /// </summary>
+        const double FirstRenderBudgetMs = 6;
 
         /// <summary>
         /// Claims a slot in this frame's first-render budget. Returns false when the
@@ -36,15 +62,14 @@ namespace BfresEditor
         /// </summary>
         public static bool TryClaimFirstRenderSlot()
         {
+            long now = _firstRenderClock.ElapsedTicks;
             if (_firstRenderFrame != GLFrameworkEngine.ShaderProgram.FrameStamp)
             {
                 _firstRenderFrame = GLFrameworkEngine.ShaderProgram.FrameStamp;
-                _firstRenderCount = 0;
+                _firstRenderStart = now;
+                return true;
             }
-            if (_firstRenderCount >= 1)
-                return false;
-            _firstRenderCount++;
-            return true;
+            return (now - _firstRenderStart) * 1000.0 / System.Diagnostics.Stopwatch.Frequency < FirstRenderBudgetMs;
         }
 
         /// <summary>

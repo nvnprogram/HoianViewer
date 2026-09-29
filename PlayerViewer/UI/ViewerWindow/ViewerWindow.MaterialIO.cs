@@ -25,14 +25,14 @@ namespace PlayerViewer.UI
 
         void DrawMaterialTransfer(FMAT material)
         {
-            if (ImGui.Button("Export material..."))
+            if (Widgets.Button("Export material..."))
                 ExportMaterial(material);
             Widgets.ItemTooltip(
                 "Writes material.json and a PNG for every texture this material binds into a "
                     + "folder you pick."
             );
             ImGui.SameLine();
-            if (ImGui.Button("Replace material..."))
+            if (Widgets.Button("Replace material..."))
                 StartImportMaterial();
             Widgets.ItemTooltip(
                 "Reads a folder written by Export over THIS material. Its options, render "
@@ -61,7 +61,7 @@ namespace PlayerViewer.UI
         {
             ImGui.Spacing();
             ImGui.PushTextWrapPos();
-            ImGui.TextColored(Theme.Gold, $"Import '{_importFile.Name}' over {material.Name}?");
+            Widgets.ColoredText(Theme.Gold, $"Import '{_importFile.Name}' over {material.Name}?");
             if (_importTextures.Count > 0)
                 Widgets.DimText(
                     $"{_importTextures.Count} texture(s) sit beside it. Bringing them in adds "
@@ -76,17 +76,17 @@ namespace PlayerViewer.UI
 
             if (_importTextures.Count > 0)
             {
-                if (ImGui.Button("Import with textures"))
+                if (Widgets.Button("Import with textures"))
                     FinishImportMaterial(material, true);
                 ImGui.SameLine();
-                if (ImGui.Button("Leave textures unbound"))
+                if (Widgets.Button("Leave textures unbound"))
                     FinishImportMaterial(material, false);
             }
-            else if (ImGui.Button("Import"))
+            else if (Widgets.Button("Import"))
                 FinishImportMaterial(material, false);
 
             ImGui.SameLine();
-            if (ImGui.Button("Cancel##import"))
+            if (Widgets.Button("Cancel##import"))
                 ClearImport();
         }
 

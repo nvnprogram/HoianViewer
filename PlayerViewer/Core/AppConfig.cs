@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using Newtonsoft.Json;
 
 namespace PlayerViewer.Core
@@ -96,11 +97,106 @@ namespace PlayerViewer.Core
         }
     }
 
+    /// <summary>The effect viewer's settings.</summary>
+    public class EffectConfig
+    {
+        //The shortest loop clip a periodic set is given, in seconds.
+        public float MinLoopSeconds = 2f;
+
+        public bool ShowGrid = true;
+        public bool ShowPlayer;
+
+        //Viewport background while an effect is open, sRGB.
+        public float[] Background = { 0.06f, 0.06f, 0.075f };
+
+        //The export clip when it is not the set's loop: start and length in frames.
+        public bool CustomClip;
+        public int ClipStart;
+        public int ClipLength = 300;
+
+        public void Normalize()
+        {
+            MinLoopSeconds = System.Math.Clamp(MinLoopSeconds, 0f, 60f);
+            ClipStart = System.Math.Clamp(ClipStart, 0, 36000);
+            ClipLength = System.Math.Clamp(ClipLength, 1, 36000);
+            if (Background is not { Length: 3 })
+                Background = new[] { 0.06f, 0.06f, 0.075f };
+        }
+    }
+
+    /// <summary>How the window looks: the original ImGui style, or the Side Order look.</summary>
+    public enum InterfaceMode
+    {
+        Classic,
+        SideOrder,
+        SideOrderTitleBar, // Windows only as of now
+    }
+
+    /// <summary>The border Windows 11 draws round the window in the Side Order modes.</summary>
+    public enum WindowOutline
+    {
+        Theme,
+        System,
+    }
+
+    /// <summary>The Side Order look's colour presets.</summary>
+    public enum InterfaceTheme
+    {
+        Light,
+        Dark,
+        YetDarker,
+    }
+
     /// <summary>
     /// Persisted app configuration (romfs paths etc). Stored in the per-user data folder.
     /// </summary>
     public class AppConfig
     {
+        public static InterfaceMode DefaultMode =>
+            OperatingSystem.IsWindows() ? InterfaceMode.SideOrderTitleBar : InterfaceMode.SideOrder;
+
+        //--- Appearance, stored by name so a hand edit or a newer name cannot fail the load.
+        public string UiMode = DefaultMode.ToString();
+        public string UiTheme = nameof(InterfaceTheme.YetDarker);
+        public string UiBorder = nameof(WindowOutline.Theme);
+
+        [JsonIgnore]
+        public InterfaceMode Mode
+        {
+            get => ParseMode(UiMode);
+            set => UiMode = ParseMode(value.ToString()).ToString();
+        }
+
+        [JsonIgnore]
+        public InterfaceTheme Theme
+        {
+            get =>
+                Enum.TryParse(UiTheme, true, out InterfaceTheme t) && Enum.IsDefined(t)
+                    ? t
+                    : InterfaceTheme.YetDarker;
+            set => UiTheme = value.ToString();
+        }
+
+        [JsonIgnore]
+        public WindowOutline Border
+        {
+            get =>
+                Enum.TryParse(UiBorder, true, out WindowOutline b) && Enum.IsDefined(b)
+                    ? b
+                    : WindowOutline.Theme;
+            set => UiBorder = value.ToString();
+        }
+
+        //The title bar mode reads as plain Side Order off Windows.
+        static InterfaceMode ParseMode(string name)
+        {
+            if (!Enum.TryParse(name, true, out InterfaceMode mode) || !Enum.IsDefined(mode))
+                return DefaultMode;
+            return mode == InterfaceMode.SideOrderTitleBar && !OperatingSystem.IsWindows()
+                ? InterfaceMode.SideOrder
+                : mode;
+        }
+
         public string RomfsPath = "";
         public string SdodrRomfsPath = "";
         public string LayeredFsPath = "";
@@ -135,17 +231,26 @@ namespace PlayerViewer.Core
         //clip does not jump when it wraps. Independent of the warm-up above.
         public bool PhysicsConverge = true;
 
+        //--- Lists
+        //Language code of the romfs message archive names come from, or Localization.None.
+        public string Language = Localization.DefaultLanguage;
+
+        //Weapons and gear pick from a grid of tiles rather than a dropdown.
+        public bool GearGrid = true;
+
         //--- Material editor
         //Whether the editor may specialise the ubershader.
         public bool UseSplicer = false;
 
         //--- Capture-panel selections (persisted so they stick between runs)
         public int CaptureResIndex = 2; //index into the resolution dropdown
-        public int ExportFormat = 0; //0 PNG, 1 MP4, 2 WebP, 3 WebM
+        public int ExportFormat = 0; //0 PNG, 1 MP4, 2 WebP, 3 WebM, 4 PNG sequence
         public int ExportFps = 60;
         public int AnimMode = 0; //0 Single, 1 Sequence
 
         public PlayerConfig Player = new();
+
+        public EffectConfig Effect = new();
 
         static string FilePath => Path.Combine(AppPaths.DataDir, "settings.json");
 
@@ -203,8 +308,15 @@ namespace PlayerViewer.Core
                 WindowHeight = 900;
             //Multiplies the render target, so a hand-edited value has to stay in range.
             ExportSupersample = System.Math.Clamp(ExportSupersample, 1, 8);
+            if (string.IsNullOrWhiteSpace(Language))
+                Language = Localization.DefaultLanguage;
+            UiMode = Mode.ToString();
+            UiTheme = Theme.ToString();
+            UiBorder = Border.ToString();
             Player ??= new PlayerConfig();
             Player.Normalize();
+            Effect ??= new EffectConfig();
+            Effect.Normalize();
         }
 
         /// <summary>
@@ -232,23 +344,16 @@ namespace PlayerViewer.Core
 
         void WriteToDisk()
         {
-            string temp = FilePath + ".tmp";
             try
             {
-                File.WriteAllText(temp, JsonConvert.SerializeObject(this, Formatting.Indented));
-                if (File.Exists(FilePath))
-                    File.Replace(temp, FilePath, null);
-                else
-                    File.Move(temp, FilePath);
+                AtomicFile.Write(
+                    FilePath,
+                    Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(this, Formatting.Indented))
+                );
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"[Config] Failed to save: {ex.Message}");
-                try
-                {
-                    File.Delete(temp);
-                }
-                catch { }
             }
         }
     }

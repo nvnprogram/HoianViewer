@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using ImGuiNET;
 using PlayerViewer.Core;
+using PlayerViewer.Icons;
 using Vector2 = System.Numerics.Vector2;
 using Vector4 = System.Numerics.Vector4;
 
@@ -20,68 +21,63 @@ namespace PlayerViewer.UI
             "Octoling Boy (Player03)",
         };
 
-        static readonly string[] UniformSetLabels = { "Viewer", "AutoWalk" };
-        static readonly string[] UniformSetDirs = { "SPL3", "SPL3_AutoWalk" };
-
         void DrawPlayerPanel()
         {
             Widgets.SectionHeader("Player");
 
-            if (ImGui.Button("Reset", new Vector2(-1, 0)))
+            if (Widgets.Button("Reset", new Vector2(-1, 0)))
                 ResetPlayerDefaults();
 
             float half = (ImGui.GetContentRegionAvail().X - ImGui.GetStyle().ItemSpacing.X) * 0.5f;
-            if (ImGui.Button("Save preset", new Vector2(half, 0)))
+            if (Widgets.Button("Save preset", new Vector2(half, 0)))
                 SavePreset();
             ImGui.SameLine();
-            if (ImGui.Button("Load preset", new Vector2(half, 0)))
+            if (Widgets.Button("Load preset", new Vector2(half, 0)))
                 LoadPreset();
             if (!string.IsNullOrEmpty(_presetStatus))
                 Widgets.DimText(_presetStatus);
 
-            int playerType = _scene.PlayerType;
-            ImGui.SetNextItemWidth(-1);
-            if (ImGui.Combo("##playertype", ref playerType, PlayerTypes, PlayerTypes.Length))
-            {
-                _scene.SetPlayerType(playerType);
-                ApplyTeamColor();
-                SavePlayerConfig();
-            }
+            DrawPlayerTypeCombo();
 
             GearRow("Hair", GearSlot.Hair, _scene.CurrentHair);
             GearRow("Eyebrow", GearSlot.Eyebrow, _scene.CurrentEyebrow);
 
-            Widgets.LabeledRow(
-                "Eyes",
-                () =>
-                {
-                    ImGui.SetNextItemWidth(-1);
-                    Widgets.SliderInt(
-                        "##eye",
-                        _scene.EyeColor,
-                        0,
-                        20,
-                        v => _scene.ApplyEyeColor(v),
-                        SavePlayerConfig
-                    );
-                }
-            );
+            if (Icons != null)
+                DrawColorSwatches();
+            else
+            {
+                Widgets.LabeledRow(
+                    "Eyes",
+                    () =>
+                    {
+                        ImGui.SetNextItemWidth(-1);
+                        Widgets.SliderInt(
+                            "##eye",
+                            _scene.EyeColor,
+                            0,
+                            EyeColorCount - 1,
+                            v => _scene.ApplyEyeColor(v),
+                            SavePlayerConfig
+                        );
+                    }
+                );
 
-            Widgets.LabeledRow(
-                "Skin",
-                () =>
-                {
-                    ImGui.SetNextItemWidth(-1);
-                    Widgets.SliderInt(
-                        "##skin",
-                        _scene.SkinTone,
-                        0,
-                        8,
-                        v => _scene.ApplySkinTone(v),
-                        SavePlayerConfig
-                    );
-                }
-            );
+                Widgets.LabeledRow(
+                    "Skin",
+                    () =>
+                    {
+                        ImGui.SetNextItemWidth(-1);
+                        Widgets.SliderInt(
+                            "##skin",
+                            _scene.SkinTone,
+                            0,
+                            SkinToneCount - 1,
+                            v => _scene.ApplySkinTone(v),
+                            SavePlayerConfig
+                        );
+                    }
+                );
+            }
 
             Widgets.Checkbox(
                 "Hair physics",
@@ -114,7 +110,7 @@ namespace PlayerViewer.UI
         void DrawViewSection()
         {
             Widgets.SectionHeader("View");
-            if (ImGui.Button("Reset camera", new Vector2(-1, 0)))
+            if (Widgets.Button("Reset camera", new Vector2(-1, 0)))
             {
                 if (_standalone != null)
                     _pipeline.FrameSphere(_standalone.GetBounding());
@@ -127,31 +123,9 @@ namespace PlayerViewer.UI
                 _pipeline.EnableSelfShadow,
                 v => _pipeline.EnableSelfShadow = v
             );
-            Widgets.ItemTooltip("Game-accurate self shadowing (gsys_shadow_prepass).");
+            Widgets.ItemTooltip("The game's self shadowing.");
 
-            int setIdx = Math.Max(
-                Array.IndexOf(UniformSetDirs, BfresEditor.HoianNXRender.UniformSetDir),
-                0
-            );
-            Widgets.LabeledRow(
-                "Env",
-                () =>
-                {
-                    ImGui.SetNextItemWidth(-1);
-                    if (
-                        ImGui.Combo(
-                            "##uniset",
-                            ref setIdx,
-                            UniformSetLabels,
-                            UniformSetLabels.Length
-                        )
-                    )
-                    {
-                        BfresEditor.HoianNXRender.SetUniformSet(UniformSetDirs[setIdx]);
-                        ApplyTeamColor();
-                    }
-                }
-            );
+            DrawEnvironmentRows();
 
             //Background (mode/color/image) lives on the preset; folded in here on the left.
             DrawBackgroundSection();
@@ -160,7 +134,7 @@ namespace PlayerViewer.UI
         void DrawLightingSection()
         {
             Widgets.SectionHeader("Lighting");
-            if (ImGui.Button("Reset lighting", new Vector2(-1, 0)))
+            if (Widgets.Button("Reset lighting", new Vector2(-1, 0)))
                 _pipeline.ResetLighting();
             Widgets.Checkbox(
                 "Light follows camera",
@@ -208,7 +182,7 @@ namespace PlayerViewer.UI
             var colorSet = _db.TeamColors.ElementAtOrDefault(_teamColorIndex);
             ImGui.SetNextItemWidth(-1);
             string teamPreview = _useCustomTeamColor ? "Custom" : colorSet?.Name ?? "(default)";
-            if (ImGui.BeginCombo("##teamcolor", teamPreview))
+            if (Widgets.BeginCombo("##teamcolor", teamPreview))
             {
                 //"Custom" is row 0, freely picked colors instead of an RSDB set, so the sets
                 //sit one row further down than their own index.
@@ -247,15 +221,11 @@ namespace PlayerViewer.UI
                 var a = _customTeam.Alpha;
                 var b = _customTeam.Bravo;
                 var c = _customTeam.Charlie;
-                custChanged |= ImGui.ColorEdit3("Alpha##cust", ref a, ImGuiColorEditFlags.NoInputs);
-                ImGui.SameLine();
-                custChanged |= ImGui.ColorEdit3("Bravo##cust", ref b, ImGuiColorEditFlags.NoInputs);
-                ImGui.SameLine();
-                custChanged |= ImGui.ColorEdit3(
-                    "Charlie##cust",
-                    ref c,
-                    ImGuiColorEditFlags.NoInputs
-                );
+                custChanged |= Widgets.ColorSwatch("Alpha##cust", ref a);
+                TeamColumn(1);
+                custChanged |= Widgets.ColorSwatch("Bravo##cust", ref b);
+                TeamColumn(2);
+                custChanged |= Widgets.ColorSwatch("Charlie##cust", ref c);
                 if (custChanged)
                 {
                     _customTeam.Alpha = a;
@@ -266,21 +236,21 @@ namespace PlayerViewer.UI
                     SavePlayerConfig();
                 }
             }
-            if (ImGui.RadioButton("Alpha", _teamIndex == 0))
+            if (Widgets.RadioButton("Alpha", _teamIndex == 0))
             {
                 _teamIndex = 0;
                 ApplyTeamColor();
                 SavePlayerConfig();
             }
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Bravo", _teamIndex == 1))
+            TeamColumn(1);
+            if (Widgets.RadioButton("Bravo", _teamIndex == 1))
             {
                 _teamIndex = 1;
                 ApplyTeamColor();
                 SavePlayerConfig();
             }
-            ImGui.SameLine();
-            if (ImGui.RadioButton("Charlie", _teamIndex == 2))
+            TeamColumn(2);
+            if (Widgets.RadioButton("Charlie", _teamIndex == 2))
             {
                 _teamIndex = 2;
                 ApplyTeamColor();
@@ -288,18 +258,31 @@ namespace PlayerViewer.UI
             }
         }
 
+        //Side Order sets the team rows in three even columns.
+        static void TeamColumn(int column)
+        {
+            if (!SideOrderControls.On)
+            {
+                ImGui.SameLine();
+                return;
+            }
+            float left = ImGui.GetStyle().WindowPadding.X + SideOrderLayout.TextIndent;
+            float width = ImGui.GetWindowContentRegionMax().X - left;
+            ImGui.SameLine(left + width * column / 3);
+        }
+
         void DrawLayeredFsSection()
         {
             Widgets.SectionHeader("LayeredFS (mods)");
 
             ImGui.SetNextItemWidth(-70);
-            if (ImGui.InputText("##layeredpath", ref _layeredInput, 512))
+            if (Widgets.PathInput("##layeredpath", ref _layeredInput, 512))
             {
                 _config.LayeredFsPath = _layeredInput;
                 _config.Save();
             }
             ImGui.SameLine();
-            if (ImGui.Button("...##layeredbrowse", new Vector2(-1, 0)))
+            if (Widgets.Button("...##layeredbrowse", new Vector2(-1, 0)))
             {
                 string folder = NativeFolderPicker.SelectFolder(
                     "Select LayeredFS (mod) folder",
@@ -325,21 +308,43 @@ namespace PlayerViewer.UI
                 }
             );
 
-            bool dirOk = !string.IsNullOrEmpty(_layeredInput) && Directory.Exists(_layeredInput);
+            bool dirOk = !string.IsNullOrEmpty(_layeredInput) && LayeredDirExists(_layeredInput);
             if (!string.IsNullOrEmpty(_layeredInput) && !dirOk)
                 Widgets.ErrorText("folder not found");
             else if (_romfs != null && _romfs.UseLayered)
                 Widgets.SuccessText("active");
 
-            if (ImGui.Button("Reload", new Vector2(-1, 0)))
+            if (Widgets.Button("Reload", new Vector2(-1, 0)))
             {
                 _preserveStateOnLoad = true;
                 _needsLoad = true;
             }
-            Widgets.ItemTooltip(
-                "Reload everything from the current romfs + LayeredFS.\nKeeps the current player configuration."
-            );
+            Widgets.ItemTooltip("Reloads the romfs and LayeredFS, keeping the player as it is.");
         }
+
+        //The typed LayeredFS folder's existence, looked up at most once a second per path.
+        string _layeredChecked;
+        bool _layeredExists;
+        long _layeredCheckedAt;
+        readonly System.Diagnostics.Stopwatch _layeredClock =
+            System.Diagnostics.Stopwatch.StartNew();
+
+        bool LayeredDirExists(string path)
+        {
+            long now = _layeredClock.ElapsedMilliseconds;
+            if (path != _layeredChecked || now - _layeredCheckedAt >= 1000)
+            {
+                _layeredExists = Directory.Exists(path);
+                (_layeredChecked, _layeredCheckedAt) = (path, now);
+            }
+            return _layeredExists;
+        }
+
+        //Gap between the left panel and a gear grid opened beside it.
+        const float GearGridGap = 6;
+
+        //Row height of the player type list, tall enough for its icons.
+        const float PlayerTypeRowHeight = 44;
 
         void GearRow(
             string label,
@@ -349,26 +354,222 @@ namespace PlayerViewer.UI
             string noneLabel = "Blank"
         )
         {
+            //The grid opens beside the panel, so it needs the panel's right edge.
+            float panelRight = ImGui.GetWindowPos().X + ImGui.GetWindowWidth();
+            var icons = HasIcons(slot) ? Icons : null;
             Widgets.LabeledRow(
                 label,
                 () =>
                 {
-                    if (
-                        Widgets.GearCombo(
-                            label,
-                            _db.GetList(slot),
-                            current,
-                            out var selected,
-                            allowNone,
-                            noneLabel
-                        )
-                    )
+                    GearEntry selected;
+                    bool changed =
+                        _config.GearGrid && HasGrid(slot)
+                            ? GearGrid.Draw(
+                                label,
+                                _db.GetList(slot),
+                                current,
+                                out selected,
+                                allowNone,
+                                noneLabel,
+                                icons,
+                                panelRight + GearGridGap
+                            )
+                            : Widgets.GearCombo(
+                                label,
+                                _db.GetList(slot),
+                                current,
+                                out selected,
+                                allowNone,
+                                noneLabel,
+                                icons,
+                                e => IconSource.KeyFor(e, _scene.IsFemale)
+                            );
+                    if (changed)
                     {
                         _scene.SetGear(slot, selected);
                         SavePlayerConfig();
                     }
                 }
             );
+        }
+
+        const int EyeColorCount = 21;
+        const int SkinToneCount = 9;
+
+        void SetPlayerType(int type)
+        {
+            _scene.SetPlayerType(type);
+            ApplyTeamColor();
+            SavePlayerConfig();
+        }
+
+        void DrawPlayerTypeCombo()
+        {
+            int playerType = _scene.PlayerType;
+            var icons = Icons;
+            ImGui.SetNextItemWidth(-1);
+            if (icons == null)
+            {
+                if (Widgets.ComboIndex("##playertype", ref playerType, PlayerTypes))
+                    SetPlayerType(playerType);
+                return;
+            }
+
+            var min = ImGui.GetCursorScreenPos();
+            var size = new Vector2(ImGui.CalcItemWidth(), ImGui.GetFrameHeight());
+            var dl = ImGui.GetWindowDrawList();
+            bool open = Widgets.BeginCombo("##playertype", "", ImGuiComboFlags.HeightLarge);
+            Widgets.IconPreview(
+                dl,
+                min,
+                size,
+                icons,
+                IconSource.PlayerTypeKey(playerType),
+                PlayerTypes[playerType],
+                true
+            );
+            if (!open)
+                return;
+            Widgets.PopupRows(
+                "playertype",
+                PlayerTypes.Length,
+                playerType,
+                (row, isSelected) =>
+                    Widgets.IconSelectable(
+                        $"{PlayerTypes[row]}##pt{row}",
+                        isSelected,
+                        icons,
+                        IconSource.PlayerTypeKey(row),
+                        true,
+                        PlayerTypeRowHeight
+                    ),
+                SetPlayerType
+            );
+            ImGui.EndCombo();
+        }
+
+        /// <summary>
+        /// Eye colour and skin tone as two swatch dropdowns side by side, each showing its
+        /// chosen swatch and opening onto a small grid of all of them.
+        /// </summary>
+        void DrawColorSwatches()
+        {
+            Widgets.LabeledRow(
+                "Eyes",
+                () =>
+                {
+                    float spacing = ImGui.GetStyle().ItemSpacing.X;
+                    float width =
+                        (
+                            ImGui.GetContentRegionAvail().X
+                            - ImGui.CalcTextSize("Skin").X
+                            - spacing * 2
+                        ) * 0.5f;
+                    SwatchCombo(
+                        "eye",
+                        "Eye colour",
+                        _scene.EyeColor,
+                        EyeColorCount,
+                        IconSource.EyeKey,
+                        v => _scene.ApplyEyeColor(v),
+                        width
+                    );
+                    ImGui.SameLine();
+                    ImGui.AlignTextToFramePadding();
+                    ImGui.TextColored(
+                        SideOrderControls.On ? Theme.TextMain : Theme.TextDim,
+                        "Skin"
+                    );
+                    ImGui.SameLine();
+                    SwatchCombo(
+                        "skin",
+                        "Skin tone",
+                        _scene.SkinTone,
+                        SkinToneCount,
+                        IconSource.SkinKey,
+                        v => _scene.ApplySkinTone(v),
+                        -1
+                    );
+                }
+            );
+        }
+
+        void SwatchCombo(
+            string id,
+            string label,
+            int value,
+            int count,
+            Func<int, string> key,
+            Action<int> apply,
+            float width
+        )
+        {
+            var icons = Icons;
+            ImGui.SetNextItemWidth(width);
+            var min = ImGui.GetCursorScreenPos();
+            var size = new Vector2(ImGui.CalcItemWidth(), ImGui.GetFrameHeight());
+            var dl = ImGui.GetWindowDrawList();
+            const float swatch = 40;
+            int perRow = count <= 9 ? count : 7;
+            var style = ImGui.GetStyle();
+            ImGui.SetNextWindowSizeConstraints(
+                new Vector2(
+                    perRow * swatch
+                        + (perRow - 1) * style.ItemSpacing.X
+                        + style.WindowPadding.X * 2,
+                    0
+                ),
+                new Vector2(float.MaxValue, float.MaxValue)
+            );
+            bool open = Widgets.BeginCombo("##" + id, "", ImGuiComboFlags.HeightLarge);
+            Widgets.IconPreview(dl, min, size, icons, key(value), value.ToString(), false);
+            if (!open)
+                return;
+
+            int picked = -1;
+            for (int i = 0; i < count; i++)
+            {
+                if (i % perRow != 0)
+                    ImGui.SameLine();
+                var at = ImGui.GetCursorScreenPos();
+                if (
+                    ImGui.Selectable(
+                        $"##{id}{i}",
+                        i == value,
+                        ImGuiSelectableFlags.None,
+                        new Vector2(swatch, swatch)
+                    )
+                )
+                    picked = i;
+                if (ImGui.IsItemHovered())
+                    Widgets.PlainTooltip($"{label} {i}");
+                if (icons.TryGet(key(i), out var icon))
+                {
+                    var (a, b) = IconCache.Fit(
+                        icon,
+                        at + new Vector2(2, 2),
+                        new Vector2(swatch - 4, swatch - 4)
+                    );
+                    ImGui.GetWindowDrawList().AddImage(icon.Id, a, b);
+                }
+            }
+
+            //The arrows apply as they go.
+            if (ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows))
+            {
+                int next = Widgets.GridNav(count, value, perRow, true);
+                if (next >= 0)
+                {
+                    apply(next);
+                    SavePlayerConfig();
+                }
+            }
+            if (picked >= 0)
+            {
+                apply(picked);
+                SavePlayerConfig();
+            }
+            ImGui.EndCombo();
         }
 
         void ApplyTeamColor()
@@ -491,7 +692,7 @@ namespace PlayerViewer.UI
             _scene.ApplyEyeColor(p.EyeColor);
             _scene.ApplySkinTone(p.SkinTone);
 
-            //Background travels with the preset; clamp loaded values and rebuild the live preview.
+            //The background is part of the preset.
             p.Background ??= new Core.BackgroundConfig();
             p.Background.Normalize();
             _bgDirty = true;

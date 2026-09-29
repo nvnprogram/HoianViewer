@@ -4,16 +4,24 @@ using System.Diagnostics;
 namespace PlayerViewer.Shaders
 {
     /// <summary>
-    /// Timestamps the path from a material edit to the splice reaching the screen. Off unless
-    /// PV_SPLICE_DEBUG=1, because it prints per stage and per splice.
+    /// Timestamps the path from a material edit to the splice reaching the screen. Off except in
+    /// a local debug build, because it prints per stage and per splice.
     ///
     /// Every line is measured from the edit that started the round, so the numbers read as a
     /// latency budget rather than as durations to be added up.
     /// </summary>
-    public static class SpliceTrace
+    public static partial class SpliceTrace
     {
-        public static readonly bool Enabled =
-            Environment.GetEnvironmentVariable("PV_SPLICE_DEBUG") == "1";
+        public static readonly bool Enabled = ReadSwitch();
+
+        static bool ReadSwitch()
+        {
+            bool on = false;
+            Switch(ref on);
+            return on;
+        }
+
+        static partial void Switch(ref bool on);
 
         static long _edit;
 

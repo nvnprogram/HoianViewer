@@ -28,7 +28,6 @@ namespace PlayerViewer.UI
         DepthTexture _lightDepth;
         Framebuffer _prepassFbo;
         ShaderProgram _shader;
-        VertexBufferObject _vao;
         Matrix4 _lightViewProj;
         float _lightRadius = 1f;
 
@@ -85,21 +84,6 @@ namespace PlayerViewer.UI
             string frag = System.IO.File.ReadAllText("Shaders/SelfShadowPrepass.frag");
             string vert = System.IO.File.ReadAllText("Shaders/SelfShadowPrepass.vert");
             _shader = new ShaderProgram(new FragmentShader(frag), new VertexShader(vert));
-
-            int buffer = GL.GenBuffer();
-            _vao = new VertexBufferObject(buffer);
-            _vao.AddAttribute(0, 2, VertexAttribPointerType.Float, false, 16, 0);
-            _vao.AddAttribute(1, 2, VertexAttribPointerType.Float, false, 16, 8);
-            _vao.Initialize();
-
-            float[] data = { -1, 1, 0, 1, -1, -1, 0, 0, 1, 1, 1, 1, 1, -1, 1, 0 };
-            GL.BindBuffer(BufferTarget.ArrayBuffer, buffer);
-            GL.BufferData(
-                BufferTarget.ArrayBuffer,
-                sizeof(float) * data.Length,
-                data,
-                BufferUsageHint.StaticDraw
-            );
         }
 
         /// <summary>
@@ -141,7 +125,10 @@ namespace PlayerViewer.UI
             GL.Enable(EnableCap.PolygonOffsetFill);
             GL.PolygonOffset(4.0f, 16.0f);
 
+            BfresEditor.ShaderRenderBase.BeginPass();
             scene.Draw(context, Pass.OPAQUE);
+            //Ends the light's pass, so nothing built for its camera serves the next one.
+            BfresEditor.ShaderRenderBase.BeginPass();
 
             GL.Disable(EnableCap.PolygonOffsetFill);
             GL.PolygonOffset(0, 0);
@@ -208,11 +195,8 @@ namespace PlayerViewer.UI
             _lightDepth.Bind();
             _shader.SetInt("lightDepth", 1);
 
-            _vao.Enable(_shader);
-            _vao.Use();
-            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            ScreenQuad.Draw(_shader);
 
-            GL.UseProgram(0);
             context.CurrentShader = null;
             GL.Enable(EnableCap.DepthTest);
             _prepassFbo.Unbind();

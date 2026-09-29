@@ -4,28 +4,76 @@ using ImGuiNET;
 namespace PlayerViewer.UI
 {
     /// <summary>
-    /// Black + gold ImGui theme.
+    /// The colours the panels use as text accents and fills. Each interface look supplies one.
+    /// </summary>
+    public sealed class ThemePalette
+    {
+        public Vector4 Gold { get; init; }
+        public Vector4 GoldDim { get; init; }
+        public Vector4 GoldBright { get; init; }
+        public Vector4 Bg { get; init; }
+        public Vector4 BgPanel { get; init; }
+        public Vector4 BgItem { get; init; }
+        public Vector4 BgItemHover { get; init; }
+        public Vector4 BgItemActive { get; init; }
+        public Vector4 TextMain { get; init; }
+        public Vector4 TextDim { get; init; }
+        public Vector4 Error { get; init; }
+        public Vector4 Success { get; init; }
+        public Vector4 Cyan { get; init; }
+        public Vector4 RedButtonBg { get; init; }
+        public Vector4 RedButtonHover { get; init; }
+    }
+
+    /// <summary>
+    /// Black and gold ImGui theme. Its colours read through the active palette, so the Side Order
+    /// looks can swap them; <see cref="Apply"/> restores the classic ones.
     /// </summary>
     public static class Theme
     {
-        public static readonly Vector4 Gold = new(0.85f, 0.68f, 0.24f, 1.00f);
-        public static readonly Vector4 GoldDim = new(0.62f, 0.48f, 0.15f, 1.00f);
-        public static readonly Vector4 GoldBright = new(1.00f, 0.83f, 0.36f, 1.00f);
-        public static readonly Vector4 Bg = new(0.055f, 0.055f, 0.065f, 1.00f);
-        public static readonly Vector4 BgPanel = new(0.085f, 0.085f, 0.10f, 1.00f);
-        public static readonly Vector4 BgItem = new(0.13f, 0.13f, 0.15f, 1.00f);
-        public static readonly Vector4 BgItemHover = new(0.19f, 0.18f, 0.16f, 1.00f);
-        public static readonly Vector4 BgItemActive = new(0.28f, 0.24f, 0.15f, 1.00f);
-        public static readonly Vector4 TextMain = new(0.92f, 0.91f, 0.88f, 1.00f);
-        public static readonly Vector4 TextDim = new(0.55f, 0.54f, 0.52f, 1.00f);
-        public static readonly Vector4 Error = new(0.90f, 0.35f, 0.30f, 1.00f);
-        public static readonly Vector4 Success = new(0.40f, 0.85f, 0.40f, 1.00f);
-        public static readonly Vector4 Cyan = new(0.35f, 0.80f, 0.92f, 1.00f);
-        public static readonly Vector4 RedButtonBg = new(0.55f, 0.12f, 0.10f, 1.00f);
-        public static readonly Vector4 RedButtonHover = new(0.70f, 0.16f, 0.13f, 1.00f);
+        public static readonly ThemePalette Classic = new()
+        {
+            Gold = new(0.85f, 0.68f, 0.24f, 1.00f),
+            GoldDim = new(0.62f, 0.48f, 0.15f, 1.00f),
+            GoldBright = new(1.00f, 0.83f, 0.36f, 1.00f),
+            Bg = new(0.055f, 0.055f, 0.065f, 1.00f),
+            BgPanel = new(0.085f, 0.085f, 0.10f, 1.00f),
+            BgItem = new(0.13f, 0.13f, 0.15f, 1.00f),
+            BgItemHover = new(0.19f, 0.18f, 0.16f, 1.00f),
+            BgItemActive = new(0.28f, 0.24f, 0.15f, 1.00f),
+            TextMain = new(0.92f, 0.91f, 0.88f, 1.00f),
+            TextDim = new(0.55f, 0.54f, 0.52f, 1.00f),
+            Error = new(0.90f, 0.35f, 0.30f, 1.00f),
+            Success = new(0.40f, 0.85f, 0.40f, 1.00f),
+            Cyan = new(0.35f, 0.80f, 0.92f, 1.00f),
+            RedButtonBg = new(0.55f, 0.12f, 0.10f, 1.00f),
+            RedButtonHover = new(0.70f, 0.16f, 0.13f, 1.00f),
+        };
+
+        static ThemePalette _active = Classic;
+
+        /// <summary>Makes <paramref name="palette"/> the one the colours below read from.</summary>
+        public static void Use(ThemePalette palette) => _active = palette ?? Classic;
+
+        public static Vector4 Gold => _active.Gold;
+        public static Vector4 GoldDim => _active.GoldDim;
+        public static Vector4 GoldBright => _active.GoldBright;
+        public static Vector4 Bg => _active.Bg;
+        public static Vector4 BgPanel => _active.BgPanel;
+        public static Vector4 BgItem => _active.BgItem;
+        public static Vector4 BgItemHover => _active.BgItemHover;
+        public static Vector4 BgItemActive => _active.BgItemActive;
+        public static Vector4 TextMain => _active.TextMain;
+        public static Vector4 TextDim => _active.TextDim;
+        public static Vector4 Error => _active.Error;
+        public static Vector4 Success => _active.Success;
+        public static Vector4 Cyan => _active.Cyan;
+        public static Vector4 RedButtonBg => _active.RedButtonBg;
+        public static Vector4 RedButtonHover => _active.RedButtonHover;
 
         public static void Apply()
         {
+            _active = Classic;
             var style = ImGui.GetStyle();
             style.WindowRounding = 8;
             style.ChildRounding = 8;

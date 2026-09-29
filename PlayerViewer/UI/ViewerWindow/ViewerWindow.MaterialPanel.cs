@@ -34,25 +34,25 @@ namespace PlayerViewer.UI
 
             ImGui.AlignTextToFramePadding();
             Widgets.DimText("Selection");
-            ImGui.SameLine(72);
+            ImGui.SameLine(Widgets.Column(72));
             int mode = (int)_pipeline.MaterialViewMode;
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.Combo("##selmode", ref mode, SelectionModeLabels, SelectionModeLabels.Length))
+            if (
+                Widgets.Combo(
+                    "##selmode",
+                    ref mode,
+                    SelectionModeLabels,
+                    SelectionModeLabels.Length
+                )
+            )
                 _pipeline.MaterialViewMode = (ScenePipeline.MaterialView)mode;
-            Widgets.ItemTooltip(
-                "What picking a material shows in the viewport.\n\n"
-                    + "Outline selected: the scene draws as it is and the selected material is "
-                    + "wireframed over the top of it.\n"
-                    + "Isolate selected: only the selected material draws, and every other "
-                    + "material is wireframed instead of drawn.\n\n"
-                    + "(Only affects preview)"
-            );
+            Widgets.ItemTooltip("How the selected material shows in the viewport");
 
             EnsureUberContext();
 
             FilterRow("##matsearch", ref _materialSearch);
 
-            ImGui.BeginChild("##matlist", new Vector2(0, 0), true);
+            Widgets.BeginList("##matlist", new Vector2(0, 0));
             //Collected as they are drawn rather than up front, so a collapsed model's
             //materials are not rows the arrows can land on.
             var rows = new List<FMAT>();
@@ -67,6 +67,7 @@ namespace PlayerViewer.UI
 
                 if (models.Count > 1)
                 {
+                    Widgets.RowFill(false);
                     if (
                         !ImGui.TreeNodeEx(
                             $"{models[mi].ModelData.Name}##m{mi}",
@@ -89,7 +90,7 @@ namespace PlayerViewer.UI
             int move = Widgets.ListNav(MaterialListId, rows.Count, rows.IndexOf(_selectedMaterial));
             if (move >= 0)
                 SelectMaterial(rows[move]);
-            ImGui.EndChild();
+            Widgets.EndList();
         }
 
         const string MaterialListId = "matlist";
@@ -100,7 +101,7 @@ namespace PlayerViewer.UI
         void DrawSplicerToggle()
         {
             bool use = _config.UseSplicer;
-            if (ImGui.Checkbox("Use splicer", ref use))
+            if (Widgets.CheckboxControl("Use splicer", ref use))
                 SetSplicer(use);
             Widgets.ItemTooltip(
                 "Generates the shader variations the game does not ship, by splicing the "
@@ -141,7 +142,7 @@ namespace PlayerViewer.UI
 
             bool open = true;
             if (
-                ImGui.Begin(
+                BeginCardWindow(
                     $"{_selectedMaterial.Name}###mateditor",
                     ref open,
                     ImGuiWindowFlags.NoFocusOnAppearing
@@ -156,8 +157,9 @@ namespace PlayerViewer.UI
 
         void DrawMaterialRow(int modelIndex, FMAT material)
         {
+            Widgets.RowFill(material == _selectedMaterial);
             bool visible = material.IsVisible;
-            if (ImGui.Checkbox($"##vis{modelIndex}_{material.Name}", ref visible))
+            if (Widgets.CheckboxControl($"##vis{modelIndex}_{material.Name}", ref visible))
                 material.IsVisible = visible;
             ImGui.SameLine();
 
@@ -189,7 +191,7 @@ namespace PlayerViewer.UI
 
         void DrawMaterialEditor(FMAT material)
         {
-            ImGui.TextColored(Theme.GoldBright, material.Name);
+            Widgets.ColoredText(Theme.GoldBright, material.Name);
             ImGui.PushTextWrapPos();
             Widgets.DimText($"{material.ShaderArchive} / {material.ShaderModel}");
 
@@ -209,40 +211,40 @@ namespace PlayerViewer.UI
 
             //Tabs rather than stacked headers: the stage list alone is 15 rows, and anything
             //under it was reachable only by scrolling past the whole thing.
-            if (!ImGui.BeginTabBar("##matedit"))
+            if (!Widgets.BeginTabBar("##matedit"))
                 return;
 
-            if (ImGui.BeginTabItem("Stages"))
+            if (Widgets.BeginTabItem("Stages"))
             {
                 DrawPipelineStages(material);
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Options"))
+            if (Widgets.BeginTabItem("Options"))
             {
                 DrawShaderOptions(material, shaderModel);
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Params"))
+            if (Widgets.BeginTabItem("Params"))
             {
                 DrawShaderParams(material);
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Samplers"))
+            if (Widgets.BeginTabItem("Samplers"))
             {
                 DrawSamplers(material, shaderModel);
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Render"))
+            if (Widgets.BeginTabItem("Render"))
             {
                 DrawRenderInfo(material);
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("User"))
+            if (Widgets.BeginTabItem("User"))
             {
                 DrawUserData(material);
                 ImGui.EndTabItem();
             }
-            ImGui.EndTabBar();
+            Widgets.EndTabBar();
         }
 
         /// <summary>
@@ -282,7 +284,7 @@ namespace PlayerViewer.UI
             ImGui.SetNextItemWidth(width != 0 ? width : ControlWidth(reset));
             int sel = index;
             picked = null;
-            bool moved = ImGui.Combo(id, ref sel, labels, labels.Length) && sel != index;
+            bool moved = Widgets.Combo(id, ref sel, labels, labels.Length) && sel != index;
             DrawResetButton(id, reset);
             if (!moved)
                 return false;
@@ -397,7 +399,7 @@ namespace PlayerViewer.UI
             if (reset == null)
                 return;
             ImGui.SameLine();
-            if (ImGui.Button($"Reset##reset{id}", new Vector2(ResetButtonWidth, 0)))
+            if (Widgets.Button($"Reset##reset{id}", new Vector2(ResetButtonWidth, 0)))
                 reset();
         }
 
@@ -417,7 +419,7 @@ namespace PlayerViewer.UI
         static void DrawEntryName(string text, bool changed, bool dim = false)
         {
             ImGui.PushTextWrapPos();
-            ImGui.TextColored(
+            Widgets.ColoredText(
                 changed ? Theme.Cyan
                     : dim ? Theme.TextDim
                     : Theme.TextMain,
@@ -446,12 +448,12 @@ namespace PlayerViewer.UI
             }
 
             ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(
+            Widgets.ColoredText(
                 Theme.Cyan,
                 $"{changed.Count} {what}{(changed.Count == 1 ? "" : "s")} changed"
             );
             ImGui.SameLine();
-            if (ImGui.Button($"Reset all##resetall{what}"))
+            if (Widgets.Button($"Reset all##resetall{what}"))
             {
                 foreach (string name in changed)
                     reset(name);
@@ -493,11 +495,16 @@ namespace PlayerViewer.UI
 
         static void FilterRow(string id, ref string filter)
         {
+            if (SideOrderControls.On)
+            {
+                Widgets.SearchField(id, ref filter, "Filter", -1);
+                return;
+            }
             ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(Theme.TextDim, "Filter");
+            Widgets.ColoredText(Theme.TextDim, "Filter");
             ImGui.SameLine(52);
             ImGui.SetNextItemWidth(-1);
-            ImGui.InputText(id, ref filter, 64);
+            Widgets.InputText(id, ref filter, 64);
         }
 
         /// <summary>

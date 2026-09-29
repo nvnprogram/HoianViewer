@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using GLFrameworkEngine;
 using OpenTK;
@@ -25,8 +24,23 @@ namespace PlayerViewer.UI
         public int Width { get; private set; } = 1;
         public int Height { get; private set; } = 1;
 
-        /// <summary>Viewport background (sRGB). Alpha is ignored for display.</summary>
+        /// <summary>
+        /// Background (sRGB) of the viewport and the matte of every capture. Alpha is ignored for
+        /// display.
+        /// </summary>
         public System.Numerics.Vector3 BackgroundColor = new(0.075f, 0.075f, 0.09f);
+
+        /// <summary>
+        /// Replaces <see cref="BackgroundColor"/> in the viewport alone when set, so the interface
+        /// look can colour it without touching what an export is matted against.
+        /// </summary>
+        public System.Numerics.Vector3? ViewportBackground;
+
+        /// <summary>
+        /// With <see cref="ViewportBackground"/> set, the viewport's backdrop is lit with this
+        /// colour behind the model and falls off to the background at the edges. Viewport only.
+        /// </summary>
+        public System.Numerics.Vector3? ViewportGlow;
 
         /// <summary>Main light shines from the camera when enabled.</summary>
         public bool LightFollowsCamera;
@@ -101,11 +115,25 @@ namespace PlayerViewer.UI
         Framebuffer _final; //RGBA8 (sRGB encoded by the gamma pass)
         FinalQuad _quad;
         SelfShadowRenderer _selfShadow;
+        SelectionOutline _outline;
+        WeightOverlay _weights;
+
+        /// <summary>Colour and opacity per bone name for the weight overlay in the viewport; null for none.</summary>
+        public IReadOnlyDictionary<string, OpenTK.Vector4> BoneTints;
+
+        public float BoneTintStrength = 0.65f;
+
+        /// <summary>Painted limbs and the brush over the viewport, after the weight tint; null for none.</summary>
+        public LimbPaintOverlay LimbPaint;
+
+        /// <summary>A stand-in head behind a standalone hair, before the painted limbs; null for none.</summary>
+        public HeadPreview Head;
 
         //Live export-background preview: a fullscreen textured quad drawn behind the scene in
         //opaque passes. The pixels come from ExportUtil.BuildBackground so the preview matches
         //the exported composite exactly.
         readonly BackgroundQuad _bgQuad = new();
+        readonly BackdropQuad _backdrop = new();
         int _bgTex;
 
         //Half-res color copy for refraction (once per frame, between opaque/transparent).
@@ -119,7 +147,7 @@ namespace PlayerViewer.UI
 
         /// <summary>
         /// What the material editor's selection does to the viewport. Outline draws the scene
-        /// as it is and wireframes the selected material over the top; Isolate draws only the
+        /// as it is and traces the selected material's silhouette; Isolate draws only the
         /// selected material and wireframes everything else. (Only for preview)
         /// </summary>
         public enum MaterialView
@@ -157,7 +185,7 @@ namespace PlayerViewer.UI
             Context.Camera.ZNear = 0.01f;
             Context.Camera.Mode = Camera.CameraMode.Inspect; //instantiates the controller
             Context.UseSRBFrameBuffer = true;
-            //Camera math needs a valid aspect ratio before framing (0x0 -> NaN distance).
+            //Camera math needs a valid aspect ratio before framing; 0x0 gives a NaN distance.
             Context.Width = Width;
             Context.Height = Height;
             Context.Camera.Width = Width;
@@ -234,7 +262,7 @@ namespace PlayerViewer.UI
 
         /// <summary>
         /// Blits the scene color at half resolution for refraction, and binds the live
-        /// scene depth texture directly. The shader handles the OpenGL <-> NX Y-flip via a
+        /// scene depth texture directly. The shader handles the Y flip between OpenGL and NX via a
         /// patched texture() call (see <see cref="TegraShaderDecoder.PatchSamplerYFlip"/>).
         /// </summary>
         void CaptureRefractionBuffers(Framebuffer screen, DepthTexture depth, int ssW, int ssH)
@@ -404,15 +432,11 @@ namespace PlayerViewer.UI
                     Width,
                     Height,
                     EffectiveScale(Width, Height),
-                    new System.Numerics.Vector4(
-                        BackgroundColor.X,
-                        BackgroundColor.Y,
-                        BackgroundColor.Z,
-                        1
-                    ),
+                    new System.Numerics.Vector4(ViewportBackground ?? BackgroundColor, 1),
                     false,
                     _screenDepth,
-                    true
+                    true,
+                    ViewportBackground is { } edge && ViewportGlow is { } glow ? (glow, edge) : null
                 );
             }
             finally
@@ -448,11 +472,14 @@ namespace PlayerViewer.UI
             System.Numerics.Vector4 background,
             bool keepAlpha,
             DepthTexture screenDepth = null,
-            bool materialOverlay = false
+            bool materialOverlay = false,
+            (System.Numerics.Vector3 Centre, System.Numerics.Vector3 Edge)? backdrop = null
         )
         {
             int ssWidth = width * scale;
             int ssHeight = height * scale;
+            using var perfScene = FramePerf.Section("scene");
+            BfresEditor.ShaderRenderBase.BeginRender();
 
             UpdateLightOverride();
             Context.SetActive();
@@ -472,25 +499,42 @@ namespace PlayerViewer.UI
             GL.ColorMask(true, true, true, true);
             GL.DepthFunc(DepthFunction.Lequal);
             GL.BindVertexArray(0);
-            GL.UseProgram(0);
+            Context.CurrentShader = null;
             GL.ActiveTexture(TextureUnit.Texture0);
 
             if (scene != null)
-                foreach (var render in scene.AllRenders())
-                    render.OnBeforeDraw(Context);
+                using (FramePerf.Section("scene before draw"))
+                    foreach (var render in scene.AllRenders())
+                        render.OnBeforeDraw(Context);
 
-            bool selfShadow = EnableSelfShadow && scene != null && screenDepth != null;
+            var layered = scene as ILayeredScene;
+            BfresEditor.HoianNXRender.LightClusterOverride = null;
+            layered?.BeginRender(
+                new SceneRenderInfo(keepAlpha, materialOverlay, ssWidth, ssHeight)
+            );
+
+            bool selfShadow =
+                EnableSelfShadow
+                && scene != null
+                && screenDepth != null
+                && (layered?.SelfShadow ?? true);
             if (selfShadow)
             {
                 _selfShadow ??= new SelfShadowRenderer();
-                _selfShadow.RenderLightDepth(Context, scene, ComputeShadowBounds(scene));
+                using (FramePerf.Section("shadow light depth"))
+                    _selfShadow.RenderLightDepth(Context, scene, ComputeShadowBounds(scene));
             }
 
             //Background is authored in sRGB; the scene renders linear.
             float Lin(float v) => (float)Math.Pow(v, 2.2);
 
-            void DrawScenePass()
+            //With self shadow the first pass is only for its depth. Draws that write none are
+            //skipped and colour writes are off; the depth buffer comes out the same. The effect
+            //scene keeps the full pass, its emitters and depth copies being its own.
+            void DrawScenePass(string perfName, bool depthOnly = false)
             {
+                using var perfPass = FramePerf.Section(perfName);
+                BfresEditor.ShaderRenderBase.BeginPass();
                 screen.Bind();
                 GL.Viewport(0, 0, ssWidth, ssHeight);
                 GL.ClearColor(
@@ -505,20 +549,27 @@ namespace PlayerViewer.UI
                         | ClearBufferMask.StencilBufferBit
                 );
 
+                if (backdrop is { } b && !depthOnly)
+                    _backdrop.Draw(Context, b.Centre, b.Edge, ssWidth, ssHeight);
+
                 //Opaque (viewport / non-alpha) passes preview the export background behind the
                 //scene. Transparent capture (keepAlpha) skips it so the alpha oracle is intact.
-                if (!keepAlpha && _bgTex != 0)
+                if (!keepAlpha && _bgTex != 0 && !depthOnly)
                     _bgQuad.Draw(Context, _bgTex);
 
                 GL.Enable(EnableCap.DepthTest);
+                if (depthOnly)
+                {
+                    GL.ColorMask(false, false, false, false);
+                    BfresEditor.BfresModelAsset.DepthOnlyPass = true;
+                }
 
                 if (scene != null)
                 {
                     //Isolate wireframes before the scene, so the one material that is drawn
-                    //paints over the lines instead of being covered by the ones in front of
-                    //it. Outline traces a material the scene draws, so that one goes on top.
-                    if (materialOverlay && MaterialViewMode == MaterialView.Isolate)
-                        DrawMaterialOutline(scene);
+                    //paints over the lines instead of being covered by the ones in front of it.
+                    if (materialOverlay && MaterialViewMode == MaterialView.Isolate && !depthOnly)
+                        DrawIsolateWireframe(scene);
 
                     scene.Draw(Context, Pass.OPAQUE);
 
@@ -532,10 +583,13 @@ namespace PlayerViewer.UI
                         GL.TextureBarrier();
                     }
 
-                    if (keepAlpha)
+                    bool maskAlpha = keepAlpha && layered == null && !depthOnly;
+                    if (maskAlpha)
                         GL.ColorMask(true, true, true, false);
+                    if (depthOnly)
+                        GL.ColorMask(false, false, false, false);
                     scene.Draw(Context, Pass.TRANSPARENT);
-                    if (keepAlpha)
+                    if (maskAlpha)
                         GL.ColorMask(true, true, true, true);
 
                     if (refract)
@@ -543,9 +597,11 @@ namespace PlayerViewer.UI
                         BfresEditor.HoianNXRender.RefractionColorBuffer = null;
                         BfresEditor.HoianNXRender.RefractionDepthBuffer = null;
                     }
-
-                    if (materialOverlay && MaterialViewMode == MaterialView.Outline)
-                        DrawMaterialOutline(scene);
+                }
+                if (depthOnly)
+                {
+                    BfresEditor.BfresModelAsset.DepthOnlyPass = false;
+                    GL.ColorMask(true, true, true, true);
                 }
                 Context.CurrentShader = null;
                 screen.Unbind();
@@ -553,27 +609,58 @@ namespace PlayerViewer.UI
 
             //First pass fills the scene depth used to build the shadow prepass, the
             //second pass renders with the prepass bound (game shading path).
-            DrawScenePass();
+            DrawScenePass("scene pass 1", depthOnly: selfShadow && layered == null);
             Trace("after scene", ssWidth, ssHeight);
 
             if (selfShadow)
             {
                 var camViewProj = Camera.ModelMatrix * Camera.ViewMatrix * Camera.ProjectionMatrix;
-                _selfShadow.GeneratePrepass(Context, screenDepth, camViewProj, ssWidth, ssHeight);
+                using (FramePerf.Section("shadow prepass"))
+                    _selfShadow.GeneratePrepass(
+                        Context,
+                        screenDepth,
+                        camViewProj,
+                        ssWidth,
+                        ssHeight
+                    );
 
                 BfresEditor.HoianNXRender.ShadowPrepassTexture = _selfShadow.PrepassTexture;
-                DrawScenePass();
+                DrawScenePass("scene pass 2");
                 BfresEditor.HoianNXRender.ShadowPrepassTexture = null;
                 Trace("after shadowed scene", ssWidth, ssHeight);
             }
 
             //Gamma + downsample pass into the display/capture buffer
+            using var perfResolve = FramePerf.Section("resolve and overlays");
             final.Bind();
             GL.Viewport(0, 0, width, height);
             GL.ClearColor(0, 0, 0, 0);
             GL.Clear(ClearBufferMask.ColorBufferBit);
             _quad.Draw(Context, (GLTexture)screen.Attachments[0], keepAlpha, scale);
             Trace("after quad", width, height);
+
+            //Drawn over the resolved image, so its width is in display pixels whatever the
+            //supersample, and after both scene passes, so the shadow prepass never sees it.
+            if (
+                materialOverlay
+                && MaterialViewMode == MaterialView.Outline
+                && SelectedMaterial != null
+                && scene != null
+                && screenDepth != null
+            )
+            {
+                _outline ??= new SelectionOutline();
+                _outline.Draw(Context, scene, SelectedMaterial, screenDepth, width, height, scale);
+            }
+            if (materialOverlay && BoneTints != null && scene != null && screenDepth != null)
+            {
+                _weights ??= new WeightOverlay();
+                _weights.Draw(Context, scene, BoneTints, screenDepth, scale, BoneTintStrength);
+            }
+            if (materialOverlay && Head != null && screenDepth != null)
+                Head.Draw(Context, screenDepth, scale);
+            if (materialOverlay && LimbPaint != null && screenDepth != null)
+                LimbPaint.Draw(Context, screenDepth, scale);
             final.Unbind();
 
             //Restore camera to display size for input math.
@@ -584,69 +671,39 @@ namespace PlayerViewer.UI
         }
 
         /// <summary>
-        /// Wireframes one side of the material selection over the scene: the selected material
-        /// in Outline mode, everything else in Isolate mode, where those meshes are already out
-        /// of the normal passes.
+        /// Wireframes every material but the selected one, which Isolate mode has already taken
+        /// out of the normal passes.
         /// </summary>
-        void DrawMaterialOutline(IViewScene scene)
+        void DrawIsolateWireframe(IViewScene scene)
         {
-            if (MaterialViewMode == MaterialView.None || SelectedMaterial == null)
+            if (SelectedMaterial == null)
                 return;
 
-            bool isolate = MaterialViewMode == MaterialView.Isolate;
-            ShaderProgram shader = null;
             var previousShader = Context.CurrentShader;
-
-            foreach (var render in scene.AllRenders())
-            {
-                if (!render.IsVisible)
-                    continue;
-                foreach (var model in render.Models.OfType<BfresEditor.BfresModelAsset>())
+            bool drawn = DrawSceneMeshes(
+                scene,
+                () =>
                 {
-                    if (!model.IsVisible)
-                        continue;
-                    foreach (var mesh in model.Meshes)
-                    {
-                        if (
-                            !mesh.Shape.IsVisible
-                            || !mesh.Shape.Material.IsVisible
-                            || mesh.IsDepthShadow
-                            || mesh.IsCubeMap
-                        )
-                            continue;
-                        if (isolate == (mesh.Shape.Material == SelectedMaterial))
-                            continue;
-
-                        if (shader == null)
-                        {
-                            shader = GlobalShaders.GetShader("PICKING");
-                            Context.CurrentShader = shader;
-                            var mtxCam = Camera.ViewProjectionMatrix;
-                            shader.SetMatrix4x4("mtxCam", ref mtxCam);
-                            shader.SetVector4("color", new Vector4(1.0f, 0.72f, 0.24f, 1));
-                            GL.Disable(EnableCap.DepthTest);
-                            GL.DepthMask(false);
-                            GL.Disable(EnableCap.Blend);
-                            GL.Disable(EnableCap.CullFace);
-                            GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
-                            GL.Enable(EnableCap.LineSmooth);
-                            GL.LineWidth(1.5f);
-                        }
-
-                        if (mesh.UpdateVertexData)
-                            mesh.UpdateVertexBuffer();
-
-                        SetSkinningUniforms(shader, model, mesh);
-                        var worldTransform = render.Transform.TransformMatrix;
-                        shader.SetMatrix4x4("mtxMdl", ref worldTransform);
-                        mesh.defaultVao.Enable(shader);
-                        mesh.defaultVao.Use();
-                        mesh.Draw();
-                    }
-                }
-            }
-
-            if (shader == null)
+                    var shader = GlobalShaders.GetShader("PICKING");
+                    Context.CurrentShader = shader;
+                    var mtxCam = Camera.ViewProjectionMatrix;
+                    shader.SetMatrix4x4("mtxCam", ref mtxCam);
+                    shader.SetVector4("color", new Vector4(1.0f, 0.72f, 0.24f, 1));
+                    GL.Disable(EnableCap.DepthTest);
+                    GL.DepthMask(false);
+                    GL.Disable(EnableCap.Blend);
+                    GL.Disable(EnableCap.CullFace);
+                    GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Line);
+                    GL.Enable(EnableCap.LineSmooth);
+                    GL.LineWidth(1.5f);
+                    return shader;
+                },
+                (_, mesh) =>
+                    mesh.Shape.IsVisible
+                    && mesh.Shape.Material.IsVisible
+                    && mesh.Shape.Material != SelectedMaterial
+            );
+            if (!drawn)
                 return;
 
             GL.PolygonMode(MaterialFace.FrontAndBack, PolygonMode.Fill);
@@ -659,9 +716,53 @@ namespace PlayerViewer.UI
             Context.CurrentShader = previousShader;
         }
 
+        /// <summary>
+        /// The walk the viewport overlays share: every mesh of the scene's visible models that
+        /// <paramref name="accept"/> takes, depth shadow and cube map meshes aside, skinned as
+        /// the scene skins it. <paramref name="begin"/> runs before the first draw and returns
+        /// the program to draw with, <paramref name="model"/> can skip a model and
+        /// <paramref name="prepare"/> runs before each draw. Returns whether anything was drawn.
+        /// </summary>
+        internal static bool DrawSceneMeshes(
+            IViewScene scene,
+            Func<ShaderProgram> begin,
+            Func<BfresEditor.BfresModelAsset, BfresEditor.BfresMeshAsset, bool> accept,
+            Func<BfresEditor.BfresModelAsset, bool> model = null,
+            Action<BfresEditor.BfresMeshAsset> prepare = null
+        )
+        {
+            ShaderProgram shader = null;
+            foreach (var render in scene.AllRenders())
+            {
+                if (!render.IsVisible)
+                    continue;
+                foreach (var asset in render.Models.OfType<BfresEditor.BfresModelAsset>())
+                {
+                    if (!asset.IsVisible || (model != null && !model(asset)))
+                        continue;
+                    foreach (var mesh in asset.Meshes)
+                    {
+                        if (mesh.IsDepthShadow || mesh.IsCubeMap || !accept(asset, mesh))
+                            continue;
+                        shader ??= begin();
+                        if (mesh.UpdateVertexData)
+                            mesh.UpdateVertexBuffer();
+                        prepare?.Invoke(mesh);
+                        SetSkinningUniforms(shader, asset, mesh);
+                        var worldTransform = render.Transform.TransformMatrix;
+                        shader.SetMatrix4x4("mtxMdl", ref worldTransform);
+                        mesh.defaultVao.Enable(shader);
+                        mesh.defaultVao.Use();
+                        mesh.Draw();
+                    }
+                }
+            }
+            return shader != null;
+        }
+
         //The picking shader skins in the vertex stage, so a skinned mesh needs the same
         //bone palette the material shaders get.
-        static void SetSkinningUniforms(
+        internal static void SetSkinningUniforms(
             ShaderProgram shader,
             BfresEditor.BfresModelAsset model,
             BfresEditor.BfresMeshAsset mesh
@@ -927,6 +1028,44 @@ namespace PlayerViewer.UI
             _screen = null;
             _final = null;
             _selfShadow?.Dispose();
+            _outline?.Dispose();
+            _weights?.Dispose();
+            _weights = null;
+        }
+    }
+
+    /// <summary>
+    /// The full screen triangle strip the screen passes draw, a position and texture coordinates
+    /// per corner, and the vertex shader they share, which hands the coordinates on as TexCoords.
+    /// </summary>
+    static class ScreenQuad
+    {
+        static VertexBufferObject _vao;
+        static bool _ready;
+
+        public static string VertexSource => UiShaders.Load("Resolve.vert");
+
+        /// <summary>Draws the quad with the program in use and leaves its vertex array bound.</summary>
+        public static void Draw(ShaderProgram shader)
+        {
+            if (!_ready)
+            {
+                _vao = new VertexBufferObject(GL.GenBuffer());
+                _vao.AddAttribute(0, 2, VertexAttribPointerType.Float, false, 16, 0);
+                _vao.AddAttribute(1, 2, VertexAttribPointerType.Float, false, 16, 8);
+                _vao.Initialize();
+                float[] data = { -1, 1, 0, 1, -1, -1, 0, 0, 1, 1, 1, 1, 1, -1, 1, 0 };
+                GL.BufferData(
+                    BufferTarget.ArrayBuffer,
+                    sizeof(float) * data.Length,
+                    data,
+                    BufferUsageHint.StaticDraw
+                );
+                _ready = true;
+            }
+            _vao.Enable(shader);
+            _vao.Use();
+            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
         }
     }
 
@@ -936,45 +1075,14 @@ namespace PlayerViewer.UI
     class BackgroundQuad
     {
         ShaderProgram _shader;
-        VertexBufferObject _vao;
-
-        const string Vert =
-            "#version 330\n"
-            + "layout (location = 0) in vec2 aPos;\n"
-            + "layout (location = 1) in vec2 aTexCoords;\n"
-            + "out vec2 TexCoords;\n"
-            + "void main(){ gl_Position = vec4(aPos, 0.0, 1.0); TexCoords = aTexCoords; }\n";
-
-        const string Frag =
-            "#version 330\n"
-            + "precision highp float;\n"
-            + "in vec2 TexCoords;\n"
-            + "uniform sampler2D uTex;\n"
-            + "out vec4 FragColor;\n"
-            + "void main(){\n"
-            + "  vec4 c = texture(uTex, TexCoords);\n"
-            + "  if (c.a < 0.004) discard;\n"
-            + "  FragColor = vec4(pow(c.rgb, vec3(2.2)), 1.0);\n"
-            + "}\n";
 
         void Init()
         {
             if (_shader != null)
                 return;
-            _shader = new ShaderProgram(new FragmentShader(Frag), new VertexShader(Vert));
-
-            int buffer = GL.GenBuffer();
-            _vao = new VertexBufferObject(buffer);
-            _vao.AddAttribute(0, 2, VertexAttribPointerType.Float, false, 16, 0);
-            _vao.AddAttribute(1, 2, VertexAttribPointerType.Float, false, 16, 8);
-            _vao.Initialize();
-
-            float[] data = { -1, 1, 0, 1, -1, -1, 0, 0, 1, 1, 1, 1, 1, -1, 1, 0 };
-            GL.BufferData(
-                BufferTarget.ArrayBuffer,
-                sizeof(float) * data.Length,
-                data,
-                BufferUsageHint.StaticDraw
+            _shader = new ShaderProgram(
+                new FragmentShader(UiShaders.Load("Background.frag")),
+                new VertexShader(ScreenQuad.VertexSource)
             );
         }
 
@@ -991,58 +1099,72 @@ namespace PlayerViewer.UI
             GL.BindTexture(TextureTarget.Texture2D, tex);
             _shader.SetInt("uTex", 0);
 
-            _vao.Enable(_shader);
-            _vao.Use();
-            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            ScreenQuad.Draw(_shader);
             GL.BindTexture(TextureTarget.Texture2D, 0);
-            GL.UseProgram(0);
+            context.CurrentShader = null;
             GL.DepthMask(true);
         }
     }
 
     /// <summary>
-    /// Fullscreen quad that resolves the supersampled linear buffer into the display
-    /// buffer: an NxN box filter over the source texels, then linear -> sRGB, with
-    /// optional alpha passthrough for transparent captures.
+    /// The interface's viewport backdrop: a soft radial light a little above the middle, fading
+    /// to the edge colour. Colours are sRGB and written linear, like the background quad's.
     /// </summary>
-    class FinalQuad
+    class BackdropQuad
     {
         ShaderProgram _shader;
-        VertexBufferObject _vao;
-
-        //Embedded rather than copied next to the exe: the single file bundler has already been
-        //caught swallowing loose runtime files, and these are code, not user editable content.
-        static string LoadShader(string name)
-        {
-            string resource = $"PlayerViewer.UI.Shaders.{name}";
-            using var stream =
-                typeof(FinalQuad).Assembly.GetManifestResourceStream(resource)
-                ?? throw new InvalidOperationException($"missing embedded shader {resource}");
-            using var reader = new StreamReader(stream);
-            return reader.ReadToEnd();
-        }
 
         void Init()
         {
             if (_shader != null)
                 return;
             _shader = new ShaderProgram(
-                new FragmentShader(LoadShader("Resolve.frag")),
-                new VertexShader(LoadShader("Resolve.vert"))
+                new FragmentShader(UiShaders.Load("Backdrop.frag")),
+                new VertexShader(ScreenQuad.VertexSource)
             );
+        }
 
-            int buffer = GL.GenBuffer();
-            _vao = new VertexBufferObject(buffer);
-            _vao.AddAttribute(0, 2, VertexAttribPointerType.Float, false, 16, 0);
-            _vao.AddAttribute(1, 2, VertexAttribPointerType.Float, false, 16, 8);
-            _vao.Initialize();
+        public void Draw(
+            GLContext context,
+            System.Numerics.Vector3 centre,
+            System.Numerics.Vector3 edge,
+            int width,
+            int height
+        )
+        {
+            Init();
+            GL.Disable(EnableCap.Blend);
+            GL.Disable(EnableCap.CullFace);
+            GL.Disable(EnableCap.DepthTest);
+            GL.DepthMask(false);
 
-            float[] data = { -1, 1, 0, 1, -1, -1, 0, 0, 1, 1, 1, 1, 1, -1, 1, 0 };
-            GL.BufferData(
-                BufferTarget.ArrayBuffer,
-                sizeof(float) * data.Length,
-                data,
-                BufferUsageHint.StaticDraw
+            context.CurrentShader = _shader;
+            _shader.SetVector3("uCentre", new OpenTK.Vector3(centre.X, centre.Y, centre.Z));
+            _shader.SetVector3("uEdge", new OpenTK.Vector3(edge.X, edge.Y, edge.Z));
+            _shader.SetVector2("uSize", new OpenTK.Vector2(width, height));
+
+            ScreenQuad.Draw(_shader);
+            context.CurrentShader = null;
+            GL.DepthMask(true);
+        }
+    }
+
+    /// <summary>
+    /// Fullscreen quad that resolves the supersampled linear buffer into the display
+    /// buffer: an NxN box filter over the source texels, then linear to sRGB, with
+    /// optional alpha passthrough for transparent captures.
+    /// </summary>
+    class FinalQuad
+    {
+        ShaderProgram _shader;
+
+        void Init()
+        {
+            if (_shader != null)
+                return;
+            _shader = new ShaderProgram(
+                new FragmentShader(UiShaders.Load("Resolve.frag")),
+                new VertexShader(ScreenQuad.VertexSource)
             );
         }
 
@@ -1072,11 +1194,9 @@ namespace PlayerViewer.UI
             );
             _shader.SetInt("uColorTex", 1);
 
-            _vao.Enable(_shader);
-            _vao.Use();
-            GL.DrawArrays(PrimitiveType.TriangleStrip, 0, 4);
+            ScreenQuad.Draw(_shader);
             GL.BindTexture(TextureTarget.Texture2D, 0);
-            GL.UseProgram(0);
+            context.CurrentShader = null;
             GL.Enable(EnableCap.DepthTest);
         }
     }

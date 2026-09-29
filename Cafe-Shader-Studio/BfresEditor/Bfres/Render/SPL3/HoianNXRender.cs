@@ -1,4 +1,6 @@
 ﻿using System;
+using System.Runtime.InteropServices;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 using System.IO;
@@ -24,7 +26,7 @@ namespace BfresEditor
     ///   gsys_user2       (fp_c10)       - clustered light table from a dumped in-game buffer.
     ///   gsys_skeleton                   - bone matrices.
     /// </summary>
-    public class HoianNXRender : BfshaRenderer
+    public partial class HoianNXRender : BfshaRenderer
     {
         /// <summary>
         /// Optional path to the Splatoon 3 romfs folder used to locate the shader archive
@@ -42,6 +44,9 @@ namespace BfresEditor
         public static System.Numerics.Vector3 TeamBravoColor = new System.Numerics.Vector3(0.3057f, 0.3961f, 0.9980f);
         public static System.Numerics.Vector3 TeamCharlieColor = new System.Numerics.Vector3(0.5507f, 0.1312f, 0.1312f);
 
+        /// <summary>The colour set's hue settings for each team, applied to its hue variants.</summary>
+        public static TeamColorVariants.HueOffset TeamAlphaHue, TeamBravoHue, TeamCharlieHue;
+
         /// <summary>
         /// Resets the team colors back to the dumped in-game defaults.
         /// </summary>
@@ -54,8 +59,8 @@ namespace BfresEditor
         }
 
         /// <summary>
-        /// Set PV_SHADER_DEBUG=1 to log per material shader option sets, resolved program
-        /// passes and every sampler binding. Very verbose.
+        /// Logs per material shader option sets, resolved program passes and every sampler
+        /// binding. Very verbose.
         /// </summary>
         public static readonly bool DebugMaterials = TegraShaderDecoder.DebugLog;
 
@@ -80,6 +85,20 @@ namespace BfresEditor
         /// When set, it is patched into the gsys_environment block each frame.
         /// </summary>
         public static OpenTK.Vector3? LightDirOverride = null;
+
+        /// <summary>
+        /// Generated gsys_environment and gsys_user0 contents. When set they replace the dumped
+        /// blocks of the current uniform set; the other blocks still come from the dump.
+        /// </summary>
+        public static byte[] EnvironmentOverride = null;
+        public static byte[] User0Override = null;
+
+        /// <summary>A light cluster to bind as gsys_user2 in place of the empty one.</summary>
+        public static byte[] LightClusterOverride = null;
+
+        static byte[] EnvBlock => EnvironmentOverride ?? EnvironmentData;
+        static byte[] User0Block => User0Override ?? User0Data;
+
         //Offset of the main directional light vector inside fp_c5 (env block).
         const int EnvLightDirOffset = 22 * 16 + 16;
 
@@ -109,27 +128,6 @@ namespace BfresEditor
         public static bool NeedsRefractionBuffers = false;
 
         /// <summary>
-        /// Debug: when set, every uniform block submitted for materials whose name
-        /// contains DumpUniformsMaterial is written to this directory as
-        /// "material_blockname.bin" (exact bytes the GL driver receives).
-        /// </summary>
-        public static string DumpUniformsDir = null;
-        public static string DumpUniformsMaterial = "";
-
-        /// <summary>
-        /// When set, every uniform block for materials containing OverrideUniformsMaterial
-        /// is replaced with the corresponding fp_cN.bin from this directory (N derived from
-        /// the fragment location). Blocks listed in OverrideSkipBlocks are left untouched.
-        /// </summary>
-        public static string OverrideUniformsDir = null;
-        public static string OverrideUniformsMaterial = "";
-        public static HashSet<string> OverrideSkipBlocks = new HashSet<string>
-        {
-            "gsys_context", "gsys_shape", "gsys_skeleton", "gsys_shader_option",
-            "gsys_skeleton_ex", "gsys_shape_ex", "gsys_scene_material",
-        };
-
-        /// <summary>
         /// The world-space direction the main light travels (override or dumped env data).
         /// </summary>
         public static OpenTK.Vector3 GetMainLightDir()
@@ -137,21 +135,21 @@ namespace BfresEditor
             if (LightDirOverride != null)
                 return LightDirOverride.Value.Normalized();
             LoadResourceData();
-            if (EnvironmentData != null && EnvironmentData.Length >= EnvLightDirOffset + 12)
+            var env = EnvBlock;
+            if (env != null && env.Length >= EnvLightDirOffset + 12)
             {
                 var dir = new OpenTK.Vector3(
-                    BitConverter.ToSingle(EnvironmentData, EnvLightDirOffset),
-                    BitConverter.ToSingle(EnvironmentData, EnvLightDirOffset + 4),
-                    BitConverter.ToSingle(EnvironmentData, EnvLightDirOffset + 8));
+                    BitConverter.ToSingle(env, EnvLightDirOffset),
+                    BitConverter.ToSingle(env, EnvLightDirOffset + 4),
+                    BitConverter.ToSingle(env, EnvLightDirOffset + 8));
                 if (dir.LengthSquared > 0.0001f)
                     return dir.Normalized();
             }
             return new OpenTK.Vector3(0, -1, 0);
         }
 
-        // Per-slot brightness ratio of each team color variant relative to its base color,
-        // derived from the dumped fp_c8. Layout: 3 teams x 7 variants
-        // (base, bright, dark, hue_bright, hue_dark, hue_complement, hue_bright_half).
+        // Per row brightness ratio of the dumped fp_c8 to its team's base colour, 3 teams x 7 rows.
+        // Only the ink rows use it.
         static float[] _teamColorRatios;
 
         /// <summary>
@@ -236,6 +234,7 @@ namespace BfresEditor
             TeamCharlieColor = baseColors[2];
 
             _teamColorRatios = new float[21];
+            _variantsBuilt = false;
             for (int i = 0; i < 21; i++)
             {
                 var baseCol = baseColors[i / 7];
@@ -248,15 +247,36 @@ namespace BfresEditor
             }
         }
 
+        //Every variant of the three team colours, rebuilt when a colour, a hue setting or the offset table changes.
+        static readonly System.Numerics.Vector3[] _variants = new System.Numerics.Vector3[3 * TeamColorVariants.KindCount];
+        static (System.Numerics.Vector3, System.Numerics.Vector3, System.Numerics.Vector3, TeamColorVariants.HueOffset,
+            TeamColorVariants.HueOffset, TeamColorVariants.HueOffset, object) _variantsKey;
+        static bool _variantsBuilt;
+
         /// <summary>
-        /// Gets a team color variant (team 0-2, variant 0-6) scaled the same way
-        /// the dumped in-game buffer scales it relative to the base color.
+        /// A variant of a team colour (0 alpha, 1 bravo, 2 charlie). Ink and InkBright depend on
+        /// the scene, so they keep the dumped buffer's ratio to the base colour.
         /// </summary>
-        static System.Numerics.Vector3 GetTeamColorVariant(int team, int variant)
+        static System.Numerics.Vector3 GetTeamColorVariant(int team, TeamColorVariants.Kind kind)
         {
-            var col = team == 0 ? TeamAlphaColor : team == 1 ? TeamBravoColor : TeamCharlieColor;
-            float ratio = _teamColorRatios != null ? _teamColorRatios[team * 7 + variant] : 1f;
-            return col * ratio;
+            var key = (TeamAlphaColor, TeamBravoColor, TeamCharlieColor, TeamAlphaHue, TeamBravoHue, TeamCharlieHue,
+                (object)TeamColorVariants.Offsets);
+            if (!_variantsBuilt || key != _variantsKey)
+            {
+                for (int t = 0; t < 3; t++)
+                {
+                    var col = t == 0 ? TeamAlphaColor : t == 1 ? TeamBravoColor : TeamCharlieColor;
+                    var hue = t == 0 ? TeamAlphaHue : t == 1 ? TeamBravoHue : TeamCharlieHue;
+                    for (int k = 0; k < TeamColorVariants.KindCount; k++)
+                        _variants[t * TeamColorVariants.KindCount + k] = TeamColorVariants.Get(col, (TeamColorVariants.Kind)k, hue);
+                    float Ratio(int row) => _teamColorRatios != null ? _teamColorRatios[t * 7 + row] : 1f;
+                    _variants[t * TeamColorVariants.KindCount + (int)TeamColorVariants.Kind.Ink] = col * Ratio(3);
+                    _variants[t * TeamColorVariants.KindCount + (int)TeamColorVariants.Kind.InkBright] = col * Ratio(4);
+                }
+                _variantsKey = key;
+                _variantsBuilt = true;
+            }
+            return _variants[team * TeamColorVariants.KindCount + (int)kind];
         }
 
         #endregion
@@ -649,6 +669,19 @@ namespace BfresEditor
 
         #region Uniform blocks
 
+        //Filled alike for every material, so one shared buffer each is uploaded only on a change.
+        protected override bool IsFrameBlock(string name) =>
+            name == "gsys_context" || name == "gsys_environment" || name == "gsys_user0"
+            || name == "gsys_user2" || name == "gsys_user3";
+
+        //The material's parameters and options depend on no mesh; the frame blocks on the pass.
+        protected override BlockReuse BlockLifetime(string name) => name switch
+        {
+            "gsys_material" or "gsys_shader_option" => BlockReuse.Render,
+            _ when IsFrameBlock(name) => BlockReuse.Pass,
+            _ => BlockReuse.Draw,
+        };
+
         public override void LoadUniformBlock(GLContext control, ShaderProgram shader, int index, UniformBlock block, string name, GenericPickableMesh mesh)
         {
             LoadResourceData();
@@ -672,7 +705,7 @@ namespace BfresEditor
                     break;
                 case "gsys_material":
                     SetMaterialBlock(bfresMaterial, block);
-                    WriteTeamColorMaterialUniforms(block, blockSize);
+                    WriteTeamColorMaterialUniforms(bfresMaterial, block, blockSize);
                     OverrideMaterialUniforms(block, blockSize);
                     break;
                 case "gsys_environment":
@@ -685,7 +718,7 @@ namespace BfresEditor
                     SetTeamColorBlock(block, blockSize);
                     break;
                 case "gsys_user2":
-                    SetBlockData(block, User2Data, blockSize);
+                    SetBlockData(block, LightClusterOverride ?? User2Data, blockSize);
                     break;
                 case "gsys_shader_option":
                     SetOptionsBlock(bfresMaterial, block, index, blockSize);
@@ -695,19 +728,30 @@ namespace BfresEditor
                     break;
             }
 
+            DumpUniformBlock(bfresMaterial.Name, name, block);
         }
+
+        /// <summary>Writes the bytes a block was just filled with, in a local debug build.</summary>
+        static partial void DumpUniformBlock(string material, string name, UniformBlock block);
+
+        //The environment block with the light direction override written in, kept until either changes.
+        static byte[] _envPatched, _envPatchedFrom;
+        static OpenTK.Vector3 _envPatchedDir;
 
         static byte[] GetEnvironmentData()
         {
-            if (LightDirOverride == null || EnvironmentData == null ||
-                EnvironmentData.Length < EnvLightDirOffset + 12)
-                return EnvironmentData;
+            var env = EnvBlock;
+            if (LightDirOverride == null || env == null || env.Length < EnvLightDirOffset + 12)
+                return env;
 
-            var patched = (byte[])EnvironmentData.Clone();
             var dir = LightDirOverride.Value.Normalized();
-            System.Buffer.BlockCopy(BitConverter.GetBytes(dir.X), 0, patched, EnvLightDirOffset, 4);
-            System.Buffer.BlockCopy(BitConverter.GetBytes(dir.Y), 0, patched, EnvLightDirOffset + 4, 4);
-            System.Buffer.BlockCopy(BitConverter.GetBytes(dir.Z), 0, patched, EnvLightDirOffset + 8, 4);
+            if (_envPatched != null && _envPatchedFrom == env && _envPatchedDir == dir)
+                return _envPatched;
+            var patched = (byte[])env.Clone();
+            WriteFloat(patched, EnvLightDirOffset, dir.X);
+            WriteFloat(patched, EnvLightDirOffset + 4, dir.Y);
+            WriteFloat(patched, EnvLightDirOffset + 8, dir.Z);
+            (_envPatched, _envPatchedFrom, _envPatchedDir) = (patched, env, dir);
             return patched;
         }
 
@@ -735,15 +779,14 @@ namespace BfresEditor
         {
             if (blockSize <= 0) return;
 
-            byte[] buffer = new byte[blockSize];
-            var uniformBlock = ShaderModel.UniformBlocks[blockIndex];
+            block.SetData(default, blockSize);
+            var buffer = Bytes(block);
             var defaults = GetDefaultChoices();
 
-            int index = 0;
-            foreach (var param in uniformBlock.Uniforms.Values)
+            foreach (var pair in GetLayout(blockIndex).Offsets)
             {
-                string uniformName = uniformBlock.Uniforms.GetKey(index++);
-                int offset = param.Offset - 1;
+                string uniformName = pair.Key;
+                int offset = pair.Value;
                 if (offset < 0 || offset + 4 > buffer.Length)
                     continue;
 
@@ -758,11 +801,8 @@ namespace BfresEditor
                 else if (option == "False") option = "0";
 
                 if (int.TryParse(option, out int value))
-                    System.Buffer.BlockCopy(BitConverter.GetBytes(value), 0, buffer, offset, 4);
+                    BinaryPrimitives.WriteInt32LittleEndian(buffer.Slice(offset), value);
             }
-
-            block.Buffer.Clear();
-            block.Add(buffer);
         }
 
         /// <summary>
@@ -774,19 +814,14 @@ namespace BfresEditor
         {
             if (blockSize <= 0) return;
 
-            byte[] buffer = new byte[blockSize];
-            if (User0Data != null)
-                System.Buffer.BlockCopy(User0Data, 0, buffer, 0, Math.Min(User0Data.Length, blockSize));
+            block.SetData(User0Block, blockSize);
 
             if (ShadowPrepassTexture != null)
             {
                 const int offset36z = 36 * 16 + 8;
                 if (offset36z + 4 <= blockSize)
-                    System.Buffer.BlockCopy(BitConverter.GetBytes(10000f), 0, buffer, offset36z, 4);
+                    WriteFloat(Bytes(block), offset36z, 10000f);
             }
-
-            block.Buffer.Clear();
-            block.Add(buffer);
         }
 
         /// <summary>
@@ -795,14 +830,11 @@ namespace BfresEditor
         static void SetBlockData(UniformBlock block, byte[] data, int size)
         {
             if (size <= 0) return;
-
-            byte[] buffer = new byte[size];
-            if (data != null)
-                System.Buffer.BlockCopy(data, 0, buffer, 0, Math.Min(data.Length, size));
-
-            block.Buffer.Clear();
-            block.Add(buffer);
+            block.SetData(data, size);
         }
+
+        //The block's bytes, to write into in place.
+        static Span<byte> Bytes(UniformBlock block) => CollectionsMarshal.AsSpan(block.Buffer);
 
         /// <summary>
         /// gsys_context: dumped template with the viewer camera patched in.
@@ -811,9 +843,8 @@ namespace BfresEditor
         /// </summary>
         void SetContextBlock(Camera camera, UniformBlock block, int blockSize)
         {
-            byte[] buffer = new byte[blockSize];
-            if (ContextTemplate != null)
-                System.Buffer.BlockCopy(ContextTemplate, 0, buffer, 0, Math.Min(ContextTemplate.Length, blockSize));
+            block.SetData(ContextTemplate, blockSize);
+            var buffer = Bytes(block);
 
             var viewMatrix = camera.ModelMatrix * camera.ViewMatrix;
             var projMatrix = camera.ProjectionMatrix;
@@ -824,176 +855,201 @@ namespace BfresEditor
             float zfar = camera.ZFar;
             float zDistance = zfar - znear;
 
-            void Write(int offset, Vector4 value)
+            void Write(Span<byte> buffer, int offset, Vector4 value)
             {
                 if (offset + 16 > buffer.Length) return;
-                System.Buffer.BlockCopy(BitConverter.GetBytes(value.X), 0, buffer, offset, 4);
-                System.Buffer.BlockCopy(BitConverter.GetBytes(value.Y), 0, buffer, offset + 4, 4);
-                System.Buffer.BlockCopy(BitConverter.GetBytes(value.Z), 0, buffer, offset + 8, 4);
-                System.Buffer.BlockCopy(BitConverter.GetBytes(value.W), 0, buffer, offset + 12, 4);
+                WriteFloat(buffer, offset, value.X);
+                WriteFloat(buffer, offset + 4, value.Y);
+                WriteFloat(buffer, offset + 8, value.Z);
+                WriteFloat(buffer, offset + 12, value.W);
             }
-            void WriteMat3x4(int offset, Matrix4 m)
+            void WriteMat3x4(Span<byte> buffer, int offset, Matrix4 m)
             {
-                Write(offset, m.Column0); Write(offset + 16, m.Column1); Write(offset + 32, m.Column2);
+                Write(buffer, offset, m.Column0); Write(buffer, offset + 16, m.Column1); Write(buffer, offset + 32, m.Column2);
             }
-            void WriteMat4(int offset, Matrix4 m)
+            void WriteMat4(Span<byte> buffer, int offset, Matrix4 m)
             {
-                Write(offset, m.Column0); Write(offset + 16, m.Column1);
-                Write(offset + 32, m.Column2); Write(offset + 48, m.Column3);
+                Write(buffer, offset, m.Column0); Write(buffer, offset + 16, m.Column1);
+                Write(buffer, offset + 32, m.Column2); Write(buffer, offset + 48, m.Column3);
             }
 
-            WriteMat3x4(0, viewMatrix);         // cView
-            WriteMat4(48, viewProjMatrix);      // cViewProj
-            WriteMat4(112, projMatrix);         // cProj
-            WriteMat3x4(176, viewInverted);     // cViewInv
-            Write(224, new Vector4(znear, zfar, zfar / znear, 1.0f - znear / zfar));                                    // cNearFar
-            Write(240, new Vector4(1.0f / zDistance, znear / zDistance, camera.AspectRatio, 1.0f / camera.AspectRatio)); // cScreen
-            Write(256, new Vector4(zDistance, 0, 0, 0));                                                                 // cDist
+            WriteMat3x4(buffer, 0, viewMatrix);         // cView
+            WriteMat4(buffer, 48, viewProjMatrix);      // cViewProj
+            WriteMat4(buffer, 112, projMatrix);         // cProj
+            WriteMat3x4(buffer, 176, viewInverted);     // cViewInv
+            Write(buffer, 224, new Vector4(znear, zfar, zfar / znear, 1.0f - znear / zfar));                                    // cNearFar
+            Write(buffer, 240, new Vector4(1.0f / zDistance, znear / zDistance, camera.AspectRatio, 1.0f / camera.AspectRatio)); // cScreen
+            Write(buffer, 256, new Vector4(zDistance, 0, 0, 0));                                                                 // cDist
 
             //Previous frame matrices (used for motion vectors); keep them equal to the current frame.
-            WriteMat3x4(336, viewMatrix);       // cPrevView
-            WriteMat4(384, viewProjMatrix);     // cPrevViewProj
-            WriteMat4(448, projMatrix);         // cPrevProj
-            WriteMat3x4(512, viewInverted);     // cPrevViewInv
-
-            block.Buffer.Clear();
-            block.Add(buffer);
+            WriteMat3x4(buffer, 336, viewMatrix);       // cPrevView
+            WriteMat4(buffer, 384, viewProjMatrix);     // cPrevViewProj
+            WriteMat4(buffer, 448, projMatrix);         // cPrevProj
+            WriteMat3x4(buffer, 512, viewInverted);     // cPrevViewInv
         }
 
-        /// <summary>
-        /// gsys_user3: the dumped team color buffer with the current team colors written in.
-        /// Each team has 7 vec4 slots (base, bright, dark, hue_bright, hue_dark,
-        /// hue_complement, hue_bright_half); the derived slots keep the dumped
-        /// brightness ratios relative to the base color.
-        /// </summary>
+        //gsys_user3 rows per team, as the game fills them. Bravo's last two rows stay zero.
+        static readonly TeamColorVariants.Kind[] User3Rows =
+        {
+            TeamColorVariants.Kind.Original, TeamColorVariants.Kind.HueBright, TeamColorVariants.Kind.HueDark,
+            TeamColorVariants.Kind.Ink, TeamColorVariants.Kind.InkBright, TeamColorVariants.Kind.Bright,
+            TeamColorVariants.Kind.HueBright,
+        };
+
+        //Rows 21 to 23 hold the neutral colour's variants; the charlie colour stands in for it.
+        static readonly TeamColorVariants.Kind[] User3NeutralRows =
+        {
+            TeamColorVariants.Kind.Original, TeamColorVariants.Kind.Bright, TeamColorVariants.Kind.Dark,
+        };
+
+        /// <summary>gsys_user3: the dumped team colour buffer with the current teams' variants written in.</summary>
         void SetTeamColorBlock(UniformBlock block, int blockSize)
         {
-            byte[] buffer = new byte[blockSize];
-            if (User3Data != null)
-                System.Buffer.BlockCopy(User3Data, 0, buffer, 0, Math.Min(User3Data.Length, blockSize));
+            block.SetData(User3Data, blockSize);
+            var buffer = Bytes(block);
 
             for (int team = 0; team < 3; team++)
             {
-                for (int variant = 0; variant < 7; variant++)
+                for (int row = 0; row < User3Rows.Length; row++)
                 {
-                    int offset = (team * 7 + variant) * 16;
-                    if (offset + 12 > buffer.Length) break;
-
-                    var col = GetTeamColorVariant(team, variant);
-                    System.Buffer.BlockCopy(BitConverter.GetBytes(col.X), 0, buffer, offset, 4);
-                    System.Buffer.BlockCopy(BitConverter.GetBytes(col.Y), 0, buffer, offset + 4, 4);
-                    System.Buffer.BlockCopy(BitConverter.GetBytes(col.Z), 0, buffer, offset + 8, 4);
+                    var col = team == 1 && row >= 5
+                        ? System.Numerics.Vector3.Zero
+                        : GetTeamColorVariant(team, User3Rows[row]);
+                    WriteVec3(buffer, (team * 7 + row) * 16, col);
                 }
             }
-
-            block.Buffer.Clear();
-            block.Add(buffer);
+            for (int row = 0; row < User3NeutralRows.Length; row++)
+                WriteVec3(buffer, (21 + row) * 16, GetTeamColorVariant(2, User3NeutralRows[row]));
         }
 
-        //fp_c8 variant slot indices (from the decompiled shader).
-        const int VariantBright = 1;
-        const int VariantDark = 2;
-        const int VariantHueBright = 3;
-        const int VariantHueDark = 4;
-        const int VariantHueComplement = 5;
-        const int VariantHueBrightHalf = 6;
+        //The my_team_color variants the game writes into every material's block. The player's own team is alpha.
+        static readonly (string Name, TeamColorVariants.Kind Kind)[] TeamColorUniforms =
+        {
+            ("my_team_color_bright", TeamColorVariants.Kind.Bright),
+            ("my_team_color_hue_bright", TeamColorVariants.Kind.HueBright),
+            ("my_team_color_hue_bright_half", TeamColorVariants.Kind.HueBrightHalf),
+            ("my_team_color_hue_dark", TeamColorVariants.Kind.HueDark),
+            ("my_team_color_hue_dark_half", TeamColorVariants.Kind.HueDarkHalf),
+        };
 
         /// <summary>
-        /// Overrides the my_team_color* uniforms inside gsys_material (fp_c6) with the
-        /// current team colors so characters/gear display team colors like in game.
-        /// The player's own team is alpha.
+        /// Writes the team colour uniforms of gsys_material as the game does. my_team_color is the
+        /// model colour unless my_team_color_type moves it (7: the material's hue and bright offset
+        /// render infos, 8: the ink colour); the complement is the colour half way round the hue
+        /// circle, or for type 10 the render info's hue offset away. The dark variant and the per
+        /// team hue variants are left at the material's values.
         /// </summary>
-        void WriteTeamColorMaterialUniforms(UniformBlock block, int blockSize)
+        void WriteTeamColorMaterialUniforms(FMAT mat, UniformBlock block, int blockSize)
         {
-            var matBlock = ShaderModel.UniformBlocks.Values.FirstOrDefault(x =>
-                x.Type == BfshaLibrary.UniformBlock.BlockType.Material);
-            if (matBlock == null)
+            var layout = GetLayout(BfshaLibrary.UniformBlock.BlockType.Material);
+            if (layout == null)
                 return;
 
             //Pad the material buffer to the full block size so late uniforms fit.
-            while (block.Buffer.Count < blockSize)
-                block.Buffer.Add(0);
+            if (block.Buffer.Count < blockSize)
+                block.AddZeros(blockSize - block.Buffer.Count);
+            var buffer = Bytes(block);
 
-            var values = new Dictionary<string, System.Numerics.Vector3>
+            var offsets = layout.Offsets;
+            foreach (var (name, kind) in TeamColorUniforms)
+                WriteVec3(buffer, offsets, name, GetTeamColorVariant(0, kind));
+            WriteVec3(buffer, offsets, "my_alpha_team_color", GetTeamColorVariant(0, TeamColorVariants.Kind.Model));
+            WriteVec3(buffer, offsets, "my_bravo_team_color", GetTeamColorVariant(1, TeamColorVariants.Kind.Model));
+            WriteVec3(buffer, offsets, "my_charlie_team_color", GetTeamColorVariant(2, TeamColorVariants.Kind.Model));
+
+            var original = GetTeamColorVariant(0, TeamColorVariants.Kind.Original);
+            var color = GetTeamColorVariant(0, TeamColorVariants.Kind.Model);
+            var complement = TeamColorVariants.Shift(original, true, 0.5f, 0f, 0f);
+            string type = GetOptionChoice(mat, "my_team_color_type");
+            bool huePeak = GetOptionChoice(mat, "disable_hue_peak_offset") != "1";
+            if (type == "7")
             {
-                { "my_team_color",                    GetTeamColorVariant(0, 0) },
-                { "my_team_color_bright",             GetTeamColorVariant(0, VariantBright) },
-                { "my_team_color_dark",               GetTeamColorVariant(0, VariantDark) },
-                { "my_team_color_hue_bright",         GetTeamColorVariant(0, VariantHueBright) },
-                { "my_team_color_hue_bright_half",    GetTeamColorVariant(0, VariantHueBrightHalf) },
-                { "my_team_color_hue_dark",           GetTeamColorVariant(0, VariantHueDark) },
-                { "my_team_color_hue_dark_half",      GetTeamColorVariant(0, VariantHueDark) },
-                { "my_team_color_hue_complement",     GetTeamColorVariant(0, VariantHueComplement) },
-                { "my_alpha_team_color",              GetTeamColorVariant(0, 0) },
-                { "my_bravo_team_color",              GetTeamColorVariant(1, 0) },
-                { "my_charlie_team_color",            GetTeamColorVariant(2, 0) },
-                { "my_alpha_team_color_hue_bright",   GetTeamColorVariant(0, VariantHueBright) },
-                { "my_bravo_team_color_hue_bright",   GetTeamColorVariant(1, VariantHueBright) },
-                { "my_charlie_team_color_hue_bright", GetTeamColorVariant(2, VariantHueBright) },
-                { "my_alpha_team_color_hue_dark",     GetTeamColorVariant(0, VariantHueDark) },
-                { "my_bravo_team_color_hue_dark",     GetTeamColorVariant(1, VariantHueDark) },
-                { "my_charlie_team_color_hue_dark",   GetTeamColorVariant(2, VariantHueDark) },
-            };
-
-            int index = 0;
-            foreach (var param in matBlock.Uniforms.Values)
-            {
-                string uniformName = matBlock.Uniforms.GetKey(index++);
-                if (!values.TryGetValue(uniformName, out var col))
-                    continue;
-
-                int offset = param.Offset - 1;
-                if (offset + 12 > block.Buffer.Count)
-                    continue;
-
-                WriteFloat(block.Buffer, offset, col.X);
-                WriteFloat(block.Buffer, offset + 4, col.Y);
-                WriteFloat(block.Buffer, offset + 8, col.Z);
+                float hue = GetRenderInfoSingle(mat, "my_team_color_hue_offset");
+                float bright = Math.Clamp(GetRenderInfoSingle(mat, "my_team_color_bright_offset"), -1f, 1f);
+                if (hue != 0f || bright != 0f)
+                {
+                    color = TeamColorVariants.Shift(original, huePeak, hue, 0f, 0f);
+                    if (bright != 0f)
+                        color = TeamColorVariants.AddValue(color, bright);
+                }
             }
+            else if (type == "8")
+                color = GetTeamColorVariant(0, TeamColorVariants.Kind.Ink);
+            else if (type == "10")
+                complement = TeamColorVariants.Shift(original, huePeak, GetRenderInfoSingle(mat, "my_team_color_hue_offset"), 0f, 0f);
+            WriteVec3(buffer, offsets, "my_team_color", color);
+            WriteVec3(buffer, offsets, "my_team_color_hue_complement", complement);
         }
+
+        //The material's choice for an option, or the archive's default when it sets none.
+        string GetOptionChoice(FMAT mat, string name)
+        {
+            if (mat.ShaderOptions.TryGetValue(name, out string choice) && choice != GsysShaderOptions.Unset)
+                return choice;
+            return GetDefaultChoices().TryGetValue(name, out choice) ? choice : null;
+        }
+
+        static float GetRenderInfoSingle(FMAT mat, string name)
+        {
+            if (mat.Material.RenderInfos.TryGetValue(name, out var info)
+                && info.Type == BfresLibrary.RenderInfoType.Single)
+            {
+                var values = info.GetValueSingles();
+                if (values != null && values.Length > 0)
+                    return values[0];
+            }
+            return 0f;
+        }
+
+        static void WriteVec3(Span<byte> buffer, Dictionary<string, int> offsets, string name, System.Numerics.Vector3 value)
+        {
+            if (offsets.TryGetValue(name, out int offset))
+                WriteVec3(buffer, offset, value);
+        }
+
+        static void WriteVec3(Span<byte> buffer, int offset, System.Numerics.Vector3 value)
+        {
+            if (offset < 0 || offset + 12 > buffer.Length)
+                return;
+            WriteFloat(buffer, offset, value.X);
+            WriteFloat(buffer, offset + 4, value.Y);
+            WriteFloat(buffer, offset + 8, value.Z);
+        }
+
+        //two_color_complement_paint_intensity forced by model kind: 0 for hair, 1 for rollers
+        //and brushes, left alone otherwise. Read once from the model name.
+        float? _complementOverride;
+        bool _complementRead;
 
         void OverrideMaterialUniforms(UniformBlock block, int blockSize)
         {
-            var matBlock = ShaderModel.UniformBlocks.Values.FirstOrDefault(x =>
-                x.Type == BfshaLibrary.UniformBlock.BlockType.Material);
-            if (matBlock == null) return;
+            var layout = GetLayout(BfshaLibrary.UniformBlock.BlockType.Material);
+            if (layout == null) return;
 
-            while (block.Buffer.Count < blockSize)
-                block.Buffer.Add(0);
+            if (block.Buffer.Count < blockSize)
+                block.AddZeros(blockSize - block.Buffer.Count);
+            var buffer = Bytes(block);
 
-            string model = ParentModel.Name;
-            bool isHair = model.StartsWith("Har_");
-            bool isRollerBrush = model.Contains("Roller") || model.Contains("Brush");
-
-            var overrides = new Dictionary<string, float>();
-
-            if (isHair)
-                overrides["two_color_complement_paint_intensity"] = 0f;
-            else if (isRollerBrush)
-                overrides["two_color_complement_paint_intensity"] = 1f;
-
-            overrides["output_clamp_value"] = 100f;
-
-            if (overrides.Count == 0) return;
-
-            int index = 0;
-            foreach (var param in matBlock.Uniforms.Values)
+            if (!_complementRead)
             {
-                string name = matBlock.Uniforms.GetKey(index++);
-                if (!overrides.TryGetValue(name, out float value)) continue;
-
-                int offset = param.Offset - 1;
-                if (offset + 4 <= block.Buffer.Count)
-                    WriteFloat(block.Buffer, offset, value);
+                string model = ParentModel.Name;
+                if (model.StartsWith("Har_"))
+                    _complementOverride = 0f;
+                else if (model.Contains("Roller") || model.Contains("Brush"))
+                    _complementOverride = 1f;
+                _complementRead = true;
             }
+
+            if (_complementOverride is float complement
+                && layout.Offsets.TryGetValue("two_color_complement_paint_intensity", out int c)
+                && c + 4 <= buffer.Length)
+                WriteFloat(buffer, c, complement);
+            if (layout.Offsets.TryGetValue("output_clamp_value", out int o) && o + 4 <= buffer.Length)
+                WriteFloat(buffer, o, 100f);
         }
 
-        static void WriteFloat(List<byte> buffer, int offset, float value)
-        {
-            var bytes = BitConverter.GetBytes(value);
-            for (int i = 0; i < 4; i++)
-                buffer[offset + i] = bytes[i];
-        }
+        static void WriteFloat(Span<byte> buffer, int offset, float value) =>
+            BinaryPrimitives.WriteSingleLittleEndian(buffer.Slice(offset), value);
 
         #endregion
 
@@ -1035,6 +1091,16 @@ namespace BfresEditor
             GL.TexSubImage2D(TextureTarget.Texture2D, 0, 0, 0, w, h,
                 PixelFormat.Rgba, PixelType.UnsignedByte, flipped);
             tex.Unbind();
+        }
+
+        /// <summary>The prefiltered environment cube array the materials read, loaded on first use.</summary>
+        public static GLTextureCubeArray EnvCubeArray
+        {
+            get
+            {
+                InitTextures();
+                return PrefilterCubeArrayTexture;
+            }
         }
 
         public static void InitTextures()
@@ -1194,10 +1260,6 @@ namespace BfresEditor
             var bfresMaterial = (FMAT)mat;
             var samplerTypes = GetSamplerTypes(shader.program);
 
-            GL.ActiveTexture(TextureUnit.Texture0 + 1);
-            if (RenderTools.defaultTex != null)
-                GL.BindTexture(TextureTarget.Texture2D, RenderTools.defaultTex.ID);
-
             int id = 1;
             for (int i = 0; i < ShaderModel.Samplers.Count; i++)
             {
@@ -1216,8 +1278,8 @@ namespace BfresEditor
                 }
 
                 string uniformName = locationInfo.FragmentLocation != -1
-                    ? ConvertSamplerID(locationInfo.FragmentLocation)
-                    : ConvertSamplerID(locationInfo.VertexLocation, true);
+                    ? SamplerName(locationInfo.FragmentLocation, false)
+                    : SamplerName(locationInfo.VertexLocation, true);
                 samplerTypes.TryGetValue(uniformName, out var type);
 
                 GLTexture bound = null;
@@ -1250,9 +1312,9 @@ namespace BfresEditor
                 }
 
                 if (locationInfo.VertexLocation != -1)
-                    shader.SetInt(ConvertSamplerID(locationInfo.VertexLocation, true), id);
+                    shader.SetIntCached(SamplerName(locationInfo.VertexLocation, true), id);
                 if (locationInfo.FragmentLocation != -1)
-                    shader.SetInt(ConvertSamplerID(locationInfo.FragmentLocation), id);
+                    shader.SetIntCached(SamplerName(locationInfo.FragmentLocation, false), id);
                 id++;
             }
 

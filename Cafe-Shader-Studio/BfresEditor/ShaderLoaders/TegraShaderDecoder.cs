@@ -10,7 +10,7 @@ using GLFrameworkEngine;
 using System.Text;
 namespace BfresEditor
 {
-    public class TegraShaderDecoder
+    public partial class TegraShaderDecoder
     {
         public static Dictionary<string, ShaderProgram> GLShaderPrograms = new Dictionary<string, ShaderProgram>();
         static Dictionary<string, ShaderInfo> _shaderInfoCache = new Dictionary<string, ShaderInfo>();
@@ -65,7 +65,7 @@ namespace BfresEditor
         public static readonly System.Diagnostics.Stopwatch TotalTime = new System.Diagnostics.Stopwatch();
         public static int LoadCount = 0;
 
-        const int CacheVersion = 6;
+        const int CacheVersion = 7;
         static bool _cacheVersionChecked;
 
         public static string CacheDir = "ShaderCache";
@@ -181,7 +181,7 @@ namespace BfresEditor
         }
 
         /// <summary>
-        /// Patches the decompiled fragment shader for framebuffer samplers:
+        /// Patches a decompiled stage for framebuffer samplers:
         /// - Y-flip UV: UV -> UV * vec2(1,-1) + vec2(0,1)  (OpenGL bottom-up -> NX top-down)
         /// </summary>
         internal static string PatchFramebufferSamplers(string fragSource,
@@ -256,9 +256,16 @@ namespace BfresEditor
             return line;
         }
 
-        /// <summary>PV_SHADER_DEBUG=1: per material shader dumps and the load timing report.</summary>
-        public static readonly bool DebugLog =
-            Environment.GetEnvironmentVariable("PV_SHADER_DEBUG") == "1";
+        public static readonly bool DebugLog = ReadDebugSwitch();
+
+        static bool ReadDebugSwitch()
+        {
+            bool on = false;
+            DebugSwitch(ref on);
+            return on;
+        }
+
+        static partial void DebugSwitch(ref bool on);
 
         public static string TimingReport() =>
             $"[ShaderCache] {LoadCount} load(s) in {TotalTime.Elapsed.TotalMilliseconds:0.0}ms"
@@ -354,7 +361,10 @@ namespace BfresEditor
                 string vertSource = freshVert ?? File.ReadAllText(vertPath);
 
                 if (hasPatch)
+                {
                     fragSource = PatchFramebufferSamplers(fragSource, yFlipSamplers);
+                    vertSource = PatchFramebufferSamplers(vertSource, yFlipSamplers);
+                }
 
                 LinkTime.Start();
                 if (AllowDeferredCompile && ShaderProgram.SupportsParallelCompile)
@@ -563,7 +573,28 @@ namespace BfresEditor
         static (string Vertex, string Pixel) DecompilePair(byte[] vertexData, byte[] pixelData)
         {
             var (vertex, pixel) = TegraShaderTranslator.TranslatePair(vertexData, pixelData);
-            return (StripSamplerBindings(vertex), AppendPixelShaderCode(StripSamplerBindings(pixel)));
+            return (ReduceTrig(StripSamplerBindings(vertex)),
+                AppendPixelShaderCode(ReduceTrig(StripSamplerBindings(pixel))));
+        }
+
+        static readonly System.Text.RegularExpressions.Regex _trigCall =
+            new(@"\b(sin|cos)\(", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        /// <summary>
+        /// The console reduces a sin or cos argument to turns before the lookup, so a large
+        /// argument still gives a usable result. Some drivers lose all precision there instead,
+        /// so the argument is reduced the same way first.
+        /// </summary>
+        static string ReduceTrig(string source)
+        {
+            int main = source.IndexOf("void main()", StringComparison.Ordinal);
+            if (main < 0 || !_trigCall.IsMatch(source, main))
+                return source;
+            const string helpers =
+                "float pv_sin(float x) { return sin(fract(x * 0.159154937) * 6.28318548); }\n"
+                + "float pv_cos(float x) { return cos(fract(x * 0.159154937) * 6.28318548); }\n\n";
+            string body = _trigCall.Replace(source.Substring(main), "pv_$1(");
+            return source.Substring(0, main) + helpers + body;
         }
 
         //Writes the decompiled sources for a program if they are not cached yet.

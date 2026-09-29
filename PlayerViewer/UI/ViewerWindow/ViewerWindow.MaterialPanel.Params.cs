@@ -109,7 +109,7 @@ namespace PlayerViewer.UI
                 {
                     float v = f;
                     ImGui.SetNextItemWidth(ControlWidth(reset));
-                    if (ImGui.DragFloat("##v", ref v, 0.01f))
+                    if (Widgets.Framed(() => ImGui.DragFloat("##v", ref v, 0.01f)))
                     {
                         param.DataValue = v;
                         Changed();
@@ -129,7 +129,7 @@ namespace PlayerViewer.UI
                         );
                         ImGui.SetNextItemWidth(ControlWidth(reset));
                         if (
-                            ImGui.ColorEdit4(
+                            Widgets.ColorEdit4(
                                 "##c",
                                 ref colour,
                                 ImGuiColorEditFlags.Float | ImGuiColorEditFlags.HDR
@@ -174,7 +174,7 @@ namespace PlayerViewer.UI
                 {
                     int v = n;
                     ImGui.SetNextItemWidth(ControlWidth(reset));
-                    if (ImGui.InputInt("##v", ref v))
+                    if (Widgets.Framed(() => ImGui.InputInt("##v", ref v)))
                     {
                         param.DataValue = v;
                         Changed();
@@ -185,7 +185,7 @@ namespace PlayerViewer.UI
                 case bool b:
                 {
                     bool v = b;
-                    if (ImGui.Checkbox("##v", ref v))
+                    if (Widgets.CheckboxControl("##v", ref v))
                     {
                         param.DataValue = v;
                         Changed();
@@ -200,7 +200,7 @@ namespace PlayerViewer.UI
                         if (i > 0)
                             ImGui.SameLine();
                         bool v = bools[i];
-                        if (ImGui.Checkbox($"##b{i}", ref v))
+                        if (Widgets.CheckboxControl($"##b{i}", ref v))
                         {
                             bools[i] = v;
                             Changed();
@@ -219,14 +219,20 @@ namespace PlayerViewer.UI
                     float rotate = srt.Rotation;
                     bool changed = false;
                     ImGui.SetNextItemWidth(ControlWidth(reset));
+                    Widgets.BeginFramed(2);
                     changed |= ImGui.DragFloat2("##scale", ref scale, 0.01f);
+                    Widgets.EndFramed();
                     Widgets.ItemTooltip("scale");
                     DrawResetButton("spsrt", reset);
                     ImGui.SetNextItemWidth(-1);
+                    Widgets.BeginFramed();
                     changed |= ImGui.DragFloat("##rot", ref rotate, 0.01f);
+                    Widgets.EndFramed();
                     Widgets.ItemTooltip("rotation");
                     ImGui.SetNextItemWidth(-1);
+                    Widgets.BeginFramed(2);
                     changed |= ImGui.DragFloat2("##trans", ref translate, 0.01f);
+                    Widgets.EndFramed();
                     Widgets.ItemTooltip("translation");
                     if (!changed)
                         return;

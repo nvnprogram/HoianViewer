@@ -93,7 +93,7 @@ namespace GLFrameworkEngine
         }
 
         public bool IsShaderActive(ShaderProgram shader) {
-            return shader != null && shader.program == CurrentShader.program;
+            return shader != null && shader.program == CurrentShader?.program;
         }
 
         private ShaderProgram shader;
@@ -102,8 +102,10 @@ namespace GLFrameworkEngine
             get { return shader; }
             set
             {
+                //Forget the cached program too, so the next shader set is bound even if it is the same.
                 if(value == null)
                 {
+                    shader = null;
                     GL.UseProgram(0);
                     return;
                 }

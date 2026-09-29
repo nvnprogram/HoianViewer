@@ -39,7 +39,7 @@ namespace PlayerViewer.UI
                 );
                 ImGui.PopTextWrapPos();
                 FilterRow("##optsearch", ref _optionSearch);
-                ImGui.BeginChild("##optlist", new Vector2(0, 0), false);
+                Widgets.BeginScrollChild("##optlist", new Vector2(0, 0));
                 foreach (var entry in options.ToArray())
                     if (Widgets.Matches(entry.Key, _optionSearch))
                         DrawFreeTextOption(material, entry.Key, entry.Value.String ?? "");
@@ -56,14 +56,14 @@ namespace PlayerViewer.UI
             ImGui.PushTextWrapPos();
             Widgets.DimText($"{stored} of {declared.Count} declared options are stored here");
             ImGui.PopTextWrapPos();
-            ImGui.Checkbox("Only the stored ones", ref _optionsStoredOnly);
+            Widgets.CheckboxControl("Only the stored ones", ref _optionsStoredOnly);
             Widgets.ItemTooltip(
                 "Off lists everything the bfsha declares. Setting an option the material "
                     + "does not carry adds it automatically."
             );
             FilterRow("##optsearch", ref _optionSearch);
 
-            ImGui.BeginChild("##optlist", new Vector2(0, 0), false);
+            Widgets.BeginScrollChild("##optlist", new Vector2(0, 0));
             for (int i = 0; i < declared.Count; i++)
             {
                 string name = declared.GetKey(i);
@@ -144,7 +144,7 @@ namespace PlayerViewer.UI
 
             string free = value;
             ImGui.SetNextItemWidth(ControlWidth(reset));
-            bool edited = ImGui.InputText($"##opt{name}", ref free, 128);
+            bool edited = Widgets.InputText($"##opt{name}", ref free, 128);
             DrawResetButton($"opt{name}", reset);
             if (edited)
                 SetShaderOption(material, name, free);

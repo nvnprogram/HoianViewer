@@ -237,6 +237,19 @@ namespace BfresEditor
             GL.UseProgram(0);
         }
 
+        /// <summary>
+        /// Set by a host drawing a pass for its depth alone, with colour writes off: meshes that
+        /// write no depth are skipped, and so is the refraction meshes' colour draw.
+        /// </summary>
+        public static bool DepthOnlyPass;
+
+        //A mesh whose material has its depth writes off leaves the depth buffer as it was.
+        static bool WritesDepth(BfresMeshAsset mesh)
+        {
+            var blend = ((FMAT)mesh.Shape.Material).BlendState;
+            return !(mesh.MaterialAsset is ShaderRenderBase) || (blend.DepthTest && blend.DepthWrite);
+        }
+
         public void Draw(GLContext control, GLFrameworkEngine.Pass pass, BfresRender parentRender)
         {
             if (disposed || !IsVisible)
@@ -271,6 +284,9 @@ namespace BfresEditor
                 ((BfresMaterialAsset)mesh.MaterialAsset).ParentRenderer = parentRender;
 
                 if (!ModelData.Skeleton.Bones[mesh.BoneIndex].Visible)
+                    continue;
+
+                if (DepthOnlyPass && !WritesDepth(mesh))
                     continue;
 
                 RenderMesh(control, mesh);
@@ -353,6 +369,9 @@ namespace BfresEditor
                 ((BfresMaterialAsset)mesh.MaterialAsset).ParentRenderer = parentRender;
                 RenderMesh(control, mesh);
             }
+
+            if (DepthOnlyPass)
+                return;
 
             //Flush depth writes so refraction can reliably sample them
             GL.TextureBarrier();
@@ -576,6 +595,8 @@ namespace BfresEditor
             //Draw the mesh
             mesh.vao.Enable(materialAsset.Shader);
             mesh.Render(control, materialAsset.Shader);
+            if (!materialAsset.FirstRenderDone)
+                ShaderRenderBase.FirstRenders++;
             materialAsset.FirstRenderDone = true;
         }
 
