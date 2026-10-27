@@ -132,6 +132,36 @@ namespace GLFrameworkEngine
             return texture;
         }
 
+        /// <summary>
+        /// A cube array from uncompressed texels: one array per mip, holding every face of every
+        /// cube in order. Sampled with clamp to edge and the whole mip chain.
+        /// </summary>
+        public static GLTextureCubeArray FromLayers(int size, int cubeCount, byte[][] mips,
+            PixelInternalFormat internalFormat, PixelFormat format, PixelType type)
+        {
+            var texture = new GLTextureCubeArray();
+            texture.Width = size;
+            texture.Height = size;
+            texture.MipCount = mips.Length;
+            texture.ArrayCount = cubeCount;
+            texture.Bind();
+            for (int m = 0; m < mips.Length; m++)
+            {
+                int s = Math.Max(1, size >> m);
+                GL.TexImage3D(TextureTarget.TextureCubeMapArray, m, internalFormat, s, s,
+                    cubeCount * 6, 0, format, type, mips[m]);
+            }
+            GL.TexParameter(texture.Target, TextureParameterName.TextureBaseLevel, 0);
+            GL.TexParameter(texture.Target, TextureParameterName.TextureMaxLevel, mips.Length - 1);
+            GL.TexParameter(texture.Target, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+            GL.TexParameter(texture.Target, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(texture.Target, TextureParameterName.TextureWrapS, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(texture.Target, TextureParameterName.TextureWrapT, (int)TextureWrapMode.ClampToEdge);
+            GL.TexParameter(texture.Target, TextureParameterName.TextureWrapR, (int)TextureWrapMode.ClampToEdge);
+            texture.Unbind();
+            return texture;
+        }
+
         public static GLTextureCubeArray FromDDS(DDS dds)
         {
             int size = (int)dds.Width;

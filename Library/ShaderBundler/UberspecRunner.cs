@@ -40,27 +40,6 @@ namespace ShaderBundler
     /// </summary>
     public sealed class UberspecRunner
     {
-        /// <summary>The gates the tool prints. One that is not printed is a failure, not a
-        /// pass: a scraper that only counted FAIL lines once missed a gate for two whole
-        /// builds.</summary>
-        static readonly string[] ExpectedGates =
-        {
-            "V1",
-            "V2",
-            "V3",
-            "V4",
-            "V5",
-            "V6",
-            "V7",
-            "V8",
-            "V9",
-            "V10",
-            "V11",
-            "V12",
-            "V13",
-            "V14",
-        };
-
         static readonly Regex GateRe = new(
             @"^\s*(V\d+)\s+(.+?)\s+(PASS|FAIL)(?:\s+(.*))?$",
             RegexOptions.Compiled
@@ -107,9 +86,10 @@ namespace ShaderBundler
 
         /// <summary>
         /// The codegen version the specialiser stamps into every control blob it writes, or
-        /// <see cref="BundleStamp.Unstamped"/> when it does not answer.
+        /// <see cref="BundleStamp.Unstamped"/> when it does not answer. <c>codegen-nvn2</c>
+        /// asks for the NVN2 one.
         /// </summary>
-        public static int QueryCodegen(string executablePath)
+        public static int QueryCodegen(string executablePath, string command = "codegen")
         {
             if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
                 return BundleStamp.Unstamped;
@@ -121,7 +101,7 @@ namespace ShaderBundler
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                 };
-                psi.ArgumentList.Add("codegen");
+                psi.ArgumentList.Add(command);
                 using var p = Process.Start(psi);
                 if (p == null)
                     return BundleStamp.Unstamped;
@@ -301,8 +281,14 @@ namespace ShaderBundler
                         $"{req.Label}: the specialiser ignored an option: {line.Trim()}"
                     );
 
-            var gates = ReadGates(so);
-            var failed = Named(gates, "FAIL");
+            var platform = SplicePlatform.Of(req.Uber.ControlCode);
+            var expected = platform.ExpectedGates;
+            var gates = ReadGates(so, expected);
+            var failed = Named(
+                gates,
+                "FAIL",
+                platform.GateListComplete ? expected : (IEnumerable<string>)gates.Keys
+            );
             if (failed.Count > 0)
                 throw new InvalidOperationException(
                     $"{req.Label}: {failed.Count} verification gate(s) failed: "
@@ -311,7 +297,7 @@ namespace ShaderBundler
                         + so
                 );
 
-            var missing = Named(gates, "MISSING");
+            var missing = Named(gates, "MISSING", expected);
             if (missing.Count > 0)
                 throw new InvalidOperationException(
                     $"{req.Label}: the specialiser printed no line for gate(s) "
@@ -319,7 +305,7 @@ namespace ShaderBundler
                         + ", which is not a pass."
                 );
 
-            var notRun = Named(gates, "NOT RUN");
+            var notRun = Named(gates, "NOT RUN", expected);
             notRun.Remove(ReferenceGate);
             if (notRun.Count > 0)
                 throw new InvalidOperationException(
@@ -335,12 +321,13 @@ namespace ShaderBundler
                         + $"in {dir}"
                 );
 
-            int passed = Named(gates, "PASS").Count;
-            int skipped = ExpectedGates.Length - passed;
+            int passed = Named(gates, "PASS", expected).Count;
+            int skipped = expected.Count - passed;
             var binary = new ShaderBinary(File.ReadAllBytes(code), File.ReadAllBytes(control));
 
-            if (BundleStamp.Codegen == BundleStamp.Unstamped)
-                BundleStamp.Codegen = BundleStamp.Read(binary.ControlCode);
+            var produced = SplicePlatform.Of(binary.ControlCode);
+            if (produced.Codegen == BundleStamp.Unstamped)
+                produced.Codegen = BundleStamp.Read(binary.ControlCode);
 
             return new UberspecResult
             {
@@ -350,7 +337,7 @@ namespace ShaderBundler
         }
 
         //Gate name to verdict: PASS, FAIL, NOT RUN or MISSING.
-        static Dictionary<string, string> ReadGates(string stdout)
+        static Dictionary<string, string> ReadGates(string stdout, IEnumerable<string> expected)
         {
             var gates = new Dictionary<string, string>(StringComparer.Ordinal);
             foreach (var line in (stdout ?? "").Split('\n'))
@@ -365,16 +352,20 @@ namespace ShaderBundler
                     verdict = "NOT RUN";
                 gates[m.Groups[1].Value] = verdict;
             }
-            foreach (var g in ExpectedGates)
+            foreach (var g in expected)
                 if (!gates.ContainsKey(g))
                     gates[g] = "MISSING";
             return gates;
         }
 
-        static List<string> Named(Dictionary<string, string> gates, string verdict)
+        static List<string> Named(
+            Dictionary<string, string> gates,
+            string verdict,
+            IEnumerable<string> among
+        )
         {
             var names = new List<string>();
-            foreach (var g in ExpectedGates)
+            foreach (var g in among)
                 if (gates.TryGetValue(g, out var v) && v == verdict)
                     names.Add(g);
             return names;

@@ -1,20 +1,20 @@
 using System;
-using System.Buffers.Binary;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 
 namespace PlayerViewer.Core.Formats
 {
     /// <summary>
-    /// Writes a little endian BYML from the tree <see cref="Byml"/> reads: hashes as
-    /// Dictionary&lt;string, object&gt;, arrays as List&lt;object&gt;, strings, bools, int, float,
-    /// uint, long, ulong, double, binary (byte[] and <see cref="BymlBinary"/>) and null.
-    /// else.
+    /// Writes a BYML from the tree <see cref="Byml"/> reads: hashes as
+    /// Dictionary&lt;string, object&gt; (<see cref="BymlKeyHash"/> for the hash keyed ones),
+    /// arrays as List&lt;object&gt;, strings, bools, int, float, uint, long, ulong, double, binary
+    /// (byte[] and <see cref="BymlBinary"/>), <see cref="BymlValue128"/> and null.
     /// </summary>
     public static class BymlWriter
     {
-        public static byte[] Write(object root, ushort version = 7)
+        public static byte[] Write(object root, ushort version = 7, bool bigEndian = false)
         {
             var keys = new SortedSet<string>(Utf8Order.Instance);
             var strings = new SortedSet<string>(Utf8Order.Instance);
@@ -31,12 +31,12 @@ namespace PlayerViewer.Core.Formats
             if (keys.Count > 0)
             {
                 keyTable = output.Count;
-                output.AddRange(StringTable(keys.ToList()));
+                output.AddRange(StringTable(keys.ToList(), bigEndian));
             }
             if (strings.Count > 0)
             {
                 stringTable = output.Count;
-                output.AddRange(StringTable(strings.ToList()));
+                output.AddRange(StringTable(strings.ToList(), bigEndian));
             }
 
             //Binary data sits between the string table and the root. An aligned node is placed
@@ -52,8 +52,8 @@ namespace PlayerViewer.Core.Formats
                     int dataStart = (output.Count + 8 + align - 1) / align * align;
                     output.AddRange(new byte[dataStart - 8 - output.Count]);
                     blobs[blob] = output.Count;
-                    AddU32(output, (uint)aligned.Data.Count);
-                    AddU32(output, aligned.Alignment);
+                    AddU32(output, (uint)aligned.Data.Count, bigEndian);
+                    AddU32(output, aligned.Alignment, bigEndian);
                     output.AddRange(aligned.Data);
                 }
                 else
@@ -62,7 +62,7 @@ namespace PlayerViewer.Core.Formats
                     while (output.Count % 4 != 0)
                         output.Add(0);
                     blobs[blob] = output.Count;
-                    AddU32(output, (uint)bytes.Length);
+                    AddU32(output, (uint)bytes.Length, bigEndian);
                     output.AddRange(bytes);
                 }
             }
@@ -71,13 +71,13 @@ namespace PlayerViewer.Core.Formats
 
             var wide = new List<(int Slot, object Value)>();
 
-            void Put32(int at, uint value)
+            void Put(int at, ulong value, int size)
             {
-                output[at] = (byte)value;
-                output[at + 1] = (byte)(value >> 8);
-                output[at + 2] = (byte)(value >> 16);
-                output[at + 3] = (byte)(value >> 24);
+                for (int i = 0; i < size; i++)
+                    output[at + i] = (byte)(value >> (8 * (bigEndian ? size - 1 - i : i)));
             }
+
+            void Put32(int at, uint value) => Put(at, value, 4);
 
             int WriteContainer(object value)
             {
@@ -85,7 +85,7 @@ namespace PlayerViewer.Core.Formats
                 if (value is List<object> list)
                 {
                     output.Add(0xC0);
-                    AddU24(output, list.Count);
+                    AddU24(output, list.Count, bigEndian);
                     foreach (var x in list)
                         output.Add(TypeOf(x));
                     while (output.Count % 4 != 0)
@@ -95,20 +95,41 @@ namespace PlayerViewer.Core.Formats
                     for (int i = 0; i < list.Count; i++)
                         Fill(slots + i * 4, list[i]);
                 }
+                else if (value is BymlKeyHash keyed)
+                {
+                    //Entries in hash order, then one type byte each.
+                    int hashSize = keyed.Wide ? 8 : 4;
+                    var items = keyed
+                        .Select(kv => (Hash: ParseHashKey(kv.Key, keyed.Wide), kv.Value))
+                        .OrderBy(x => x.Hash)
+                        .ToList();
+                    output.Add(keyed.Wide ? (byte)0x21 : (byte)0x20);
+                    AddU24(output, items.Count, bigEndian);
+                    int slots = output.Count;
+                    int stride = hashSize + 4;
+                    output.AddRange(new byte[stride * items.Count]);
+                    foreach (var (_, v) in items)
+                        output.Add(TypeOf(v));
+                    while (output.Count % 4 != 0)
+                        output.Add(0);
+                    for (int i = 0; i < items.Count; i++)
+                    {
+                        int e = slots + i * stride;
+                        Put(e, items[i].Hash, hashSize);
+                        Fill(e + hashSize, items[i].Value);
+                    }
+                }
                 else if (value is Dictionary<string, object> hash)
                 {
                     var items = hash.OrderBy(kv => keyIndex[kv.Key]).ToList();
                     output.Add(0xC1);
-                    AddU24(output, items.Count);
+                    AddU24(output, items.Count, bigEndian);
                     int slots = output.Count;
                     output.AddRange(new byte[8 * items.Count]);
                     for (int i = 0; i < items.Count; i++)
                     {
                         int e = slots + i * 8;
-                        int k = keyIndex[items[i].Key];
-                        output[e] = (byte)k;
-                        output[e + 1] = (byte)(k >> 8);
-                        output[e + 2] = (byte)(k >> 16);
+                        Put(e, (uint)keyIndex[items[i].Key], 3);
                         output[e + 3] = TypeOf(items[i].Value);
                         Fill(e + 4, items[i].Value);
                     }
@@ -131,6 +152,7 @@ namespace PlayerViewer.Core.Formats
                     case long:
                     case ulong:
                     case double:
+                    case BymlValue128:
                         wide.Add((slot, x));
                         break;
                     case string s:
@@ -160,36 +182,61 @@ namespace PlayerViewer.Core.Formats
                 }
             }
 
-            int rootOffset = WriteContainer(root);
+            int rootOffset = root == null ? 0 : WriteContainer(root);
             foreach (var (slot, value) in wide)
             {
                 while (output.Count % 8 != 0)
                     output.Add(0);
                 Put32(slot, (uint)output.Count);
-                var bytes = new byte[8];
-                switch (value)
+                if (value is BymlValue128 v128)
                 {
-                    case long l:
-                        BinaryPrimitives.WriteInt64LittleEndian(bytes, l);
-                        break;
-                    case ulong ul:
-                        BinaryPrimitives.WriteUInt64LittleEndian(bytes, ul);
-                        break;
-                    case double d:
-                        BinaryPrimitives.WriteDoubleLittleEndian(bytes, d);
-                        break;
+                    output.AddRange(v128.Bytes);
+                    continue;
                 }
-                output.AddRange(bytes);
+                ulong bits = value switch
+                {
+                    long l => (ulong)l,
+                    ulong ul => ul,
+                    double d => BitConverter.DoubleToUInt64Bits(d),
+                    _ => 0,
+                };
+                output.AddRange(new byte[8]);
+                Put(output.Count - 8, bits, 8);
             }
 
             var result = output.ToArray();
-            result[0] = (byte)'Y';
-            result[1] = (byte)'B';
-            BinaryPrimitives.WriteUInt16LittleEndian(result.AsSpan(2), version);
-            BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(4), (uint)keyTable);
-            BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(8), (uint)stringTable);
-            BinaryPrimitives.WriteUInt32LittleEndian(result.AsSpan(12), (uint)rootOffset);
+            result[0] = (byte)(bigEndian ? 'B' : 'Y');
+            result[1] = (byte)(bigEndian ? 'Y' : 'B');
+            WriteHeader(result, 2, version, 2, bigEndian);
+            WriteHeader(result, 4, (uint)keyTable, 4, bigEndian);
+            WriteHeader(result, 8, (uint)stringTable, 4, bigEndian);
+            WriteHeader(result, 12, (uint)rootOffset, 4, bigEndian);
             return result;
+        }
+
+        static void WriteHeader(byte[] b, int at, uint value, int size, bool bigEndian)
+        {
+            for (int i = 0; i < size; i++)
+                b[at + i] = (byte)(value >> (8 * (bigEndian ? size - 1 - i : i)));
+        }
+
+        static ulong ParseHashKey(string key, bool wide)
+        {
+            int digits = wide ? 16 : 8;
+            if (
+                key.Length != digits + 1
+                || key[0] != '#'
+                || !ulong.TryParse(
+                    key.AsSpan(1),
+                    NumberStyles.AllowHexSpecifier,
+                    CultureInfo.InvariantCulture,
+                    out ulong hash
+                )
+            )
+                throw new InvalidOperationException(
+                    $"A hash keyed BYML node has the key \"{key}\", not '#' and {digits} hex digits"
+                );
+            return hash;
         }
 
         static byte TypeOf(object v) =>
@@ -206,7 +253,9 @@ namespace PlayerViewer.Core.Formats
                 string => 0xA0,
                 byte[] => 0xA1,
                 BymlBinary => 0xA2,
+                BymlValue128 => 0x40,
                 List<object> => 0xC0,
+                BymlKeyHash k => k.Wide ? (byte)0x21 : (byte)0x20,
                 Dictionary<string, object> => 0xC1,
                 _ => throw new NotSupportedException($"BYML value of type {v.GetType().Name}"),
             };
@@ -216,9 +265,11 @@ namespace PlayerViewer.Core.Formats
             switch (v)
             {
                 case Dictionary<string, object> hash:
+                    bool named = hash is not BymlKeyHash;
                     foreach (var (k, x) in hash)
                     {
-                        keys.Add(k);
+                        if (named)
+                            keys.Add(k);
                         Collect(x, keys, strings);
                     }
                     break;
@@ -237,6 +288,9 @@ namespace PlayerViewer.Core.Formats
         {
             IEnumerable<object> children = v switch
             {
+                BymlKeyHash keyed => keyed
+                    .OrderBy(kv => ParseHashKey(kv.Key, keyed.Wide))
+                    .Select(kv => kv.Value),
                 Dictionary<string, object> hash => hash.OrderBy(kv => keyIndex[kv.Key])
                     .Select(kv => kv.Value),
                 List<object> list => list,
@@ -254,34 +308,31 @@ namespace PlayerViewer.Core.Formats
             }
         }
 
-        static void AddU32(List<byte> output, uint value)
+        static void AddU32(List<byte> output, uint value, bool bigEndian)
         {
-            output.Add((byte)value);
-            output.Add((byte)(value >> 8));
-            output.Add((byte)(value >> 16));
-            output.Add((byte)(value >> 24));
+            for (int i = 0; i < 4; i++)
+                output.Add((byte)(value >> (8 * (bigEndian ? 3 - i : i))));
         }
 
-        static void AddU24(List<byte> output, int value)
+        static void AddU24(List<byte> output, int value, bool bigEndian)
         {
-            output.Add((byte)value);
-            output.Add((byte)(value >> 8));
-            output.Add((byte)(value >> 16));
+            for (int i = 0; i < 3; i++)
+                output.Add((byte)(value >> (8 * (bigEndian ? 2 - i : i))));
         }
 
-        static byte[] StringTable(List<string> strings)
+        static byte[] StringTable(List<string> strings, bool bigEndian)
         {
             var output = new List<byte> { 0xC2 };
-            AddU24(output, strings.Count);
+            AddU24(output, strings.Count, bigEndian);
             int offsets = output.Count;
             output.AddRange(new byte[4 * (strings.Count + 1)]);
-            void Offset(int index, int value) =>
-                BinaryPrimitives.WriteUInt32LittleEndian(
-                    System.Runtime.InteropServices.CollectionsMarshal.AsSpan(output)[
-                        (offsets + index * 4)..
-                    ],
-                    (uint)value
-                );
+            void Offset(int index, int value)
+            {
+                for (int i = 0; i < 4; i++)
+                    output[offsets + index * 4 + i] = (byte)(
+                        value >> (8 * (bigEndian ? 3 - i : i))
+                    );
+            }
             for (int i = 0; i < strings.Count; i++)
             {
                 Offset(i, output.Count);

@@ -15,7 +15,8 @@ namespace PlayerViewer.Textures
     /// <summary>
     /// Builds BNTX textures from image files, or from a flat colour, in any of the formats
     /// <see cref="TextureFormats"/> offers. The block layout is the console packager's, so a
-    /// built surface is byte for byte what the game would have shipped for those pixels.
+    /// built surface is byte for byte what the game would have shipped for those pixels. The
+    /// platform is the container's (<see cref="BntxPlatform.Of(BntxFile)"/>).
     /// </summary>
     public static class TextureImport
     {
@@ -37,11 +38,15 @@ namespace PlayerViewer.Textures
         public static bool IsGenerated(string name) => name == BlackName || name == WhiteName;
 
         /// <summary>The one texture that serves every slot naming a generated name.</summary>
-        public static BntxTextureData Generate(string name, BntxTextureData donor)
+        public static BntxTextureData Generate(
+            string name,
+            BntxTextureData donor,
+            BntxPlatform platform
+        )
         {
             foreach (var (candidate, colour) in Generated)
                 if (candidate == name)
-                    return Solid(name, 4, colour, donor);
+                    return Solid(name, 4, colour, donor, platform);
             throw new ArgumentException($"'{name}' is not a generated texture name", nameof(name));
         }
 
@@ -50,11 +55,12 @@ namespace PlayerViewer.Textures
             string path,
             string name,
             TextureFormat format,
-            BntxTextureData donor
+            BntxTextureData donor,
+            BntxPlatform platform
         )
         {
             using var image = Image.Load<Rgba32>(path);
-            return FromImage(image, name, format, donor);
+            return FromImage(image, name, format, donor, platform);
         }
 
         /// <summary>Decodes an image file and picks the format the shipped textures use for
@@ -64,12 +70,13 @@ namespace PlayerViewer.Textures
             string name,
             string assignKey,
             BntxTextureData donor,
+            BntxPlatform platform,
             out TextureFormat chosen
         )
         {
             using var image = Image.Load<Rgba32>(path);
             chosen = TextureFormats.Suggest(assignKey, image);
-            return FromImage(image, name, chosen, donor);
+            return FromImage(image, name, chosen, donor, platform);
         }
 
         /// <summary>A one mip square of a single colour, for the generated default.</summary>
@@ -77,7 +84,8 @@ namespace PlayerViewer.Textures
             string name,
             int size,
             Rgba32 colour,
-            BntxTextureData donor
+            BntxTextureData donor,
+            BntxPlatform platform
         )
         {
             using var image = new Image<Rgba32>(size, size, colour);
@@ -86,15 +94,19 @@ namespace PlayerViewer.Textures
                 name,
                 TextureFormats.Find(SurfaceFormat.R8_G8_B8_A8_UNORM),
                 donor,
+                platform,
                 mips: false
             );
         }
 
+        /// <summary>Builds a texture from pixels, with the channel mapping the shipped textures
+        /// of the format carry.</summary>
         public static BntxTextureData FromImage(
             Image<Rgba32> image,
             string name,
             TextureFormat format,
             BntxTextureData donor,
+            BntxPlatform platform,
             bool mips = true
         )
         {
@@ -106,7 +118,11 @@ namespace PlayerViewer.Textures
             uint mipCount = mips ? MipCount(width, height) : 1;
             var linear = LinearMipChain(image, mipCount, format);
 
-            var swizzle = new SwitchSwizzle(format.Tex) { Target = 1 };
+            var swizzle = new SwitchSwizzle(format.Tex)
+            {
+                Target = 1,
+                XbarGob = platform.Gob == GobLayout.Xbar,
+            };
             uint imageOffset = 0;
             var swizzled = swizzle.SwizzleSurfaceMipMaps(
                 linear,
@@ -121,6 +137,7 @@ namespace PlayerViewer.Textures
             var surface = new List<byte[]>();
             for (int mip = 0; mip < swizzled.Count; mip++)
                 surface.Add(Concat(swizzled.Skip(mip)));
+            var channels = TextureFormats.Channels(format);
 
             var texture = new BntxTextureData
             {
@@ -139,14 +156,14 @@ namespace PlayerViewer.Textures
                 Swizzle = 0,
                 Alignment = 512,
                 Pitch = 0,
-                AccessFlags = AccessFlags.Texture,
+                AccessFlags = (AccessFlags)platform.AccessFlags,
                 ImageSize = swizzle.ImageSize,
                 MipOffsets = swizzle.MipOffsets.Select(x => (long)x).ToArray(),
                 TextureData = new List<List<byte[]>> { surface },
-                ChannelRed = ChannelType.Red,
-                ChannelGreen = ChannelType.Green,
-                ChannelBlue = ChannelType.Blue,
-                ChannelAlpha = ChannelType.Alpha,
+                ChannelRed = channels[0],
+                ChannelGreen = channels[1],
+                ChannelBlue = channels[2],
+                ChannelAlpha = channels[3],
                 ReadTextureLayout = 1,
                 sparseBinding = 0,
                 sparseResidency = 0,
@@ -154,7 +171,7 @@ namespace PlayerViewer.Textures
                 BlockHeightLog2 = swizzle.BlockHeightLog2,
                 BlockDepthLog2 = 0,
                 TileWidthLog2 = 0,
-                PackagerVersion = 0,
+                PackagerVersion = platform.PackagerVersion,
                 UserData = new List<UserData>(),
                 UserDataDict = new ResDict(),
             };
@@ -215,24 +232,29 @@ namespace PlayerViewer.Textures
         }
 
         /// <summary>A name not already taken in the file, derived from the source file name.</summary>
-        public static string UniqueName(BntxFile bntx, string wanted)
+        public static string UniqueName(BntxFile bntx, string wanted) =>
+            UniqueName(name => bntx.Textures.Any(x => x.Name == name), wanted);
+
+        /// <summary>A name <paramref name="taken"/> does not claim, derived from the source file name.</summary>
+        public static string UniqueName(Func<string, bool> taken, string wanted)
         {
             string clean = new string(
                 (wanted ?? "").Select(c => char.IsLetterOrDigit(c) || c == '_' ? c : '_').ToArray()
             );
             if (clean.Length == 0)
                 clean = "Imported";
-            if (!bntx.Textures.Any(x => x.Name == clean))
+            if (!taken(clean))
                 return clean;
             for (int i = 1; ; i++)
             {
                 string candidate = clean + "_" + i;
-                if (!bntx.Textures.Any(x => x.Name == candidate))
+                if (!taken(candidate))
                     return candidate;
             }
         }
 
-        /// <summary>Puts a built texture into the container, replacing one of the same name.</summary>
+        /// <summary>Puts a built texture into the container, replacing one of the same name. A
+        /// replace keeps the old channel mapping when the new format stores what it reads.</summary>
         public static void Install(BntxFile bntx, BntxTextureData texture)
         {
             int existing = -1;
@@ -241,13 +263,36 @@ namespace PlayerViewer.Textures
                     existing = i;
 
             if (existing >= 0)
+            {
+                KeepChannels(bntx.Textures[existing], texture);
                 bntx.Textures[existing] = texture;
+            }
             else
                 bntx.Textures.Add(texture);
 
             bntx.TextureDict.Clear();
             foreach (var tex in bntx.Textures)
                 bntx.TextureDict.Add(tex.Name);
+        }
+
+        /// <summary>Gives a replacement the old texture's channel mapping when its format stores
+        /// what that mapping reads.</summary>
+        public static void KeepChannels(BntxTextureData old, BntxTextureData texture)
+        {
+            var format = TextureFormats.Match(texture.Format);
+            var mapping = new[]
+            {
+                old.ChannelRed,
+                old.ChannelGreen,
+                old.ChannelBlue,
+                old.ChannelAlpha,
+            };
+            if (format == null || !TextureFormats.Holds(format, mapping))
+                return;
+            texture.ChannelRed = mapping[0];
+            texture.ChannelGreen = mapping[1];
+            texture.ChannelBlue = mapping[2];
+            texture.ChannelAlpha = mapping[3];
         }
     }
 }

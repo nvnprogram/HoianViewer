@@ -137,6 +137,8 @@ namespace PlayerViewer.UI
             //The state before the session is what an undo of its Done goes back to.
             EnsureUndoBase();
             _paint = session;
+            //The maker comes up with the session and keeps the animation until it goes.
+            HoldMakerPose();
             //Before a repaint swaps the model, so the animation is kept for EndPaint.
             TakeAnimationOff();
             session.Claimed = new HashSet<int>(

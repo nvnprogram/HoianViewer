@@ -16,7 +16,7 @@ namespace PlayerViewer.Effects
     {
         static byte[] _custom0;
 
-        static byte[] Custom0Template => _custom0 ??= Load("Custom0.bin");
+        internal static byte[] Custom0Template => _custom0 ??= Load("Custom0.bin");
 
         static byte[] Load(string name)
         {
@@ -30,13 +30,10 @@ namespace PlayerViewer.Effects
         }
 
         /// <summary>
-        /// The scene block. The captured template carries the lobby's shadow and view setup; over
-        /// it go the lighting and fog of the models' gsys_environment and gsys_user0 blocks when
-        /// given, what the blocks do not carry of <paramref name="scene"/> (null for the lobby
-        /// look), the direction towards the light, the player position, the render target size
-        /// and the scene time.
+        /// The scene block.
         /// </summary>
         public static byte[] BuildCustom0(
+            Custom0Layout layout,
             byte[] environment,
             byte[] user0,
             EnvParams scene,
@@ -48,46 +45,37 @@ namespace PlayerViewer.Effects
         )
         {
             var b = (byte[])Custom0Template.Clone();
-            if (environment != null && environment.Length >= 32 * 16)
-                WriteEnvironment(b, environment);
-            if (user0 != null && user0.Length >= 56 * 16)
-                WriteUser0(b, user0);
-            if (scene != null)
+            bool env = environment != null && environment.Length >= layout.EnvironmentSize;
+            if (env)
+                Copy(b, environment, layout.Environment);
+            var fog = layout.FogInEnvironment
+                ? (env ? environment : null)
+                : (user0 != null && user0.Length >= 56 * 16 ? user0 : null);
+            if (fog != null)
+                Copy(b, fog, layout.Fog);
+            if (scene != null && layout.WritesScene)
                 WriteScene(b, scene);
             W3(b, 0x010, towardLight);
-            W3(b, 0x2E0, playerPosition);
-            W3(b, 0x380, playerPosition);
-            W(b, 0x360, width);
-            W(b, 0x364, height);
-            W(b, 0x368, 1f / Math.Max(width, 1));
-            W(b, 0x36C, 1f / Math.Max(height, 1));
-            W(b, 0x390, seconds);
+            foreach (var (at, length) in layout.Cleared)
+                Array.Clear(b, at, length);
+            if (layout.WritesScene)
+            {
+                W3(b, 0x2E0, playerPosition);
+                W3(b, 0x380, playerPosition);
+            }
+            W(b, layout.TargetAt, width);
+            W(b, layout.TargetAt + 4, height);
+            W(b, layout.TargetAt + 8, 1f / Math.Max(width, 1));
+            W(b, layout.TargetAt + 12, 1f / Math.Max(height, 1));
+            if (layout.WritesScene)
+                W(b, 0x390, seconds);
             return b;
         }
 
-        //Every capture holds these rows bit identical to the model blocks' rows read here.
-        static void WriteEnvironment(byte[] b, byte[] env)
+        static void Copy(byte[] b, byte[] src, Custom0Copy[] copies)
         {
-            Row(b, 0x000, env, 5);
-            for (int i = 0; i < 7; i++)
-                Row(b, 0x170 + 16 * i, env, 25 + i);
-            Row(b, 0x200, env, 10);
-            W(b, 0x210, R(env, 11, 3));
-            W(b, 0x214, R(env, 12, 0));
-            Row(b, 0x240, env, 13);
-            W(b, 0x250, R(env, 14, 3));
-            W(b, 0x254, R(env, 15, 0));
-            W3(b, 0x260, new Vector3(R(env, 14, 0), R(env, 14, 1), R(env, 14, 2)));
-        }
-
-        static void WriteUser0(byte[] b, byte[] user0)
-        {
-            W(b, 0x218, R(user0, 53, 0));
-            W(b, 0x21C, R(user0, 53, 3));
-            W3(b, 0x220, new Vector3(R(user0, 55, 0), R(user0, 55, 1), R(user0, 55, 2)));
-            //The radial fog's red times its intensity, or the intensity: the red is 1 in every capture.
-            W(b, 0x22C, R(user0, 55, 0));
-            Row(b, 0x230, user0, 54);
+            foreach (var c in copies)
+                Buffer.BlockCopy(src, 16 * c.Row + 4 * c.Component, b, c.At, 4 * c.Count);
         }
 
         //A stage's bloom threshold and manual exposure, and the ink map scale the game uses in
@@ -126,9 +114,6 @@ namespace PlayerViewer.Effects
         static float R(byte[] src, int row, int component) =>
             BinaryPrimitives.ReadSingleLittleEndian(src.AsSpan(16 * row + 4 * component));
 
-        static void Row(byte[] b, int at, byte[] src, int row) =>
-            Buffer.BlockCopy(src, 16 * row, b, at, 16);
-
         /// <summary>
         /// The per emitter block as the game's callback fills it. The ink getters are the values
         /// the models' gsys_user0 carries, read from <paramref name="user0"/> when given; the set
@@ -143,7 +128,7 @@ namespace PlayerViewer.Effects
                 csdp != null && csdp.Data.Length >= 120 ? csdp.Data.ToArray() : new byte[120];
             float P(int i) => BinaryPrimitives.ReadSingleLittleEndian(p.AsSpan(4 * i));
             uint U(int i) => BinaryPrimitives.ReadUInt32LittleEndian(p.AsSpan(4 * i));
-            ulong flags = emitter.Section.GetU64(EmitterLayout.CustomShaderFlags);
+            ulong flags = emitter.Section.GetU64(emitter.Map.CustomShaderFlags);
 
             W(b, 0x00, P(6));
             W(b, 0x04, P(7));
@@ -217,7 +202,7 @@ namespace PlayerViewer.Effects
         /// The second team colour over the first in the lobby captures. The game takes both from
         /// gsys_user0 rows 3 and 4, which a stage darkens by a factor of its own.
         /// </summary>
-        const float BrightVariant = 1.14f;
+        internal const float BrightVariant = 1.14f;
 
         static void W(byte[] b, int at, float v) =>
             BinaryPrimitives.WriteSingleLittleEndian(b.AsSpan(at), v);

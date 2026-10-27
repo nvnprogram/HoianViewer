@@ -15,8 +15,7 @@ using Vector4 = System.Numerics.Vector4;
 namespace PlayerViewer.UI
 {
     // Textures tab of the standalone panel: the model's texture container, with create,
-    // replace, rename, delete and export. Nothing here writes to disk except an export;
-    // the BNTX is re-serialised into the bfres when the model is saved.
+    // replace, rename, delete and export.
     public partial class ViewerWindow
     {
         //-1 offers whatever the image and the sampler suggest; anything else is the index
@@ -52,7 +51,7 @@ namespace PlayerViewer.UI
             if (store == null)
                 return;
 
-            bool haveContainer = store.Bntx != null;
+            bool haveContainer = store.Editable;
             if (!haveContainer)
                 Widgets.DimText("This model has no texture container, so nothing can be added.");
 
@@ -93,17 +92,28 @@ namespace PlayerViewer.UI
                     _selectedTexture == entry.Key,
                     2 * ImGui.GetTextLineHeightWithSpacing()
                 );
-                if (ImGui.Selectable($"{entry.Key}##tex{entry.Key}", _selectedTexture == entry.Key))
+                //One selectable over both lines, so the whole highlighted row takes the click.
+                float step = ImGui.GetTextLineHeightWithSpacing();
+                var top = ImGui.GetCursorPos();
+                if (
+                    ImGui.Selectable(
+                        $"{entry.Key}##tex{entry.Key}",
+                        _selectedTexture == entry.Key,
+                        ImGuiSelectableFlags.None,
+                        new Vector2(0, ImGui.GetTextLineHeight() + step)
+                    )
+                )
                     SelectTexture(entry.Key);
                 Widgets.KeepRowVisible(TextureListId, _selectedTexture == entry.Key);
+                var after = ImGui.GetCursorPos();
 
                 var texture = entry.Value;
-                ImGui.Indent(14);
+                ImGui.SetCursorPos(new Vector2(top.X + 14, top.Y + step));
                 Widgets.DimText(
                     $"{texture.Platform.OutputFormat}  {texture.Width}x{texture.Height}  "
                         + $"{texture.MipCount} mip(s)"
                 );
-                ImGui.Unindent(14);
+                ImGui.SetCursorPos(after);
             }
 
             int move = Widgets.ListNav(TextureListId, rows.Count, rows.IndexOf(_selectedTexture));
@@ -150,19 +160,19 @@ namespace PlayerViewer.UI
         {
             ClearTextureStatus();
             var store = Textures;
-            var bntx = store?.Bntx;
-            if (bntx == null)
+            if (store?.Editable != true)
                 return;
 
             try
             {
-                string name = TextureImport.UniqueName(bntx, _newColourName.Trim());
+                string name = store.UniqueName(_newColourName.Trim());
                 var colour = new Rgba32(_newColour.X, _newColour.Y, _newColour.Z, _newColour.W);
                 var texture = TextureImport.Solid(
                     name,
                     _newColourSize,
                     colour,
-                    bntx.Textures.FirstOrDefault()
+                    store.Donor,
+                    store.Platform
                 );
                 store.Install(texture);
                 SelectTexture(name);
@@ -238,7 +248,7 @@ namespace PlayerViewer.UI
             string refusal = TextureStore.ReplaceRefusal(tex);
             Widgets.DisabledButton(
                 "Replace...",
-                store?.Bntx != null && refusal == null,
+                store?.Editable == true && refusal == null,
                 () => ReplaceTexture(name)
             );
             Widgets.ItemTooltip(refusal ?? "Replaces the image, keeping the name.");
@@ -253,7 +263,7 @@ namespace PlayerViewer.UI
             ImGui.SameLine();
             Widgets.DisabledButton(
                 "Rename",
-                store?.Bntx != null
+                store?.Editable == true
                     && !string.IsNullOrWhiteSpace(_renameDraft)
                     && _renameDraft != name,
                 () => RenameTexture(name, _renameDraft.Trim())
@@ -306,7 +316,7 @@ namespace PlayerViewer.UI
                 && (current == null || TextureFormats.All[_reencodeFormatIndex] != current);
             Widgets.DisabledButton(
                 "Re-encode",
-                changed && Textures?.Bntx != null,
+                changed && Textures?.Editable == true,
                 () => Reencode(tex, name, TextureFormats.All[_reencodeFormatIndex])
             );
             Widgets.ItemTooltip(
@@ -327,8 +337,7 @@ namespace PlayerViewer.UI
         {
             ClearTextureStatus();
             var store = Textures;
-            var bntx = store?.Bntx;
-            if (bntx == null)
+            if (store?.Editable != true)
                 return;
             if (TextureStore.ReplaceRefusal(tex) is string refusal)
             {
@@ -343,7 +352,8 @@ namespace PlayerViewer.UI
                     image,
                     name,
                     format,
-                    bntx.Textures.FirstOrDefault()
+                    store.Donor,
+                    store.Platform
                 );
                 store.Install(built);
                 _reencodeSelectedFor = null;
@@ -437,7 +447,7 @@ namespace PlayerViewer.UI
         void ReplaceOnSampler(string name)
         {
             ClearTextureStatus();
-            if (Textures?.Bntx == null || !Textures.Has(name))
+            if (Textures?.Editable != true || !Textures.Has(name))
                 return;
 
             string path = NativeFolderPicker.OpenFile(
@@ -502,7 +512,7 @@ namespace PlayerViewer.UI
         void ImportTexture()
         {
             ClearTextureStatus();
-            if (Textures?.Bntx == null)
+            if (Textures?.Editable != true)
                 return;
 
             string path = NativeFolderPicker.OpenFile(
@@ -531,8 +541,7 @@ namespace PlayerViewer.UI
         )
         {
             var store = Textures;
-            var bntx = store?.Bntx;
-            if (bntx == null)
+            if (store?.Editable != true)
                 return null;
             if (
                 replacing != null
@@ -545,9 +554,7 @@ namespace PlayerViewer.UI
 
             try
             {
-                string name =
-                    replacing
-                    ?? TextureImport.UniqueName(bntx, Path.GetFileNameWithoutExtension(path));
+                string name = replacing ?? store.UniqueName(Path.GetFileNameWithoutExtension(path));
                 var texture = InstallImage(path, name, format, assignKey);
                 SelectTexture(name);
                 _textureNote =
@@ -575,17 +582,12 @@ namespace PlayerViewer.UI
             string assignKey
         )
         {
-            var bntx = Textures.Bntx;
+            var donor = Textures.Donor;
+            var platform = Textures.Platform;
             var texture =
                 format != null
-                    ? TextureImport.FromFile(path, name, format, bntx.Textures.FirstOrDefault())
-                    : TextureImport.FromFile(
-                        path,
-                        name,
-                        assignKey,
-                        bntx.Textures.FirstOrDefault(),
-                        out _
-                    );
+                    ? TextureImport.FromFile(path, name, format, donor, platform)
+                    : TextureImport.FromFile(path, name, assignKey, donor, platform, out _);
             Textures.Install(texture);
             Console.WriteLine(
                 $"[Texture] Installed {name} {texture.Width}x{texture.Height} {texture.Format} "
@@ -601,7 +603,7 @@ namespace PlayerViewer.UI
         string ImportOntoSampler(string assignKey)
         {
             ClearTextureStatus();
-            if (Textures?.Bntx == null)
+            if (Textures?.Editable != true)
                 return null;
 
             string path = NativeFolderPicker.OpenFile(

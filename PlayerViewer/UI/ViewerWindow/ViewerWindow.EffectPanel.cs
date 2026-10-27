@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using EffectLibrary;
 using ImGuiNET;
+using PlayerViewer.Core;
 using PlayerViewer.Effects.Sim;
 using PlayerViewer.Effects.Viewer;
 using Vector2 = System.Numerics.Vector2;
@@ -81,7 +82,10 @@ namespace PlayerViewer.UI
             }
             ImGui.SameLine();
             Widgets.DisabledButton("Open file...", idle, new Vector2(half, 0), BrowseEffectFile);
-            DrawRomfsEffectCombo(idle);
+            if (_romfs?.Game == GameKind.Spiral)
+                DrawRomfsEffectList(idle);
+            else
+                DrawRomfsEffectCombo(idle);
 
             if (_effectFile == null)
                 return;
@@ -138,8 +142,102 @@ namespace PlayerViewer.UI
                 ImGui.PopStyleVar();
         }
 
+        /// <summary>
+        /// Raiders' effect files as a searchable list, one per actor; a click or the arrow keys
+        /// open a file. Dimmed and inert unless idle.
+        /// </summary>
+        void DrawRomfsEffectList(bool idle)
+        {
+            var files = RomfsEffectFiles();
+            if (files.Count == 0)
+                return;
+            Widgets.SectionHeader("Effect files");
+            Widgets.SearchBox(
+                "##effectfilesearch",
+                ref _effectFileSearch,
+                "Search files",
+                ImGui.GetContentRegionAvail().X,
+                out bool typing
+            );
+            if (
+                _effectFileRows == null
+                || _effectFileRowsSearch != _effectFileSearch
+                || _effectFileRowsOf != files
+            )
+            {
+                _effectFileRowsSearch = _effectFileSearch;
+                _effectFileRowsOf = files;
+                _effectFileRows = Enumerable
+                    .Range(0, files.Count)
+                    .Where(i =>
+                        RomfsEffectLabel(files[i])
+                            .Contains(_effectFileSearch, StringComparison.OrdinalIgnoreCase)
+                    )
+                    .ToList();
+            }
+            var rows = _effectFileRows;
+            Widgets.DimText($"{rows.Count} of {files.Count} files");
+
+            string current = _effectFile?.Path;
+            if (current != _effectFileListed)
+            {
+                _effectFileListed = current;
+                _effectFileScrollToSelection = true;
+            }
+            int currentRow = rows.FindIndex(r =>
+                string.Equals(files[r], current, StringComparison.OrdinalIgnoreCase)
+            );
+            if (!idle)
+                ImGui.PushStyleVar(ImGuiStyleVar.Alpha, 0.45f);
+            float rowHeight = ImGui.GetTextLineHeightWithSpacing();
+            float listHeight = Math.Max(VisibleHeightBelowCursor() * 0.22f, 6 * rowHeight);
+            Widgets.BeginList("##effectfiles", new Vector2(0, listHeight));
+            int move = Widgets.VirtualRows(
+                "effectfiles",
+                rows.Count,
+                currentRow,
+                r =>
+                {
+                    if (
+                        Widgets.ListRow(
+                            $"{RomfsEffectLabel(files[rows[r]])}##file{r}",
+                            r == currentRow
+                        )
+                        && idle
+                        && r != currentRow
+                    )
+                        OpenEffect(files[rows[r]]);
+                },
+                _effectFileScrollToSelection
+            );
+            //The arrows also step through the matches from the search field.
+            if (move < 0)
+                move = Widgets.SearchListNav("effectfiles", rows.Count, currentRow, typing);
+            if (move >= 0 && move != currentRow && idle)
+                OpenEffect(files[rows[move]]);
+            if (move >= 0 || currentRow >= 0)
+                _effectFileScrollToSelection = false;
+            Widgets.EndList();
+            if (!idle)
+                ImGui.PopStyleVar();
+        }
+
+        string _effectFileSearch = "";
+        string _effectFileRowsSearch;
+        List<int> _effectFileRows;
+        List<string> _effectFileRowsOf;
+        string _effectFileListed;
+        bool _effectFileScrollToSelection;
+
         string RomfsEffectLabel(string path)
         {
+            if (_romfsEffectInfo != null)
+            {
+                string esetb = Core.Formats.EffectFileInfo.NameOf(path);
+                return _romfsEffectInfo.StaticFiles.Contains(esetb)
+                    ? esetb + "  (resident)"
+                    : esetb;
+            }
             string name = Path.GetFileName(path).Replace(".esetb.byml.zs", "");
             bool dlc =
                 _romfs?.SdodrRoot != null
@@ -265,7 +363,7 @@ namespace PlayerViewer.UI
                 ImGui.TextUnformatted(s.Name);
                 ImGui.TextUnformatted($"{s.EmitterCount} emitters");
                 ImGui.PushTextWrapPos(420);
-                ImGui.TextUnformatted(LoopText(loop));
+                ImGui.TextUnformatted(ShortLoopText(loop));
                 foreach (string gap in GapTexts(s.Gaps))
                     Widgets.ColoredText(Theme.Error, gap);
                 ImGui.PopTextWrapPos();
@@ -285,7 +383,7 @@ namespace PlayerViewer.UI
                 _ => ("no loop", Theme.TextDim),
             };
 
-        /// <summary>The classification in words, as the list tooltip and the details show it.</summary>
+        /// <summary>The classification in words, with every reason it does not loop.</summary>
         static string LoopText(LoopInfo loop) =>
             loop?.Kind switch
             {
@@ -564,7 +662,11 @@ namespace PlayerViewer.UI
             var map = ViewMap.Of(_pipeline.Camera, pos, size, uv0, uv1);
             static OpenTK.Vector3 Tk(System.Numerics.Vector3 v) => new(v.X, v.Y, v.Z);
             static System.Numerics.Vector3 Num(OpenTK.Vector3 v) => new(v.X, v.Y, v.Z);
-            var value = new GizmoSrt(Tk(play.Translation), Tk(play.RotationDegrees), Tk(play.Scale));
+            var value = new GizmoSrt(
+                Tk(play.Translation),
+                Tk(play.RotationDegrees),
+                Tk(play.Scale)
+            );
             DrawTransformGizmo(
                 _effectGizmo,
                 map,

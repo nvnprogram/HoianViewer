@@ -111,13 +111,16 @@ namespace BfresLibrary.Switch
                 return TotalSize - Pos;
             }
 
+            // Offsets are relative to the buffer data start, which the writer aligns to the data alignment.
+            TotalSize = 0;
             foreach (Model fmdl in saver.ResFile.Models.Values)
             {
                 foreach (Shape shp in fmdl.Shapes.Values)
                 {
+                    uint align = fmdl.VertexBuffers[shp.VertexBufferIndex].GPUBufferAlignent;
                     foreach (Mesh msh in shp.Meshes)
                     {
-                        if (TotalSize % 8 != 0) TotalSize = TotalSize + (8 - (TotalSize % 8));
+                        if (TotalSize % align != 0) TotalSize = TotalSize + (align - (TotalSize % align));
                         TotalSize += (uint)msh.Data.Length;
                     }
                 }
@@ -126,20 +129,19 @@ namespace BfresLibrary.Switch
             {
                 foreach (VertexBuffer vtx in fmdl.VertexBuffers)
                 {
+                    uint align = vtx.GPUBufferAlignent;
                     foreach (Buffer buff in vtx.Buffers)
                     {
-                        if (TotalSize % 8 != 0) TotalSize = TotalSize + (8 - (TotalSize % 8));
+                        if (TotalSize % align != 0) TotalSize = TotalSize + (align - (TotalSize % align));
                         if (vtx == vertexBuffer)
-                            return TotalSize - Pos;
+                            return TotalSize;
 
                         TotalSize += buff.Size;
                     }
                 }
             }
 
-            TotalSize = TotalSize - Pos;
-
-            return TotalSize;   
+            return TotalSize;
         }
     }
 }

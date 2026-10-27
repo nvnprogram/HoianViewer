@@ -71,7 +71,8 @@ namespace BfresEditor
             Platform = new SwitchSwizzle(FormatList[tex.Format])
             {
                 BlockHeightLog2 = (uint)tex.BlockHeightLog2,
-                Target = BntxFile.PlatformTarget != "NX  " ? 0 : 1,
+                Target = BntxFile.PlatformTarget != "NX  " && !IsOunce(bntx) ? 0 : 1,
+                XbarGob = IsOunce(bntx),
             };
 
             RedChannel = SetChannel(tex.ChannelRed);
@@ -152,7 +153,7 @@ namespace BfresEditor
 
                 var deswizzled = TegraX1Swizzle.deswizzle(
                     mipWidth, mipHeight, 1, blkWidth, blkHeight, 1,
-                    1, bpp, 0, mipBlockHeightLog2, mipData);
+                    1, bpp, 0, mipBlockHeightLog2, mipData, IsOunce(BntxFile));
 
                 uint outputSize = widthInBlocks * heightInBlocks * bpp;
                 if (deswizzled.Length < outputSize)
@@ -161,7 +162,7 @@ namespace BfresEditor
                 byte[] output = new byte[outputSize];
                 deswizzled.Slice(0, (int)outputSize).CopyTo(output);
 
-                if (!IsBCNCompressed() && bpp == 4 && !Parameters.DontSwapRG)
+                if (SwapsRedBlue())
                     output = ImageUtility.ConvertBgraToRgba(output);
                 return output;
             }
@@ -170,6 +171,9 @@ namespace BfresEditor
                 return null;
             }
         }
+
+        /// <summary>Whether the file comes from the Switch 2 packager, whose GOBs are laid out differently.</summary>
+        public static bool IsOunce(BntxFile bntx) => bntx?.PlatformTarget == "Ounc";
 
         private STChannelType SetChannel(ChannelType channelType)
         {
@@ -215,7 +219,7 @@ namespace BfresEditor
             { SurfaceFormat.R8_G8_UNORM, TexFormat.RG8_UNORM },
             { SurfaceFormat.R8_UNORM, TexFormat.R8_UNORM },
             { SurfaceFormat.R9_G9_B9_E5_UNORM, TexFormat.RGB9E5_SHAREDEXP },
-            { SurfaceFormat.D32_FLOAT_S8X24_UINT, TexFormat.D32_FLOAT_S8X24_UINT },
+            { SurfaceFormat.D32_FLOAT_S8X24_UINT, TexFormat.RGBA16_FLOAT },
 
             { SurfaceFormat.BC1_UNORM, TexFormat.BC1_UNORM },
             { SurfaceFormat.BC1_SRGB, TexFormat.BC1_SRGB },

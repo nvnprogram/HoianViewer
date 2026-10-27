@@ -103,7 +103,7 @@ namespace PlayerViewer.Effects.Gl
                     int size = SurfaceSize(f, w, h);
                     for (int layer = 0; layer < layers; layer++)
                     {
-                        var surface = Deswizzle(t, f, layer, mip);
+                        var surface = Deswizzle(t, f, layer, mip, _archive.IsOunce);
                         if (surface == null)
                         {
                             GL.DeleteTexture(id);
@@ -186,8 +186,9 @@ namespace PlayerViewer.Effects.Gl
 
         /// <summary>One mip of one layer in linear order, with the per mip block height rule of
         /// <c>BntxTexture.GetMipSurface</c>. Written out here because that wrapper cannot be built
-        /// for the half float vertex animation tables.</summary>
-        static byte[] Deswizzle(Texture t, GlFormat f, int layer, int mip)
+        /// for the half float vertex animation tables. <paramref name="xbarGob"/> is the Switch 2
+        /// packager's GOB order.</summary>
+        static byte[] Deswizzle(Texture t, GlFormat f, int layer, int mip, bool xbarGob)
         {
             if (layer >= t.TextureData.Count || mip >= t.TextureData[layer].Count)
                 return null;
@@ -209,7 +210,8 @@ namespace PlayerViewer.Effects.Gl
                 (uint)f.Bpp,
                 0,
                 (int)Math.Log2(blockHeight),
-                t.TextureData[layer][mip]
+                t.TextureData[layer][mip],
+                xbarGob
             );
             return linear.ToArray();
         }

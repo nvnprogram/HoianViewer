@@ -21,7 +21,7 @@ namespace PlayerViewer.Shaders
         {
             var dropped = new List<string>();
             var res = bfres?.ResFile;
-            if (res == null || BundleStamp.Codegen == BundleStamp.Unstamped)
+            if (res == null || !SplicePlatform.AnyCodegen)
                 return dropped;
 
             foreach (var name in res.ExternalFiles.Keys.ToList())
@@ -53,7 +53,8 @@ namespace PlayerViewer.Shaders
                 bfres.ShaderFiles.Clear();
                 Console.WriteLine(
                     $"[Bundle] dropped {dropped.Count} archive(s) from an older specialiser "
-                        + $"(codegen {BundleStamp.Codegen} is current): {string.Join(", ", dropped)}"
+                        + $"(codegen NVN {SplicePlatform.Nvn.Codegen}, NVN2 {SplicePlatform.Nvn2.Codegen} "
+                        + $"is current): {string.Join(", ", dropped)}"
                 );
             }
             return dropped;

@@ -17,6 +17,34 @@ namespace BfresEditor
         /// </summary>
         public Material Material { get; set; }
 
+        /// <summary>
+        /// The material as drawn when a layer derived from it replaces some of its shader
+        /// options and sampler assigns. Null draws <see cref="Material"/>.
+        /// </summary>
+        public Material DrawnMaterial
+        {
+            get => _drawnMaterial;
+            set
+            {
+                _drawnMaterial = value;
+                _drawnOptions = null;
+                if (value == null)
+                    return;
+                _drawnOptions = new Dictionary<string, string>();
+                foreach (var option in value.ShaderAssign.ShaderOptions)
+                    _drawnOptions[option.Key] = option.Value;
+            }
+        }
+
+        Material _drawnMaterial;
+        Dictionary<string, string> _drawnOptions;
+
+        /// <summary>The material the renderer reads its options and sampler assigns from.</summary>
+        public Material Drawn => _drawnMaterial ?? Material;
+
+        /// <summary>The shader options of <see cref="Drawn"/>.</summary>
+        public Dictionary<string, string> DrawnOptions => _drawnOptions ?? ShaderOptions;
+
         public NodeBase ParentNode { get; set; }
 
         /// <summary>

@@ -41,6 +41,12 @@ namespace PlayerViewer.UI
 
         void DrawEnvironmentRows()
         {
+            if (_romfs?.Game == GameKind.Spiral)
+            {
+                DrawRaidersEnvRows();
+                return;
+            }
+
             Widgets.LabeledRow(
                 "Env",
                 () =>
@@ -87,20 +93,33 @@ namespace PlayerViewer.UI
                 return;
             }
 
+            int picked = VariantRow(_envVariants.Select(e => e.Variant).ToList(), _envVariant);
+            if (picked >= 0)
+            {
+                _envVariant = picked;
+                ApplyStageEnv();
+            }
+            if (_envStatus != null)
+                Widgets.DimText(_envStatus);
+        }
+
+        //The Time row: a button per variant, wrapping. Returns the one clicked, else -1.
+        int VariantRow(IReadOnlyList<string> variants, int current)
+        {
+            int clicked = -1;
             Widgets.LabeledRow(
                 "Time",
                 () =>
                 {
                     float left = ImGui.GetCursorPosX();
                     float right = ImGui.GetWindowContentRegionMax().X;
-                    float spacing = ImGui.GetStyle().ItemSpacing.X;
                     float padding = ImGui.GetStyle().FramePadding.X * 2;
-                    for (int i = 0; i < _envVariants.Count; i++)
+                    for (int i = 0; i < variants.Count; i++)
                     {
                         //Coop stages have four variants, which do not fit on one line.
                         if (i > 0)
                         {
-                            float width = ImGui.CalcTextSize(_envVariants[i].Variant).X + padding;
+                            float width = ImGui.CalcTextSize(variants[i]).X + padding;
                             ImGui.SameLine();
                             if (ImGui.GetCursorPosX() + width > right)
                             {
@@ -108,28 +127,131 @@ namespace PlayerViewer.UI
                                 ImGui.SetCursorPosX(left);
                             }
                         }
-                        bool active = i == _envVariant;
+                        bool active = i == current;
                         bool sideOrder = SideOrderControls.On;
                         if (active && !sideOrder)
                             ImGui.PushStyleColor(
                                 ImGuiCol.Button,
                                 ImGui.GetStyle().Colors[(int)ImGuiCol.ButtonActive]
                             );
-                        if (Widgets.Button(_envVariants[i].Variant, default, active) && !active)
-                        {
-                            _envVariant = i;
-                            _envVariantPicks.Remove(_envVariants[i].Variant);
-                            _envVariantPicks.Insert(0, _envVariants[i].Variant);
-                            ApplyStageEnv();
-                        }
+                        if (Widgets.Button(variants[i], default, active) && !active)
+                            clicked = i;
                         if (active && !sideOrder)
                             ImGui.PopStyleColor();
                     }
                 }
             );
             Widgets.ItemTooltip("Time of day");
-            if (_envStatus != null)
-                Widgets.DimText(_envStatus);
+            if (clicked >= 0)
+            {
+                _envVariantPicks.Remove(variants[clicked]);
+                _envVariantPicks.Insert(0, variants[clicked]);
+            }
+            return clicked;
+        }
+
+        //Raiders: the Stage list is its scenes, each lit by its own rendering param group.
+        System.Threading.Tasks.Task<List<RaidersScene>> _raidersScenesTask;
+        Romfs _raidersScenesRomfs;
+        List<RaidersScene> _raidersScenes;
+        List<string> _raidersSceneNames;
+        string _raidersScene = RaidersEnv.DefaultScene;
+        int _raidersVariant;
+        string _raidersEnvGroup = RaidersEnv.DefaultScene;
+        string _raidersEnvStatus;
+
+        void DrawRaidersEnvRows()
+        {
+            if (_raidersScenesRomfs != _romfs)
+            {
+                var romfs = _romfs;
+                _raidersScenesRomfs = romfs;
+                _raidersScenes = null;
+                _raidersScenesTask = System.Threading.Tasks.Task.Run(
+                    () => RaidersEnvCatalog.ListScenes(romfs)
+                );
+            }
+            if (_raidersScenes == null)
+            {
+                if (!_raidersScenesTask.IsCompleted)
+                {
+                    Widgets.LabeledRow("Stage", () => Widgets.DimText("Reading stages..."));
+                    return;
+                }
+                _raidersScenes = _raidersScenesTask.IsCompletedSuccessfully
+                    ? _raidersScenesTask.Result
+                    : new List<RaidersScene>();
+                _raidersSceneNames = _raidersScenes.Select(x => x.Name).ToList();
+            }
+
+            Widgets.LabeledRow(
+                "Stage",
+                () =>
+                {
+                    if (
+                        Widgets.StringCombo(
+                            "##raidersscene",
+                            _raidersScene,
+                            _raidersSceneNames,
+                            out var picked
+                        )
+                        && picked != null
+                        && picked != _raidersScene
+                    )
+                    {
+                        _raidersScene = picked;
+                        var variants = RaidersSceneVariants();
+                        _raidersVariant = Math.Max(
+                            0,
+                            _envVariantPicks
+                                .Select(name => variants.IndexOf(name))
+                                .FirstOrDefault(i => i >= 0)
+                        );
+                        ApplyRaidersEnv();
+                    }
+                }
+            );
+            Widgets.ItemTooltip("The scene the lighting comes from");
+
+            var names = RaidersSceneVariants();
+            if (names.Count > 1)
+            {
+                int picked = VariantRow(names, _raidersVariant);
+                if (picked >= 0)
+                {
+                    _raidersVariant = picked;
+                    ApplyRaidersEnv();
+                }
+            }
+            if (_raidersEnvStatus != null)
+                Widgets.DimText(_raidersEnvStatus);
+        }
+
+        List<string> RaidersSceneVariants() =>
+            _raidersScenes
+                ?.FirstOrDefault(x => x.Name == _raidersScene)
+                ?.Variants.Select(v => v.Variant)
+                .ToList() ?? new List<string>();
+
+        void ApplyRaidersEnv()
+        {
+            var scene = _raidersScenes?.FirstOrDefault(x => x.Name == _raidersScene);
+            if (scene == null || _romfs == null)
+                return;
+            _raidersVariant = Math.Clamp(_raidersVariant, 0, scene.Variants.Count - 1);
+            string group = scene.Variants[_raidersVariant].Group;
+            var frame = LoadRaidersFrame(_romfs, group);
+            if (frame == null)
+            {
+                _raidersEnvStatus = "No lighting for this stage.";
+                return;
+            }
+            (BfresEditor.HoianNXRender.FrameSource as IDisposable)?.Dispose();
+            BfresEditor.HoianNXRender.FrameSource = frame;
+            _raidersEnvGroup = group;
+            _raidersEnvStatus = frame.Estimated
+                ? "Ambient and reflections estimated from the sky."
+                : null;
         }
 
         void SetEnvSource(int source)
@@ -197,13 +319,13 @@ namespace PlayerViewer.UI
                 _envStatus = "Sky unreadable; ambient without it.";
 
             BfresEditor.HoianNXRender.SetUniformSet(StageTemplateSet);
-            BfresEditor.HoianNXRender.EnvironmentOverride = EnvUniforms.BuildEnvironment(
+            BfresEditor.ThunderFrame.Instance.EnvironmentOverride = EnvUniforms.BuildEnvironment(
                 envTemplate,
                 env.Params,
                 fog: !env.NamedEnvSet,
                 ambientSH: ambient
             );
-            BfresEditor.HoianNXRender.User0Override = EnvUniforms.BuildUser0(
+            BfresEditor.ThunderFrame.Instance.User0Override = EnvUniforms.BuildUser0(
                 user0Template,
                 env.Params,
                 env.Night
@@ -223,8 +345,29 @@ namespace PlayerViewer.UI
 
         static void ClearGeneratedEnv()
         {
-            BfresEditor.HoianNXRender.EnvironmentOverride = null;
-            BfresEditor.HoianNXRender.User0Override = null;
+            BfresEditor.ThunderFrame.Instance.EnvironmentOverride = null;
+            BfresEditor.ThunderFrame.Instance.User0Override = null;
+        }
+
+        static PlayerViewer.Env.RaidersFrame LoadRaidersFrame(
+            Romfs romfs,
+            string group = RaidersEnv.DefaultScene
+        )
+        {
+            try
+            {
+                var frame = PlayerViewer.Env.RaidersFrame.Load(romfs, group);
+                if (frame == null)
+                    Console.WriteLine("[Env] Raiders lighting not found; using Splatoon 3's.");
+                else if (frame.AmbientSH == null)
+                    Console.WriteLine("[Env] Raiders env map unreadable; ambient left black.");
+                return frame;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Env] Raiders lighting failed: {ex.Message}");
+                return null;
+            }
         }
 
         static byte[] ReadResource(string path) =>

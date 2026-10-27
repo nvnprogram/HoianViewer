@@ -60,7 +60,7 @@ namespace PlayerViewer.Physics
         )
         {
             var report = new List<string>();
-            var target = new ClothPacks(new Romfs(romfs.Root, root, true, romfs.SdodrRoot));
+            var target = new ClothPacks(new Romfs(romfs.Root, root, true, romfs.SdodrRoot, romfs.Game));
             foreach (var actor in actors)
             {
                 //A pack already in the target folder is built on, so earlier writes there are kept.
@@ -77,7 +77,7 @@ namespace PlayerViewer.Physics
                 report.AddRange(notes.Select(n => "  " + n));
             }
             //Read back through the same lookup the game uses.
-            var check = new ClothPacks(new Romfs(romfs.Root, root, true, romfs.SdodrRoot));
+            var check = new ClothPacks(new Romfs(romfs.Root, root, true, romfs.SdodrRoot, romfs.Game));
             foreach (var actor in actors)
             {
                 var src = check.FindFor(actor);

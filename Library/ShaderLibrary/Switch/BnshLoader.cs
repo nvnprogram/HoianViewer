@@ -27,8 +27,13 @@ namespace ShaderLibrary.Switch
 
             // Variations
             reader.SeekBegin(bnsh.Header.VariationStartOffset);
+            bool stageInfo = bnsh.BinHeader.VersionMajor > 2 || (bnsh.BinHeader.VersionMajor == 2 && bnsh.BinHeader.VersionMinor >= 4);
             for (int i = 0; i < bnsh.Header.NumVariation; i++)
-                bnsh.Variations.Add(ReadShaderVariation(reader));
+            {
+                var variation = ReadShaderVariation(reader);
+                variation._hasStageInfo = stageInfo;
+                bnsh.Variations.Add(variation);
+            }
         }
 
         private static BnshFile.ShaderVariation ReadShaderVariation(BinaryDataReader reader)
@@ -50,12 +55,13 @@ namespace ShaderLibrary.Switch
             reader.BaseStream.Read(Utils.AsSpan(ref program.header));
             var pos = reader.BaseStream.Position;
 
-            program.VertexShader = ReadShaderCode(reader, program.header.VertexShaderOffset);
-            program.FragmentShader = ReadShaderCode(reader, program.header.FragmentShaderOffset);
-            program.GeometryShader = ReadShaderCode(reader, program.header.GeometryShaderOffset);
-            program.ComputeShader = ReadShaderCode(reader, program.header.ComputeShaderOffset);
-            program.TessellationControlShader = ReadShaderCode(reader, program.header.TessellationControlShaderOffset);
-            program.TessellationEvalShader = ReadShaderCode(reader, program.header.TessellationEvalShaderOffset);
+            bool info = variation._hasStageInfo;
+            program.VertexShader = ReadShaderCode(reader, program.header.VertexShaderOffset, info);
+            program.FragmentShader = ReadShaderCode(reader, program.header.FragmentShaderOffset, info);
+            program.GeometryShader = ReadShaderCode(reader, program.header.GeometryShaderOffset, info);
+            program.ComputeShader = ReadShaderCode(reader, program.header.ComputeShaderOffset, info);
+            program.TessellationControlShader = ReadShaderCode(reader, program.header.TessellationControlShaderOffset, info);
+            program.TessellationEvalShader = ReadShaderCode(reader, program.header.TessellationEvalShaderOffset, info);
 
             reader.SeekBegin(program.header.ObjectOffset);
             program.MemoryData = reader.ReadBytes((int)program.header.ObjectSize);
@@ -78,7 +84,7 @@ namespace ShaderLibrary.Switch
             return program;
         }
 
-        private static BnshFile.ShaderCode ReadShaderCode(BinaryDataReader reader, ulong offset)
+        private static BnshFile.ShaderCode ReadShaderCode(BinaryDataReader reader, ulong offset, bool stageInfo)
         {
             if (offset == 0) return null;
             reader.SeekBegin(offset);
@@ -90,6 +96,10 @@ namespace ShaderLibrary.Switch
             uint byteCodeSize = reader.ReadUInt32();
             uint controlCodeSize = reader.ReadUInt32();
             code.Reserved = reader.ReadBytes(32); //padding
+
+            ulong stageInfoOffset = BitConverter.ToUInt64(code.Reserved, 0x10);
+            if (stageInfo && stageInfoOffset != 0)
+                code.StageInfo = reader.ReadCustom(() => reader.ReadBytes(0x18), stageInfoOffset);
 
             code.ControlCode = reader.ReadCustom(() =>
             {

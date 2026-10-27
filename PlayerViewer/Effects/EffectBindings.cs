@@ -8,8 +8,8 @@ namespace PlayerViewer.Effects
         /// <summary>NnVfx2ViewParam, 0x250 bytes: camera matrices, once per view.</summary>
         View,
 
-        /// <summary>sysEmitterStaticUniformBlock, 0xA90 bytes: the emitter after the load time
-        /// rewrite, see <c>StaticUniformBlock.Build</c>.</summary>
+        /// <summary>sysEmitterStaticUniformBlock (0xA90 bytes in v46 vs 0xCC0 in v54): the emitter
+        /// after the load time rewrite, see <c>StaticUniformBlock.Build</c>.</summary>
         EmitterStatic,
 
         /// <summary>NnVfx2EmitterDynamicParam, 0x160 bytes: colours, time and matrices, per
@@ -39,6 +39,10 @@ namespace PlayerViewer.Effects
 
         /// <summary>sysCustomShaderUniformBlock3.</summary>
         Custom3,
+
+        /// <summary>Context, Raiders' fragment block for the light cluster: the frame's
+        /// gsys_context.</summary>
+        Context,
     }
 
     /// <summary>
@@ -47,7 +51,7 @@ namespace PlayerViewer.Effects
     /// </summary>
     public static class EffectBindings
     {
-        public const int BlockCount = 10;
+        public const int BlockCount = 11;
 
         public static readonly IReadOnlyDictionary<string, EffectBlock> BlockNames = new Dictionary<
             string,
@@ -64,6 +68,7 @@ namespace PlayerViewer.Effects
             ["sysCustomShaderUniformBlock1"] = EffectBlock.Custom1,
             ["sysCustomShaderUniformBlock2"] = EffectBlock.Custom2,
             ["sysCustomShaderUniformBlock3"] = EffectBlock.Custom3,
+            ["Context"] = EffectBlock.Context,
         };
 
         public const int ViewSize = 0x250;
@@ -71,6 +76,9 @@ namespace PlayerViewer.Effects
         public const int DynamicSize = 0x160;
         public const int Custom0Size = 0x3A0;
         public const int Custom1Size = 0x160;
+
+        /// <summary>Raiders' Context block, the frame's gsys_context.</summary>
+        public const int ContextSize = 12352;
 
         /// <summary>A copy of the scene colour, taken before the refractive emitters draw.</summary>
         public const string FrameBufferTexture = "sysFrameBufferTexture";

@@ -27,7 +27,27 @@ namespace PlayerViewer.Effects.Sim
         public float Param2C,
             Param30;
 
-        public static StripeParams Read(ReadOnlySpan<byte> p) =>
+        /// <summary>The EP02 payload: 52 bytes in v46, 40 in v54, whose first four fields are bytes.</summary>
+        public static StripeParams Read(ReadOnlySpan<byte> p, bool v46) =>
+            v46 ? Read46(p) : Read54(p);
+
+        static StripeParams Read54(ReadOnlySpan<byte> p) =>
+            new()
+            {
+                CalcType = p[0],
+                FollowEmitter = p[1] != 0,
+                Option = p[2],
+                Texturing = p[3],
+                Divide = BitConverter.ToSingle(p.Slice(0x04, 4)),
+                History = BitConverter.ToSingle(p.Slice(0x08, 4)),
+                StartAlpha = BitConverter.ToSingle(p.Slice(0x10, 4)),
+                EndAlpha = BitConverter.ToSingle(p.Slice(0x14, 4)),
+                DirectionSmoothing = BitConverter.ToSingle(p.Slice(0x1C, 4)),
+                Param2C = BitConverter.ToInt32(p.Slice(0x20, 4)),
+                Param30 = BitConverter.ToSingle(p.Slice(0x24, 4)),
+            };
+
+        static StripeParams Read46(ReadOnlySpan<byte> p) =>
             new()
             {
                 CalcType = BitConverter.ToInt32(p.Slice(0x00, 4)),
@@ -183,7 +203,7 @@ namespace PlayerViewer.Effects.Sim
             s.Pos[w] = new Vector4(pos, scale.X);
             s.Dir[w] = new Vector4(vec, 0);
             s.Emat[w] = p.FollowEmitter ? new Vector4(0, 1, 0, 0) : new Vector4(_e.Srt.R1, 0);
-            if (p.CalcType is 1 or 2 && d.Source.Section.GetU8(0xBF2) != 0)
+            if (p.CalcType is 1 or 2 && d.Raw.GetU8(0xBF2) != 0)
                 RollZ(s, w, slot, look);
             if (p.History > s.Count)
                 s.Count++;
@@ -290,7 +310,7 @@ namespace PlayerViewer.Effects.Sim
         void UpdateColors(StripeInstance s, Vector4 random, float life, float time)
         {
             var d = _e.Def;
-            float colorScale = BitConverter.ToSingle(d.StaticBlock, 0x670);
+            float colorScale = BitConverter.ToSingle(d.Static, 0x670);
             var c0 = ParticleAnim.Color0(d, random, life, time);
             var c1 = ParticleAnim.Color1(d, random, life, time);
             s.Color0 = new Vector4(c0.X * colorScale, c0.Y * colorScale, c0.Z * colorScale, c0.W);

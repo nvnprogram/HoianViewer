@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using BfresEditor;
 using PlayerViewer.Core;
+using PlayerViewer.Textures;
 
 namespace PlayerViewer.Player
 {
@@ -14,13 +15,28 @@ namespace PlayerViewer.Player
     {
         /// <summary>
         /// Resolves shared assets for a BFRES: share_tex_list.txt (textures + anims
-        /// from referenced models) and ExternalTextureResource material user data.
+        /// from referenced models), ExternalTextureResource material user data, and for a
+        /// Raiders model its textures in Tex/ and, with <paramref name="withAnimArchive"/>, the
+        /// animations of its archive.
         /// </summary>
-        public static void ResolveSharedAssets(BFRES bfres, byte[] rawData, Romfs romfs)
+        public static void ResolveSharedAssets(
+            BFRES bfres,
+            byte[] rawData,
+            Romfs romfs,
+            string modelName = null,
+            bool withAnimArchive = true
+        )
         {
             try
             {
                 var resFile = bfres.ResFile;
+
+                if (modelName != null && romfs.ArchiveOf(modelName) is string archive)
+                {
+                    AttachTextures(bfres, resFile, archive, romfs);
+                    if (withAnimArchive)
+                        AttachAnimArchive(bfres, archive, romfs);
+                }
 
                 if (resFile.ExternalFiles.ContainsKey("share_tex_list.txt"))
                 {
@@ -101,6 +117,101 @@ namespace PlayerViewer.Player
             }
         }
 
+        /// <summary>
+        /// Adds the textures a Raiders file keeps in Tex/ to the model's render. With an
+        /// <paramref name="archive"/>, names its table lacks are looked up in that archive.
+        /// Returns how many were added.
+        /// </summary>
+        public static int AttachTextures(
+            BFRES bfres,
+            BfresLibrary.ResFile res,
+            string archive,
+            Romfs romfs
+        ) => AttachTextures(bfres, res, archive, romfs.ReadFile);
+
+        /// <summary>
+        /// <see cref="AttachTextures(BFRES, BfresLibrary.ResFile, string, Romfs)"/> reading each
+        /// file through <paramref name="readFile"/>, which takes a romfs relative path.
+        /// </summary>
+        public static int AttachTextures(
+            BFRES bfres,
+            BfresLibrary.ResFile res,
+            string archive,
+            Func<string, byte[]> readFile
+        )
+        {
+            var render = (BfresRender)bfres.Renderer;
+            int added = 0;
+            foreach (var (name, stem) in ExternalTextures.Stems(res, archive))
+            {
+                if (render.Textures.ContainsKey(name))
+                    continue;
+                try
+                {
+                    var tex = ExternalTextures.Read(stem, name, readFile);
+                    if (tex == null)
+                        continue;
+                    render.Textures.Add(name, new BntxTexture(tex.BntxFile, tex.Texture));
+                    added++;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Scene] Texture {stem}: {ex.Message}");
+                }
+            }
+            return added;
+        }
+
+        /// <summary>
+        /// A Raiders model's textures and, when it has one, its archive's animation file, all
+        /// read through <paramref name="readFile"/>.
+        /// </summary>
+        public static void AttachSpiralFiles(
+            BFRES bfres,
+            BfresLibrary.ResFile res,
+            string archive,
+            Func<string, byte[]> readFile
+        )
+        {
+            try
+            {
+                AttachTextures(bfres, res, archive, readFile);
+                if (!res.ExternalFiles.ContainsKey(Conversion.ModelConvert.AttachFlagName))
+                    return;
+                var data = readFile($"Model/{archive}.anim.bfres");
+                if (data == null)
+                    return;
+                var anims = new BfresLibrary.ResFile(new MemoryStream(data));
+                AttachTextures(bfres, anims, null, readFile);
+                MergeAnims(bfres, anims);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Scene] Files of {archive}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Merges a Raiders animation archive (archive.anim) into the model: its animations
+        /// and the textures its texture pattern frames use.
+        /// </summary>
+        public static void AttachAnimArchive(BFRES bfres, string archive, Romfs romfs)
+        {
+            try
+            {
+                var data = romfs.ReadAnimArchive(archive);
+                if (data == null)
+                    return;
+                var res = new BfresLibrary.ResFile(new MemoryStream(data));
+                AttachTextures(bfres, res, null, romfs);
+                MergeAnims(bfres, res);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Scene] Animation archive {archive}: {ex.Message}");
+            }
+        }
+
         static void MergeSharedAssets(BFRES bfres, string baseModelName, Romfs romfs)
         {
             try
@@ -122,34 +233,10 @@ namespace PlayerViewer.Player
                     }
                 }
 
-                int skelAnims = 0;
-                foreach (var anim in res.SkeletalAnims.Values)
-                {
-                    if (bfres.SkeletalAnimations.Any(a => a.Name == anim.Name))
-                        continue;
-                    bfres.SkeletalAnimations.Add(new BfresSkeletalAnim(res, anim, anim.Name));
-                    skelAnims++;
-                }
-
-                int matAnims = MergeMaterialAnims(bfres, res.ShaderParamAnims, res.Name);
-                matAnims += MergeMaterialAnims(bfres, res.TexPatternAnims, res.Name);
-                matAnims += MergeMaterialAnims(bfres, res.TexSrtAnims, res.Name);
-                matAnims += MergeMaterialAnims(bfres, res.ColorAnims, res.Name);
-
-                int visAnims = 0;
-                foreach (var anim in res.BoneVisibilityAnims.Values)
-                {
-                    if (bfres.VisibilityAnimations.Any(a => a.Name == anim.Name))
-                        continue;
-                    bfres.VisibilityAnimations.Add(new BfresVisibilityAnim(anim, res.Name));
-                    visAnims++;
-                }
-
-                int total = skelAnims + matAnims + visAnims;
+                int total = MergeAnims(bfres, res);
                 if (texAdded > 0 || total > 0)
                     Console.WriteLine(
-                        $"[Scene] Merged {texAdded} tex, {total} anims "
-                            + $"(skel={skelAnims} mat={matAnims} vis={visAnims}) from {baseModelName}"
+                        $"[Scene] Merged {texAdded} tex, {total} anims from {baseModelName}"
                     );
             }
             catch (Exception ex)
@@ -158,6 +245,35 @@ namespace PlayerViewer.Player
                     $"[Scene] Shared asset merge failed ({baseModelName}): {ex.Message}"
                 );
             }
+        }
+
+        //Skeletal, material and bone visibility animations not already on the model.
+        static int MergeAnims(BFRES bfres, BfresLibrary.ResFile res)
+        {
+            int skelAnims = 0;
+            foreach (var anim in res.SkeletalAnims.Values)
+            {
+                if (bfres.SkeletalAnimations.Any(a => a.Name == anim.Name))
+                    continue;
+                bfres.SkeletalAnimations.Add(new BfresSkeletalAnim(res, anim, anim.Name));
+                skelAnims++;
+            }
+
+            int matAnims = MergeMaterialAnims(bfres, res.ShaderParamAnims, res.Name);
+            matAnims += MergeMaterialAnims(bfres, res.TexPatternAnims, res.Name);
+            matAnims += MergeMaterialAnims(bfres, res.TexSrtAnims, res.Name);
+            matAnims += MergeMaterialAnims(bfres, res.ColorAnims, res.Name);
+
+            int visAnims = 0;
+            foreach (var anim in res.BoneVisibilityAnims.Values)
+            {
+                if (bfres.VisibilityAnimations.Any(a => a.Name == anim.Name))
+                    continue;
+                bfres.VisibilityAnimations.Add(new BfresVisibilityAnim(anim, res.Name));
+                visAnims++;
+            }
+
+            return skelAnims + matAnims + visAnims;
         }
 
         static int MergeMaterialAnims(

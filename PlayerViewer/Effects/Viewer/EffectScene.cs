@@ -45,6 +45,7 @@ namespace PlayerViewer.Effects.Viewer
         readonly EffectHostTextures _host = new();
         readonly Dictionary<Emitter, byte[]> _custom1 = new();
         NVector3 _custom1Team;
+        RaidersCustomBlocks.Teams _custom1Teams;
         byte[] _custom1User0;
         readonly LightCluster _lights = new();
         byte[] _custom2;
@@ -55,12 +56,28 @@ namespace PlayerViewer.Effects.Viewer
         public EffectScene()
         {
             _host.EnvironmentCubeArray = () =>
-                HoianNXRender.EnvCubeArray is { } c
+                HoianNXRender.FrameSource.EnvironmentCube is { } c
                     ? new GlTexture(c.ID, TextureTarget.TextureCubeMapArray)
                     : null;
         }
 
-        EffectRenderer Renderer => _renderer ??= new EffectRenderer { HostSource = _host.Get };
+        EffectRenderer Renderer =>
+            _renderer ??= new EffectRenderer
+            {
+                HostSource = _host.Get,
+                FragmentStorageSource = FrameStorage,
+            };
+
+        /// <summary>Raiders' light tables, the frame's storage buffers of the same content.</summary>
+        static byte[] FrameStorage(string name) =>
+            HoianNXRender.FrameSource.StorageBuffer(
+                name switch
+                {
+                    "EnvObjData" => "gsys_env_obj_data",
+                    "ViewProjData" => "gsys_view_proj_data",
+                    _ => name,
+                }
+            );
 
         /// <summary>Draws the last render skipped because their program was still linking.</summary>
         public int PendingDraws => _renderer?.PendingDraws ?? 0;
@@ -85,6 +102,7 @@ namespace PlayerViewer.Effects.Viewer
             if (Playback.Instance is { } inst)
                 EffectLights.Collect(inst, _lights, e => Draws(e.Def.Source));
             _custom2 = _lights.Build();
+            HoianNXRender.FrameSource.SetLights(_lights);
             if (Companion != null)
                 HoianNXRender.LightClusterOverride = _custom2;
         }
@@ -166,17 +184,6 @@ namespace PlayerViewer.Effects.Viewer
             AfterCopy,
         }
 
-        static readonly Dictionary<string, byte[]> _dumpedBlocks = new();
-
-        /// <summary>A block of the uniform set the models use, as dumped.</summary>
-        static byte[] DumpedBlock(string file)
-        {
-            string path = Path.Combine("Resources", HoianNXRender.UniformSetDir, file);
-            if (!_dumpedBlocks.TryGetValue(path, out var data))
-                _dumpedBlocks[path] = data = File.Exists(path) ? File.ReadAllBytes(path) : null;
-            return data;
-        }
-
         void DrawEmitters(GLContext control, Group group)
         {
             var inst = Playback.Instance;
@@ -203,10 +210,15 @@ namespace PlayerViewer.Effects.Viewer
             byte[] view = BuildView(control.Camera);
             float offset = Playback.TimeOffset;
             var towardLight = ToNumerics(-HoianNXRender.GetMainLightDir());
-            var environment = HoianNXRender.EnvironmentOverride ?? DumpedBlock("fp_c5.bin");
-            var user0 = HoianNXRender.User0Override ?? DumpedBlock("fp_c7.bin");
+            var frame = HoianNXRender.FrameSource;
+            var map = chosen[0].Def.Source.Map;
+            var blocks = CustomBlockSet.For(map);
+            //Splatoon 3's blocks are laid out over its own environment, not Raiders'.
+            var frameBlocks = map.IsV46 ? ThunderFrame.Instance : frame;
+            var environment = frameBlocks.Block("gsys_environment");
+            var user0 = frameBlocks.Block("gsys_user0");
             var scene = SceneParams?.Invoke();
-            byte[] custom0 = CustomBlocks.BuildCustom0(
+            byte[] custom0 = blocks.BuildCustom0(
                 environment,
                 user0,
                 scene,
@@ -216,12 +228,22 @@ namespace PlayerViewer.Effects.Viewer
                 _info.Height,
                 (Playback.Frame - offset) / 60f
             );
+            byte[] context = BuildContext(frame, control.Camera);
             _host.UpdateSphereMaps(towardLight, CustomBlocks.HighlightLobe(environment, scene));
             var team = HoianNXRender.TeamAlphaColor;
-            if (team != _custom1Team || user0 != _custom1User0)
+            var teams = new RaidersCustomBlocks.Teams(
+                HoianNXRender.TeamAlphaColor,
+                HoianNXRender.TeamBravoColor,
+                HoianNXRender.TeamCharlieColor,
+                HoianNXRender.TeamAlphaHue,
+                HoianNXRender.TeamBravoHue,
+                HoianNXRender.TeamCharlieHue
+            );
+            if (team != _custom1Team || teams != _custom1Teams || user0 != _custom1User0)
             {
                 _custom1.Clear();
                 _custom1Team = team;
+                _custom1Teams = teams;
                 _custom1User0 = user0;
             }
 
@@ -245,8 +267,9 @@ namespace PlayerViewer.Effects.Viewer
                     d.PluginBlocks = areaLoop;
                     d[EffectBlock.View] = view;
                     d[EffectBlock.Custom0] = custom0;
-                    d[EffectBlock.Custom1] = Custom1(e.Def.Source, team, user0);
+                    d[EffectBlock.Custom1] = Custom1(e.Def.Source, team, teams, user0);
                     d[EffectBlock.Custom2] = _custom2;
+                    d[EffectBlock.Context] = context;
                 }
                 inputs.Add((e, draws));
             }
@@ -303,10 +326,31 @@ namespace PlayerViewer.Effects.Viewer
                 _ => 7,
             };
 
-        byte[] Custom1(Emitter e, NVector3 team, byte[] user0)
+        byte[] Custom1(Emitter e, NVector3 team, in RaidersCustomBlocks.Teams teams, byte[] user0)
         {
             if (!_custom1.TryGetValue(e, out var block))
-                _custom1[e] = block = CustomBlocks.BuildCustom1(e, team, user0);
+                _custom1[e] = block = CustomBlockSet.For(e.Map).BuildCustom1(e, team, teams, user0);
+            return block;
+        }
+
+        /// <summary>The frame's gsys_context for the effect camera, which Raiders' effect
+        /// programs read as Context for the light cluster.</summary>
+        byte[] BuildContext(IHoianFrameSource frame, Camera camera)
+        {
+            var block = new byte[EffectBindings.ContextSize];
+            frame.WriteContext(
+                block,
+                new HoianView(
+                    camera.ModelMatrix * camera.ViewMatrix,
+                    camera.ProjectionMatrix,
+                    camera.ZNear,
+                    camera.ZFar,
+                    camera.Fov,
+                    camera.AspectRatio,
+                    Math.Max(1, _info.Width),
+                    Math.Max(1, _info.Height)
+                )
+            );
             return block;
         }
 

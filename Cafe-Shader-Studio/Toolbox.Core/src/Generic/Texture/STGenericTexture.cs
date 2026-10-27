@@ -351,9 +351,18 @@ namespace Toolbox.Core
             uint width = Math.Max(1, Width >> MipLevel);
             uint height = Math.Max(1, Height >> MipLevel);
             byte[] data = GetImageData(ArrayLevel, MipLevel, DepthLevel);
-            if (!IsBCNCompressed() && !Parameters.DontSwapRG)
+            data = Platform.DecodeImage(this, data, width, height, ArrayLevel, MipLevel);
+            if (SwapsRedBlue())
                 data = ImageUtility.ConvertBgraToRgba(data);
-            return Platform.DecodeImage(this, data, width, height, ArrayLevel, MipLevel);
+            return data;
+        }
+
+        public bool SwapsRedBlue()
+        {
+            if (Parameters.DontSwapRG)
+                return false;
+            string name = Platform.OutputFormat.ToString();
+            return name.StartsWith("RGBA8_") || name.StartsWith("BGRA8_") || name.StartsWith("BGRX8_");
         }
 
         public static byte[] DecodeBlock(byte[] data, uint width, uint height, TexFormat format) {

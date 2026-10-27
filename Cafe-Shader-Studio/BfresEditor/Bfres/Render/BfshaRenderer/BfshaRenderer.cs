@@ -388,6 +388,45 @@ namespace BfresEditor
 
                 RenderBlock(shaderBlock, programID, vertLocation, fragLocation, binding++);
             }
+
+            BindStorageBuffers(programID);
+        }
+
+        //One buffer per storage buffer name, shared by every material.
+        static readonly Dictionary<string, StorageBlock> _storageBlocks = new Dictionary<string, StorageBlock>();
+
+        /// <summary>Whether this renderer fills storage buffers at all.</summary>
+        protected virtual bool UsesStorageBuffers => false;
+
+        /// <summary>A storage buffer's contents, or null for zeros.</summary>
+        protected virtual byte[] GetStorageBuffer(string name) => null;
+
+        //Bound for a buffer with no contents, so its block cannot read another buffer left at its binding.
+        static readonly byte[] ZeroStorage = new byte[256];
+
+        //Each buffer goes to the block the translator named after the program's location for it.
+        void BindStorageBuffers(int programID)
+        {
+            var names = ShaderModel.StorageBuffers;
+            if (!UsesStorageBuffers || names.Count == 0)
+                return;
+            var locations = ProgramPasses[ShaderIndex].StorageBufferLocations;
+            int binding = 0;
+            for (int i = 0; i < names.Count && i < locations.Length; i++)
+            {
+                var location = locations[i];
+                if (location.VertexLocation == -1 && location.FragmentLocation == -1)
+                    continue;
+                var data = GetStorageBuffer(names[i]) ?? ZeroStorage;
+                if (!_storageBlocks.TryGetValue(names[i], out var buffer))
+                    _storageBlocks.Add(names[i], buffer = new StorageBlock());
+                buffer.SetData(data);
+                if (location.VertexLocation != -1)
+                    buffer.Bind(programID, $"_vp_s{location.VertexLocation}", binding);
+                if (location.FragmentLocation != -1)
+                    buffer.Bind(programID, $"_fp_s{location.FragmentLocation}", binding);
+                binding++;
+            }
         }
 
         /// <summary>
@@ -692,6 +731,12 @@ namespace BfresEditor
         byte[] _materialScratch = Array.Empty<byte>();
 
         /// <summary>
+        /// Whether the material block starts from the shader's default contents, as the game's
+        /// does, rather than from zero. A parameter the material does not carry then keeps its default.
+        /// </summary>
+        protected virtual bool MaterialBlockFromDefault => false;
+
+        /// <summary>
         /// A helper method to set a material parameter block layout: each parameter at its
         /// program offset, the block as long as the last one written.
         /// </summary>
@@ -702,6 +747,11 @@ namespace BfresEditor
                 _materialScratch = new byte[layout.Size];
             Array.Clear(_materialScratch);
             int end = 0;
+            if (MaterialBlockFromDefault && layout.Default != null)
+            {
+                end = Math.Min(layout.Default.Length, layout.Size);
+                layout.Default.AsSpan(0, end).CopyTo(_materialScratch);
+            }
 
             Span<float> m = stackalloc float[12];
             bool animated = mat.AnimatedParams.Count > 0;
@@ -915,6 +965,7 @@ namespace BfresEditor
         {
             public int Size;
             public readonly Dictionary<string, int> Offsets = new Dictionary<string, int>();
+            public byte[] Default;
         }
 
         //Per shader model, the layout of each block by index.
@@ -939,7 +990,7 @@ namespace BfresEditor
             for (int i = 0; i < layouts.Length; i++)
             {
                 var block = model.UniformBlocks[i];
-                var layout = new BlockLayout { Size = block.Size };
+                var layout = new BlockLayout { Size = block.Size, Default = block.DefaultBuffer };
                 int index = 0;
                 foreach (var param in block.Uniforms.Values)
                     layout.Offsets[block.Uniforms.GetKey(index++)] = param.Offset - 1;

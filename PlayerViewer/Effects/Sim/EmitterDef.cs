@@ -164,9 +164,13 @@ namespace PlayerViewer.Effects.Sim
         public Vector3 ParticleScale,
             ParticleScaleRandom;
 
-        /// <summary>The static uniform block after the load time rewrite; the runtime reads some
-        /// particle values from it rather than from the raw resource.</summary>
+        /// <summary>The static uniform block after the load time rewrite, as uploaded.</summary>
         public byte[] StaticBlock;
+
+        public byte[] Static;
+
+        /// <summary>The raw resource at the v46 offsets the simulation reads.</summary>
+        public EmitterV46 Raw { get; }
 
         public Vector3 InitialRotation;
         public float AirRegist;
@@ -215,95 +219,99 @@ namespace PlayerViewer.Effects.Sim
             Source = e;
             Parent = parent;
             var s = e.Section;
-            CalcType = (EmitterCalcType)s.GetU8(0xA92);
-            FollowType = s.GetU8(0xA93);
-            SeedType = s.GetU8(0xA94);
-            UpdateMatrixByEmit = s.GetU8(0xA95) != 0;
-            StopEmitOnFade = s.GetU8(0xA98) != 0;
-            FadeInAlphaCurve = s.GetU8(0xA99);
-            FadeInScale = s.GetU8(0xA9A) != 0;
-            FadeOutAlphaCurve = s.GetU8(0xA9B);
-            FadeOutScale = s.GetU8(0xA9C) != 0;
-            RandomSeed = s.GetU32(0xAA0);
-            DrawPath = s.GetU32(0xAA4);
-            FadeOutTime = s.GetS32(0xAA8);
-            FadeInTime = s.GetS32(0xAAC);
-            Translate = V3(s, 0xAB0);
-            TranslateRandom = V3(s, 0xABC);
-            Rotate = V3(s, 0xAC8);
-            RotateRandom = V3(s, 0xAD4);
-            Scale = V3(s, 0xAE0);
-            Color0 = V4(s, 0xAEC);
-            Color1 = V4(s, 0xAFC);
-            FadeInScaleMin = s.GetF32(0xB18);
-            FadeOutScaleMin = s.GetF32(0xB1C);
-            InheritAlpha0 = s.GetU8(0xB26) != 0 && s.GetU8(0xB2A) != 0;
-            InheritAlpha1 = s.GetU8(0xB27) != 0 && s.GetU8(0xB2B) != 0;
-            EmitterPerParticle = s.GetU8(0xB2C) != 0;
+            var r = Raw = new EmitterV46(e);
+            CalcType = (EmitterCalcType)r.GetU8(0xA92);
+            FollowType = r.GetU8(0xA93);
+            SeedType = r.GetU8(0xA94);
+            UpdateMatrixByEmit = r.GetU8(0xA95) != 0;
+            StopEmitOnFade = r.GetU8(0xA98) != 0;
+            FadeInAlphaCurve = r.GetU8(0xA99);
+            FadeInScale = r.GetU8(0xA9A) != 0;
+            FadeOutAlphaCurve = r.GetU8(0xA9B);
+            FadeOutScale = r.GetU8(0xA9C) != 0;
+            RandomSeed = r.GetU32(0xAA0);
+            DrawPath = r.GetU32(0xAA4);
+            FadeOutTime = r.GetS32(0xAA8);
+            FadeInTime = r.GetS32(0xAAC);
+            Translate = V3(r, 0xAB0);
+            TranslateRandom = V3(r, 0xABC);
+            Rotate = V3(r, 0xAC8);
+            RotateRandom = V3(r, 0xAD4);
+            Scale = V3(r, 0xAE0);
+            Color0 = V4(r, 0xAEC);
+            Color1 = V4(r, 0xAFC);
+            FadeInScaleMin = r.GetF32(0xB18);
+            FadeOutScaleMin = r.GetF32(0xB1C);
+            InheritAlpha0 = r.GetU8(0xB26) != 0 && r.GetU8(0xB2A) != 0;
+            InheritAlpha1 = r.GetU8(0xB27) != 0 && r.GetU8(0xB2B) != 0;
+            EmitterPerParticle = r.GetU8(0xB2C) != 0;
 
-            OneTime = s.GetU8(0xB38) != 0;
-            WorldGravity = s.GetU8(0xB39) != 0;
-            DistanceEmission = s.GetU8(0xB3A) != 0;
-            WorldOrientedVelocity = s.GetU8(0xB3B) != 0;
-            StartFrame = s.GetS32(0xB3C);
-            StartLifePercent = s.GetS32(0xB40);
-            EmissionFrames = s.GetS32(0xB44);
-            Rate = s.GetF32(0xB48);
-            RateRandom = s.GetS32(0xB4C);
-            Interval = s.GetS32(0xB50);
-            IntervalRandom = s.GetS32(0xB54);
-            PositionRandom = s.GetF32(0xB58);
-            GravityScale = s.GetF32(0xB5C);
-            GravityAxis = V3(s, 0xB60);
-            DistUnit = s.GetF32(0xB6C);
-            DistMin = s.GetF32(0xB70);
-            DistMax = s.GetF32(0xB74);
-            DistMargin = s.GetF32(0xB78);
-            DistMaxParticles = s.GetS32(0xB7C);
+            OneTime = r.GetU8(0xB38) != 0;
+            WorldGravity = r.GetU8(0xB39) != 0;
+            DistanceEmission = r.GetU8(0xB3A) != 0;
+            WorldOrientedVelocity = r.GetU8(0xB3B) != 0;
+            StartFrame = r.GetS32(0xB3C);
+            StartLifePercent = r.GetS32(0xB40);
+            EmissionFrames = r.GetS32(0xB44);
+            Rate = r.GetF32(0xB48);
+            RateRandom = r.GetS32(0xB4C);
+            Interval = r.GetS32(0xB50);
+            IntervalRandom = r.GetS32(0xB54);
+            PositionRandom = r.GetF32(0xB58);
+            GravityScale = r.GetF32(0xB5C);
+            GravityAxis = V3(r, 0xB60);
+            DistUnit = r.GetF32(0xB6C);
+            DistMin = r.GetF32(0xB70);
+            DistMax = r.GetF32(0xB74);
+            DistMargin = r.GetF32(0xB78);
+            DistMaxParticles = r.GetS32(0xB7C);
 
-            VolumeType = s.GetU8(0xB80);
-            SweepStartRandom = s.GetU8(0xB81) != 0;
-            ArcType = s.GetU8(0xB82);
-            SphereTableIndex = s.GetU8(0xB83);
-            Sphere64Count = s.GetU8(0xB84);
-            PoleAxis = s.GetU8(0xB85);
-            SweepLongitude = s.GetF32(0xB88);
-            SweepLatitude = s.GetF32(0xB8C);
-            SweepStart = s.GetF32(0xB90);
-            SurfacePosRandom = s.GetF32(0xB94);
-            Caliber = s.GetF32(0xB98);
-            LineCenter = s.GetF32(0xB9C);
-            LineLength = s.GetF32(0xBA0);
-            Radius = V3(s, 0xBA4);
-            FormScale = V3(s, 0xBB0);
-            PrimEmitType = s.GetS32(0xBBC);
-            ShapePrimitiveId = s.GetU64(0xBC0);
-            DivideCircle = s.GetS32(0xBC8);
-            DivideCircleRandom = s.GetS32(0xBCC);
-            DivideLine = s.GetS32(0xBD0);
-            DivideLineRandom = s.GetS32(0xBD4);
+            VolumeType = r.GetU8(0xB80);
+            SweepStartRandom = r.GetU8(0xB81) != 0;
+            ArcType = r.GetU8(0xB82);
+            SphereTableIndex = r.GetU8(0xB83);
+            Sphere64Count = r.GetU8(0xB84);
+            PoleAxis = r.GetU8(0xB85);
+            SweepLongitude = r.GetF32(0xB88);
+            SweepLatitude = r.GetF32(0xB8C);
+            SweepStart = r.GetF32(0xB90);
+            SurfacePosRandom = r.GetF32(0xB94);
+            Caliber = r.GetF32(0xB98);
+            LineCenter = r.GetF32(0xB9C);
+            LineLength = r.GetF32(0xBA0);
+            Radius = V3(r, 0xBA4);
+            FormScale = V3(r, 0xBB0);
+            PrimEmitType = r.GetS32(0xBBC);
+            ShapePrimitiveId = r.GetU64(0xBC0);
+            DivideCircle = r.GetS32(0xBC8);
+            DivideCircleRandom = r.GetS32(0xBCC);
+            DivideLine = r.GetS32(0xBD0);
+            DivideLineRandom = r.GetS32(0xBD4);
 
-            InfiniteLife = s.GetU8(0xBE8) != 0;
-            Life = s.GetS32(0xBF8);
-            LifeRandom = s.GetS32(0xBFC);
-            MomentumRandom = s.GetF32(0xC00);
+            InfiniteLife = r.GetU8(0xBE8) != 0;
+            Life = r.GetS32(0xBF8);
+            LifeRandom = r.GetS32(0xBFC);
+            MomentumRandom = r.GetF32(0xC00);
 
-            AllDirectionVelocity = s.GetF32(0xCF4);
-            DirectionalScale = s.GetF32(0xCF8);
-            Direction = V3(s, 0xCFC);
-            DiffusionAngle = s.GetF32(0xD08);
-            XzDiffusion = s.GetF32(0xD0C);
-            Diffusion = V3(s, 0xD10);
-            VelocityRandom = s.GetF32(0xD1C);
-            EmitterVelocityInherit = s.GetF32(0xD20);
-            EmitterVelocityInheritMax = s.GetF32(0xD24);
-            ParticleScale = V3(s, 0xD60);
-            ParticleScaleRandom = V3(s, 0xD6C);
+            AllDirectionVelocity = r.GetF32(0xCF4);
+            DirectionalScale = r.GetF32(0xCF8);
+            Direction = V3(r, 0xCFC);
+            DiffusionAngle = r.GetF32(0xD08);
+            XzDiffusion = r.GetF32(0xD0C);
+            Diffusion = V3(r, 0xD10);
+            VelocityRandom = r.GetF32(0xD1C);
+            EmitterVelocityInherit = r.GetF32(0xD20);
+            EmitterVelocityInheritMax = r.GetF32(0xD24);
+            ParticleScale = V3(r, 0xD60);
+            ParticleScaleRandom = V3(r, 0xD6C);
 
             StaticBlock = StaticUniformBlock.Build(e);
+            Static = e.Map.IsV46
+                ? StaticBlock
+                : e.Map.ToV46(StaticBlock, EmitterLayout.StaticBlockSize);
             InitialRotation = StaticV3(0xA00);
-            AirRegist = BitConverter.ToSingle(StaticBlock, 0x0E0);
-            StaticGravity = new Vector4(StaticV3(0x0D0), BitConverter.ToSingle(StaticBlock, 0x0DC));
+            AirRegist = BitConverter.ToSingle(Static, 0x0E0);
+            StaticGravity = new Vector4(StaticV3(0x0D0), BitConverter.ToSingle(Static, 0x0DC));
 
             foreach (var a in e.Animations)
             {
@@ -364,10 +372,10 @@ namespace PlayerViewer.Effects.Sim
                 : s.FindSub("EP04") != null ? 4
                 : 0;
             if (s.FindSub("EP02") is { } ep02)
-                Stripe = StripeParams.Read(ep02.Payload.Span);
+                Stripe = StripeParams.Read(ep02.Payload.Span, e.Map.IsV46);
             if (s.FindSub("EP04") is { } ep04 && ep04.Payload.Length >= 76)
                 AreaLoop = AreaLoopParams.Read(ep04.Payload.Span);
-            CustomAction = s.GetS32(EmitterLayout.CustomAction);
+            CustomAction = r.GetS32(EmitterLayout.CustomAction);
             if (
                 CustomAction == EffectLights.LightAction
                 && s.FindSub("CADP") is { } cadp
@@ -448,15 +456,15 @@ namespace PlayerViewer.Effects.Sim
 
         Vector3 StaticV3(int o) =>
             new(
-                BitConverter.ToSingle(StaticBlock, o),
-                BitConverter.ToSingle(StaticBlock, o + 4),
-                BitConverter.ToSingle(StaticBlock, o + 8)
+                BitConverter.ToSingle(Static, o),
+                BitConverter.ToSingle(Static, o + 4),
+                BitConverter.ToSingle(Static, o + 8)
             );
 
-        static Vector3 V3(VfxSection s, int o) =>
+        static Vector3 V3(EmitterV46 s, int o) =>
             new(s.GetF32(o), s.GetF32(o + 4), s.GetF32(o + 8));
 
-        static Vector4 V4(VfxSection s, int o) =>
+        static Vector4 V4(EmitterV46 s, int o) =>
             new(s.GetF32(o), s.GetF32(o + 4), s.GetF32(o + 8), s.GetF32(o + 12));
     }
 }

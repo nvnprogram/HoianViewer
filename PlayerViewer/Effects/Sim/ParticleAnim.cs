@@ -24,8 +24,8 @@ namespace PlayerViewer.Effects.Sim
             float time
         )
         {
-            var b = d.StaticBlock;
-            var r = d.Source.Section;
+            var b = d.Static;
+            var r = d.Raw;
             var scale = baseScale;
             int keys = I(b, S + 0x20);
             if (keys < 2)
@@ -81,7 +81,7 @@ namespace PlayerViewer.Effects.Sim
         )
         {
             var c = BaseColor(d, which, random, life, time);
-            float k = F(d.StaticBlock, 0x670);
+            float k = F(d.Static, 0x670);
             c = new Vector4(
                 (k * (emitterScale.X * animColor.X)) * c.X,
                 (k * (emitterScale.Y * animColor.Y)) * c.Y,
@@ -93,8 +93,8 @@ namespace PlayerViewer.Effects.Sim
 
         static Vector4 BaseColor(EmitterDef d, int which, Vector4 random, float life, float time)
         {
-            var b = d.StaticBlock;
-            var r = d.Source.Section;
+            var b = d.Static;
+            var r = d.Raw;
             int fixedAt = 0xD40 + 0x10 * which;
             var c = new Vector4(
                 r.GetF32(fixedAt),
@@ -154,8 +154,8 @@ namespace PlayerViewer.Effects.Sim
         /// <summary>The alpha fluctuation, clamped to [0, 1]; nothing when it is off.</summary>
         static Vector4 AlphaWave(EmitterDef d, Vector4 c, Vector4 random, float time)
         {
-            var b = d.StaticBlock;
-            var r = d.Source.Section;
+            var b = d.Static;
+            var r = d.Raw;
             if (r.GetU8(0xD84) == 0)
                 return c;
             int wave = r.GetU8(0xD87) >> 4;
@@ -176,8 +176,8 @@ namespace PlayerViewer.Effects.Sim
         /// </summary>
         public static Vector3 Rotation(EmitterDef d, Vector4 initRotate, Vector4 random, float time)
         {
-            var b = d.StaticBlock;
-            var r = d.Source.Section;
+            var b = d.Static;
+            var r = d.Raw;
             var initRand = V3(b, 0xA10);
             var add = V3(b, 0xA20);
             float regist = F(b, 0xA2C);
@@ -274,7 +274,7 @@ namespace PlayerViewer.Effects.Sim
 
         /// <summary>The time into an eight key table: the loop position with its random start, or age over life.</summary>
         static float KeyTime(
-            VfxSection r,
+            EmitterV46 r,
             int loopAt,
             int randomAt,
             int rateAt,

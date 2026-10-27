@@ -345,13 +345,14 @@ namespace BfresLibrary
             {
                 foreach (Shape shp in fmdl.Shapes.Values)
                 {
+                    uint align = fmdl.VertexBuffers[shp.VertexBufferIndex].GPUBufferAlignent;
                     foreach (Mesh msh in shp.Meshes)
                     {
+                        if (TotalSize % align != 0) TotalSize = TotalSize + (align - (TotalSize % align));
                         if (msh == this)
                             return TotalSize;
 
                         TotalSize += (uint)msh.Data.Length;
-                        if (TotalSize % 8 != 0) TotalSize = TotalSize + (8 - (TotalSize % 8));
                     }
                 }
             }

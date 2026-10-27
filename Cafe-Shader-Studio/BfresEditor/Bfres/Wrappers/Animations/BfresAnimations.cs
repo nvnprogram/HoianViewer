@@ -150,6 +150,12 @@ namespace BfresEditor
                     time = curve.Frames[i + 1] - curve.Frames[i];
                 }
 
+                if (i < count - 1 && time == 0)
+                {
+                    tangentIn[i] = inSlope;
+                    continue;
+                }
+
                 float outSlope = coef1 / time;
 
                 tangentIn[i] = inSlope;

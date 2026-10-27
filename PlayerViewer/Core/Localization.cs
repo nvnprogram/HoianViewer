@@ -43,7 +43,20 @@ namespace PlayerViewer.Core
             (GearSlot.SpecialWeapon, "CommonMsg/Weapon/WeaponName_Special.msbt", false),
         };
 
+        //Raiders labels its names by the keys the database sets on each entry.
+        static readonly (GearSlot Slot, string File, bool StripPrefix)[] SpiralSources =
+        {
+            (GearSlot.Head, "Glossary/GearName.msbt", false),
+            (GearSlot.Clothes, "Glossary/GearName.msbt", false),
+            (GearSlot.MainWeapon, "Glossary/WeaponName.msbt", false),
+            (GearSlot.Tank, "Glossary/SystemName.msbt", false),
+            (GearSlot.Gadget, "Glossary/GadgetName.msbt", false),
+            (GearSlot.Special, "Glossary/GadgetName.msbt", false),
+        };
+
         public string Language { get; }
+
+        (GearSlot Slot, string File, bool StripPrefix)[] _sources = Sources;
 
         readonly Dictionary<GearSlot, Dictionary<string, string>> _names = new();
 
@@ -93,7 +106,9 @@ namespace PlayerViewer.Core
                 return null;
             }
             var loc = new Localization(language);
-            foreach (var (slot, path, _) in Sources)
+            if (romfs.Game == GameKind.Spiral)
+                loc._sources = SpiralSources;
+            foreach (var (slot, path, _) in loc._sources)
             {
                 var names = new Dictionary<string, string>(StringComparer.Ordinal);
                 try
@@ -110,18 +125,31 @@ namespace PlayerViewer.Core
             return loc;
         }
 
+        /// <summary>The game's name for an entry, or null when it has none.</summary>
+        public string Name(GearEntry entry) =>
+            entry.NameKey != null
+                ? Lookup(entry.Slot, entry.NameKey)
+                : Name(entry.Slot, entry.RowId);
+
         /// <summary>The game's name for a row, or null when it has none.</summary>
         public string Name(GearSlot slot, string rowId)
         {
-            if (string.IsNullOrEmpty(rowId) || !_names.TryGetValue(slot, out var names))
+            if (string.IsNullOrEmpty(rowId) || !_names.ContainsKey(slot))
                 return null;
-            bool strip = Array.Find(Sources, x => x.Slot == slot).StripPrefix;
+            bool strip = Array.Find(_sources, x => x.Slot == slot).StripPrefix;
             string label = rowId;
             if (strip)
             {
                 int underscore = rowId.IndexOf('_');
                 label = underscore >= 0 ? rowId.Substring(underscore + 1) : rowId;
             }
+            return Lookup(slot, label);
+        }
+
+        string Lookup(GearSlot slot, string label)
+        {
+            if (!_names.TryGetValue(slot, out var names))
+                return null;
             //Rows the game never shows are named "-", which is no name at all.
             return names.TryGetValue(label, out var name) && name.Any(char.IsLetterOrDigit)
                 ? name.Trim()
@@ -133,7 +161,7 @@ namespace PlayerViewer.Core
         {
             foreach (GearSlot slot in Enum.GetValues(typeof(GearSlot)))
             foreach (var entry in db.GetList(slot))
-                entry.LocalizedName = loc?.Name(slot, entry.RowId);
+                entry.LocalizedName = loc?.Name(entry);
         }
     }
 }

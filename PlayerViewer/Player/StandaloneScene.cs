@@ -54,6 +54,9 @@ namespace PlayerViewer.Player
         /// <summary>The decompressed file the model was loaded from.</summary>
         public byte[] SourceData { get; private set; }
 
+        /// <summary>The conversion this model came out of, when it is the other game's model.</summary>
+        public Conversion.ConvertedModel Converted { get; private set; }
+
         public BFRES Bfres { get; private set; }
         public BfresRender Render { get; private set; }
 
@@ -94,7 +97,21 @@ namespace PlayerViewer.Player
 
             //Fake path inside romfs Model so the shader archive lookup works.
             string fakePath = Path.Combine(romfs.Root, "Model", stem + ".bfres");
-            return Load(raw, fakePath, stem, filePath, romfs);
+            return Load(raw, fakePath, stem, filePath, romfs, looseFile: true);
+        }
+
+        /// <summary>
+        /// Loads a model converted from the other game.
+        /// </summary>
+        public static StandaloneScene FromConverted(
+            Conversion.ConvertedModel model,
+            string sourcePath,
+            Romfs romfs
+        )
+        {
+            string name = model.FileName[..^".bfres".Length];
+            string fakePath = Path.Combine(romfs.Root, "Model", name + "~converted.bfres");
+            return Load(model.Bfres, fakePath, name, sourcePath, romfs, converted: model);
         }
 
         /// <summary>Loads a model from decompressed bytes, under the name the romfs would know it by.</summary>
@@ -127,7 +144,9 @@ namespace PlayerViewer.Player
             string fakePath,
             string name,
             string sourcePath,
-            Romfs romfs
+            Romfs romfs,
+            bool looseFile = false,
+            Conversion.ConvertedModel converted = null
         )
         {
             IFileFormat format;
@@ -145,13 +164,34 @@ namespace PlayerViewer.Player
                 Name = name,
                 SourcePath = sourcePath,
                 SourceData = data,
+                Converted = converted,
                 Bfres = bfres,
                 Render = (BfresRender)bfres.Renderer,
             };
             scene.Render.ID = "standalone_" + name;
             DataCache.ModelCache[scene.Render.ID] = scene.Render;
 
-            BfresHelpers.ResolveSharedAssets(bfres, data, romfs);
+            if (converted != null)
+            {
+                if (converted.Game == GameKind.Spiral)
+                    BfresHelpers.AttachSpiralFiles(
+                        bfres,
+                        bfres.ResFile,
+                        converted.Archive,
+                        converted.ReadFile
+                    );
+            }
+            else
+            {
+                if (looseFile && romfs.Layout.SplitsModelFiles)
+                    BfresHelpers.AttachSpiralFiles(
+                        bfres,
+                        bfres.ResFile,
+                        Conversion.ModelConvert.SplitName(bfres.ResFile.Name).Archive,
+                        Conversion.ModelConvert.SourceFiles(sourcePath, romfs)
+                    );
+                BfresHelpers.ResolveSharedAssets(bfres, data, romfs, name);
+            }
 
             foreach (var anim in bfres.SkeletalAnimations)
                 scene.AnimNames.Add(anim.Name);
@@ -270,6 +310,49 @@ namespace PlayerViewer.Player
                         model.ModelData.Skeleton,
                         models
                     );
+        }
+
+        /// <summary>
+        /// Renames a model, in the loaded file and in <see cref="SourceData"/>, so a reload from
+        /// the bytes keeps it. Throws on a name the file refuses.
+        /// </summary>
+        public void RenameModel(BfresModelAsset model, string name)
+        {
+            string old = model.ModelData.Name;
+            if (old == name)
+                return;
+            var bytes = Core.BfresNames.RenameModel(SourceData, old, name);
+            Core.BfresNames.RenameModel(Bfres.ResFile, old, name);
+            model.Name = name;
+            foreach (var mesh in model.Meshes)
+                RekeyShapeVisibility(old + "/" + mesh.Name, name + "/" + mesh.Name);
+            SourceData = bytes;
+        }
+
+        /// <summary>Renames a shape of a model, in the loaded file and in <see cref="SourceData"/>.</summary>
+        public void RenameShape(BfresModelAsset model, BfresMeshAsset mesh, string name)
+        {
+            string old = mesh.Name;
+            if (old == name)
+                return;
+            string owner = model.ModelData.Name;
+            var bytes = Core.BfresNames.RenameShape(SourceData, owner, old, name);
+            Core.BfresNames.RenameShape(Bfres.ResFile, model.ResModel.Model, old, name);
+            mesh.Name = name;
+            RekeyShapeVisibility(owner + "/" + old, owner + "/" + name);
+            //The viewer also hides a shape that a bone visibility entry names, where no bone has the name.
+            if (model.ModelData.Skeleton.SearchBone(old) == null)
+                foreach (var anim in Bfres.VisibilityAnimations)
+                foreach (var group in anim.AnimGroups)
+                    if (group.Name == old)
+                        group.Name = name;
+            SourceData = bytes;
+        }
+
+        void RekeyShapeVisibility(string old, string name)
+        {
+            if (_defaultShapeVisibility.Remove(old, out bool visible))
+                _defaultShapeVisibility[name] = visible;
         }
 
         /// <summary>The skeleton of every model in the file.</summary>

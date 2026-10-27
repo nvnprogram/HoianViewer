@@ -46,6 +46,13 @@ namespace EffectLibrary
             Position = target;
         }
 
+        public void PadTo(int position)
+        {
+            Reserve(position - Position);
+            _buffer.AsSpan(Position, position - Position).Clear();
+            Position = position;
+        }
+
         public void PatchU32(int at, uint value) =>
             BinaryPrimitives.WriteUInt32LittleEndian(_buffer.AsSpan(at), value);
 

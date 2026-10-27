@@ -37,9 +37,25 @@ namespace PlayerViewer.UI
 
         void DrawRightSidebar()
         {
+            float spacing = ImGui.GetStyle().ItemSpacing.Y;
+            if (AuthoringShown)
+            {
+                //The Physics Maker takes the animation's place and scrolls on its own.
+                float makerH = Math.Max(
+                    VisibleHeightBelowCursor() - _measuredCaptureHeight - spacing,
+                    160
+                );
+                ImGui.BeginChild("##maker", new Vector2(0, makerH));
+                DrawAuthoringPanel();
+                ImGui.EndChild();
+                float top = ImGui.GetCursorPosY();
+                DrawCapturePanel();
+                _measuredCaptureHeight = ImGui.GetCursorPosY() - top;
+                return;
+            }
+
             DrawPlaybackControls();
 
-            float spacing = ImGui.GetStyle().ItemSpacing.Y;
             float avail = VisibleHeightBelowCursor();
             float listH = Math.Max(avail - _measuredCaptureHeight - spacing, 90);
             DrawAnimList(listH);
@@ -764,6 +780,11 @@ namespace PlayerViewer.UI
 
         string PlaybackCurrentAnim =>
             _standalone != null ? _standalone.CurrentAnimName : _scene?.CurrentAnimName;
+
+        bool PlaybackHasAnimNamed(string name) =>
+            _standalone != null
+                ? _standalone.AnimNames.Contains(name)
+                : _scene?.Anims.AnimNames.Contains(name) == true;
 
         int PlaybackFrameCountOf(string name) =>
             _standalone != null

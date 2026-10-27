@@ -126,6 +126,7 @@ namespace ShaderBundler
                 UnknownIndices2 = (byte[])t.UnknownIndices2?.Clone(),
                 MaxRingItemSize = t.MaxRingItemSize,
                 MaxVSRingItemSize = t.MaxVSRingItemSize,
+                UnknownTable = (byte[])t.UnknownTable?.Clone(),
                 DefaultProgramIndex = -1,
                 BnshFile = bnsh,
                 Programs = new List<BfshaShaderProgram>(),
@@ -145,6 +146,7 @@ namespace ShaderBundler
 
             var result = new BuildResult { Bfsha = bfsha, Model = model };
             int stride = model.StaticKeyLength + model.DynamicKeyLength;
+            var platform = SplicePlatform.For(NvnPlatform.Of(t.BnshFile));
 
             var keys = new List<int>(requests.Count * stride);
             var rowOwner = new Dictionary<string, RowOwner>(StringComparer.Ordinal);
@@ -182,11 +184,8 @@ namespace ShaderBundler
                             $"{req}/{kv.Key}: bytecode is {bin.ByteCode.Length} B, not a "
                                 + "multiple of 256, so the next shader in the bnsh is misaligned"
                         );
-                    if (bin.ControlCode.Length != 2176)
-                        result.Notes.Add(
-                            $"{req}/{kv.Key}: control blob is {bin.ControlCode.Length} B, "
-                                + "expected is 2176 B"
-                        );
+                    if (platform.CheckControl(bin.ControlCode) is string problem)
+                        result.Notes.Add($"{req}/{kv.Key}: {problem}");
 
                     AssignStage(
                         binaryProgram,
@@ -203,6 +202,8 @@ namespace ShaderBundler
 
                 if (templateBp?.MemoryData != null)
                     binaryProgram.MemoryData = (byte[])templateBp.MemoryData.Clone();
+                if (platform.Platform.HasStageInfo)
+                    SetStageInfo(binaryProgram, templateBp);
 
                 int variationIndex = bnsh.Variations.Count;
                 bnsh.Variations.Add(new BnshFile.ShaderVariation { BinaryProgram = binaryProgram });
@@ -451,6 +452,32 @@ namespace ShaderBundler
             }
         }
 
+        /// <summary>
+        /// The block an NVN2 stage points at, which ends in a hash of the program, the same for
+        /// both stages and different for every program in a shipped archive. A copied program
+        /// keeps its own; a new one gets a hash of its code.
+        /// </summary>
+        static void SetStageInfo(BnshFile.BnshShaderProgram p, BnshFile.BnshShaderProgram template)
+        {
+            byte[] info = null;
+            if (template != null && SameCode(p, template))
+                info = template.VertexShader?.StageInfo ?? template.FragmentShader?.StageInfo;
+            if (info == null)
+            {
+                var hash = new System.IO.Hashing.XxHash64();
+                foreach (var code in new[] { p.VertexShader, p.FragmentShader })
+                {
+                    hash.Append(code?.ByteCode ?? Array.Empty<byte>());
+                    hash.Append(code?.ControlCode ?? Array.Empty<byte>());
+                }
+                info = new byte[0x18];
+                hash.GetCurrentHash().CopyTo(info, 0x10);
+            }
+            foreach (var code in new[] { p.VertexShader, p.FragmentShader })
+                if (code != null)
+                    code.StageInfo = (byte[])info.Clone();
+        }
+
         static byte[] StageReserved(BnshFile.BnshShaderProgram template, ShaderStage stage)
         {
             var code =
@@ -458,7 +485,8 @@ namespace ShaderBundler
             return code?.Reserved != null ? (byte[])code.Reserved.Clone() : null;
         }
 
-        //Deep copies of the tables the saver mutates while writing.
+        //Copies of the template's tables, so a built model a caller changes or saves with
+        //ShaderLibrary's saver, which rewrites them, leaves the template intact.
 
         static ResDict<ShaderOption> CopyOptions(ResDict<ShaderOption> src)
         {

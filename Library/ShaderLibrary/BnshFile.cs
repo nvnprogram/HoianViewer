@@ -121,6 +121,8 @@ namespace ShaderLibrary
             internal VariationHeader header;
             // Stream to read program data
             internal Stream _stream;
+            // Version 2.4 stages point at a StageInfo block.
+            internal bool _hasStageInfo;
 
             public ShaderVariation()
             {
@@ -232,6 +234,12 @@ namespace ShaderLibrary
             /// Reserved data.
             /// </summary>
             public byte[] Reserved = new byte[32];
+
+            /// <summary>
+            /// The 0x18 byte block a version 2.4 stage points at from Reserved + 0x10, ending in
+            /// the program's hash. Null for older versions.
+            /// </summary>
+            public byte[] StageInfo;
         }
 
         /// <summary>

@@ -39,6 +39,29 @@ namespace PlayerViewer.Icons
             return archive.Layout != null && archive._bntx != null ? archive : null;
         }
 
+        /// <summary>
+        /// One layout out of an archive holding many that share one texture file, as Raiders'
+        /// common UI archive does. Null when the archive lacks it.
+        /// </summary>
+        public static LayoutArchive FromShared(Sarc sarc, BntxFile bntx, string name)
+        {
+            if (bntx == null || sarc.GetFile($"blyt/{name}.bflyt") is not { } layout)
+                return null;
+            var archive = new LayoutArchive
+            {
+                Name = name,
+                Layout = new Bflyt(layout),
+                _bntx = bntx,
+            };
+            string prefix = $"anim/{name}_";
+            foreach (var (path, bytes) in sarc.Files)
+                if (path.StartsWith(prefix, StringComparison.Ordinal) && path.EndsWith(".bflan"))
+                    archive.Anims[Path.GetFileNameWithoutExtension(path)] = new Bflan(
+                        bytes.ToArray()
+                    );
+            return archive;
+        }
+
         public Bflan Anim(string suffix) => Anims.GetValueOrDefault($"{Name}_{suffix}");
 
         public Surface Texture(string name)
@@ -47,7 +70,10 @@ namespace PlayerViewer.Icons
                 return null;
             if (_decoded.TryGetValue(name, out var surface))
                 return surface;
-            var texture = _bntx.Textures.FirstOrDefault(t => t.Name == name);
+            //Raiders' layouts name a texture with a suffix its file does not have.
+            int mark = name.IndexOf('^');
+            string bare = mark > 0 ? name[..mark] : name;
+            var texture = _bntx.Textures.FirstOrDefault(t => t.Name == name || t.Name == bare);
             surface = texture != null ? Surface.Decode(_bntx, texture) : null;
             _decoded[name] = surface;
             return surface;
@@ -142,6 +168,51 @@ namespace PlayerViewer.Icons
             return Composite(archive, layers, new string[layers.Length], anim, frame);
         }
 
+        /// <summary>
+        /// A Raiders player type: body, hair colour layer and eyebrows, the hair and eyebrows
+        /// in the colour the Select animation ends on, as the hair and eyebrow buttons show them.
+        /// </summary>
+        public static IconImage SpiralPlayerType(LayoutArchive archive, int type)
+        {
+            var anim = archive?.Anim("Variation");
+            if (anim == null)
+                return null;
+            string[] layers = { "P_Base_00", "P_HairColor_00", "P_Eyb_00" };
+            var textures = layers.Select(l => PatternTexture(anim, l, type)).ToArray();
+            var select = archive.Anim("Select");
+            int end = (int)(
+                select
+                    ?.Curves.Where(c => c.Tag == "FLMC")
+                    .SelectMany(c => c.Keys)
+                    .Select(k => k.Frame)
+                    .DefaultIfEmpty(0)
+                    .Max() ?? 0
+            );
+            return Composite(archive, layers, textures, select, end);
+        }
+
+        /// <summary>
+        /// A Raiders skin tone or eye colour swatch: the base colour, then the second and third
+        /// tones from the frames that show them.
+        /// </summary>
+        public static IconImage SpiralColour(LayoutArchive archive, int frame)
+        {
+            var anim = archive?.Anim("Variation");
+            if (anim == null)
+                return null;
+            (string Layer, string Pane)[] layers =
+            {
+                ("P_Color_00", "P_Color_00"),
+                ("P_Color_01", "N_Eye_00"),
+                ("P_Color_02", "P_Color_02"),
+            };
+            var shown = layers
+                .Where(l => anim.Find(l.Pane, "FLVI", 0, 0)?.Evaluate(frame) != 0)
+                .Select(l => l.Layer)
+                .ToArray();
+            return Composite(archive, shown, new string[shown.Length], anim, frame);
+        }
+
         //A frame past the last key would evaluate to the last texture, not to nothing.
         static bool HasKey(Bflan anim, string pane, int frame) =>
             anim.Find(pane, "FLTP", 0, 0)?.Keys.Any(k => k.Frame == frame) == true;
@@ -194,6 +265,18 @@ namespace PlayerViewer.Icons
                 Draw(canvas, pic, baseTex, maskTex, srt, black, white);
             }
             return canvas?.Trimmed(2).ToImage();
+        }
+
+        /// <summary>A texture coloured by a material's black and white colours, trimmed.</summary>
+        public static IconImage Tint(Surface tex, Vector4 black, Vector4 white)
+        {
+            var canvas = new Surface(tex.Width, tex.Height);
+            for (int i = 0; i < tex.Pixels.Length; i++)
+            {
+                var color = Vector4.Lerp(black, white, tex.Pixels[i]);
+                canvas.Over(i, new Vector3(color.X, color.Y, color.Z), color.W);
+            }
+            return canvas.Trimmed(2).ToImage();
         }
 
         static void Draw(

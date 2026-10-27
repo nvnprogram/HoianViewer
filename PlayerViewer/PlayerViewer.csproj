@@ -21,6 +21,7 @@
     <EmbeddedResource Include="UI\Fonts\*.otf" />
     <EmbeddedResource Include="UI\SideOrder\Resources\*.png" />
     <EmbeddedResource Include="Phive\HkTypeCatalog.json" />
+    <EmbeddedResource Include="Shaders\Resources\*.txt" />
   </ItemGroup>
 
   <!-- Test hooks and debug switches live in *.Test.cs files kept out of git. A single file

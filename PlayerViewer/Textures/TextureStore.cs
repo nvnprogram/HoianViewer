@@ -44,6 +44,74 @@ namespace PlayerViewer.Textures
             }
         }
 
+        ExternalTextureEdits _external;
+        bool _externalChecked;
+
+        /// <summary>The edits of a model that keeps its textures in <c>Tex/</c>, or null for one
+        /// with a container of its own or none at all.</summary>
+        public ExternalTextureEdits External
+        {
+            get
+            {
+                if (!_externalChecked)
+                {
+                    _externalChecked = true;
+                    var res = _bfres?.ResFile;
+                    if (_render != null && Bntx == null && ExternalTextureEdits.Applies(res))
+                        _external = new ExternalTextureEdits(
+                            res,
+                            ExternalDonor() is BntxTexture donor
+                                ? BntxPlatform.Of(donor.BntxFile)
+                                : BntxPlatform.Ounce
+                        );
+                }
+                return _external;
+            }
+        }
+
+        /// <summary>Whether textures can be added, replaced, renamed and deleted.</summary>
+        public bool Editable => Bntx != null || External != null;
+
+        /// <summary>The platform a new texture is laid out for.</summary>
+        public BntxPlatform Platform =>
+            Bntx is BntxFile bntx
+                ? BntxPlatform.Of(bntx)
+                : External?.Platform ?? BntxPlatform.Switch;
+
+        /// <summary>A texture the model already carries, whose packager fields a new one copies.</summary>
+        public BntxTextureData Donor =>
+            Bntx is BntxFile bntx ? bntx.Textures.FirstOrDefault() : ExternalDonor()?.Texture;
+
+        //The first texture the model's table lists, in table order.
+        BntxTexture ExternalDonor()
+        {
+            var table = ExternalTextures.ReadTable(_bfres?.ResFile);
+            if (table == null || _render == null)
+                return null;
+            foreach (var name in table.Keys)
+                if (Find(name) is BntxTexture tex)
+                    return tex;
+            return null;
+        }
+
+        /// <summary>Whether the container holds a texture of this name.</summary>
+        public bool Carries(string name) =>
+            Bntx is BntxFile bntx ? bntx.Textures.Any(x => x.Name == name) : Has(name);
+
+        /// <summary>The container's texture of this name, or null.</summary>
+        public BntxTextureData Get(string name) =>
+            Bntx is BntxFile bntx
+                ? bntx.Textures.FirstOrDefault(x => x.Name == name)
+                : (Find(name) as BntxTexture)?.Texture;
+
+        /// <summary>A name no texture of the model has, derived from <paramref name="wanted"/>.</summary>
+        public string UniqueName(string wanted) =>
+            Bntx is BntxFile bntx
+                ? TextureImport.UniqueName(bntx, wanted)
+                : TextureImport.UniqueName(Taken, wanted);
+
+        bool Taken(string name) => Has(name) || (External?.Listed(name) ?? false);
+
         public IEnumerable<KeyValuePair<string, STGenericTexture>> Textures =>
             _render?.Textures ?? new Dictionary<string, STGenericTexture>();
 
@@ -73,13 +141,17 @@ namespace PlayerViewer.Textures
 
         /// <summary>
         /// Puts a built texture into the container and into the three name keyed registries,
-        /// replacing whatever held the name before.
+        /// replacing whatever held the name before. A model with external textures has only
+        /// the render's, and <see cref="External"/> holds the texture until a save.
         /// </summary>
         public void Install(BntxTextureData texture)
         {
             var bntx = Bntx;
             if (bntx == null)
-                throw new InvalidOperationException("this model has no texture container");
+            {
+                InstallExternal(texture);
+                return;
+            }
 
             TextureImport.Install(bntx, texture);
             Forget(texture.Name);
@@ -93,6 +165,21 @@ namespace PlayerViewer.Textures
             res.Textures.Set(texture.Name, shared);
         }
 
+        //A model with external textures: the texture gets a container of its own, and only the
+        //render knows it until a save writes the file.
+        void InstallExternal(BntxTextureData texture)
+        {
+            var external =
+                External
+                ?? throw new InvalidOperationException("this model has no texture container");
+            var old = Get(texture.Name);
+            if (old != null)
+                TextureImport.KeepChannels(old, texture);
+            var container = external.Put(texture, old == null);
+            Forget(texture.Name);
+            _render.Textures[texture.Name] = new BntxTexture(container, texture);
+        }
+
         /// <summary>
         /// Removes a texture everywhere. Materials that named it are left naming it: the
         /// viewer then binds a type correct default and says so, which is more useful than
@@ -102,7 +189,13 @@ namespace PlayerViewer.Textures
         {
             var bntx = Bntx;
             if (bntx == null)
+            {
+                if (External == null)
+                    return;
+                External.Remove(name);
+                Forget(name);
                 return;
+            }
 
             for (int i = bntx.Textures.Count - 1; i >= 0; i--)
                 if (bntx.Textures[i].Name == name)
@@ -120,12 +213,17 @@ namespace PlayerViewer.Textures
         public int Rename(string oldName, string newName)
         {
             var bntx = Bntx;
-            if (bntx == null)
+            if (bntx == null && External == null)
                 throw new InvalidOperationException("this model has no texture container");
             if (string.IsNullOrWhiteSpace(newName))
                 throw new ArgumentException("a texture needs a name", nameof(newName));
             if (newName == oldName)
                 return 0;
+            if (bntx == null)
+            {
+                RenameExternal(oldName, newName);
+                return Repoint(oldName, newName);
+            }
             if (bntx.Textures.Any(x => x.Name == newName))
                 throw new InvalidOperationException($"'{newName}' is already taken");
 
@@ -144,7 +242,25 @@ namespace PlayerViewer.Textures
             _bfres.Textures.Add(wrapper);
             var shared = new BfresLibrary.Switch.SwitchTexture(bntx, texture);
             _bfres.ResFile.Textures.Set(newName, shared);
+            return Repoint(oldName, newName);
+        }
 
+        void RenameExternal(string oldName, string newName)
+        {
+            if (Taken(newName))
+                throw new InvalidOperationException($"'{newName}' is already taken");
+            var texture =
+                Get(oldName)
+                ?? throw new InvalidOperationException($"no texture called '{oldName}'");
+            texture.Name = newName;
+            var container = External.Rename(oldName, texture);
+            Forget(oldName);
+            _render.Textures[newName] = new BntxTexture(container, texture);
+        }
+
+        //Points every material texture ref that named the old name at the new one.
+        int Repoint(string oldName, string newName)
+        {
             int repointed = 0;
             foreach (var model in _bfres.ResFile.Models.Values)
             foreach (var mat in model.Materials.Values)

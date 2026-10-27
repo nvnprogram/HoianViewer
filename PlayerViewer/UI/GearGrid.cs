@@ -236,8 +236,9 @@ namespace PlayerViewer.UI
             ImGui.AlignTextToFramePadding();
             Widgets.DimText(rows.Count == 1 ? "1 item" : $"{rows.Count} items");
             ImGui.SameLine(ImGui.GetContentRegionMax().X - closeW);
-            if (Widgets.Button("X##gridclose", new Vector2(closeW, 0)))
+            if (Widgets.Button("##gridclose", new Vector2(closeW, 0)))
                 close = true;
+            DrawCross(ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
             Widgets.ItemTooltip("Close (Esc)");
 
             ImGui.Spacing();
@@ -498,6 +499,18 @@ namespace PlayerViewer.UI
             while (n > 1 && ImGui.CalcTextSize(text.Substring(0, n) + "...").X > width)
                 n--;
             return text.Substring(0, n).TrimEnd() + "...";
+        }
+
+        //Drawn rather than a glyph, whose side bearings put it off centre in the round button.
+        static void DrawCross(Vector2 min, Vector2 max)
+        {
+            var c = new Vector2(MathF.Round((min.X + max.X) / 2), MathF.Round((min.Y + max.Y) / 2));
+            float r = MathF.Round((max.Y - min.Y) * 0.2f);
+            float t = Math.Max(1.5f, (max.Y - min.Y) * 0.07f);
+            var dl = ImGui.GetWindowDrawList();
+            uint colour = ImGui.GetColorU32(ImGuiCol.Text);
+            dl.AddLine(c - new Vector2(r, r), c + new Vector2(r, r), colour, t);
+            dl.AddLine(c + new Vector2(-r, r), c + new Vector2(r, -r), colour, t);
         }
     }
 }

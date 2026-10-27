@@ -34,9 +34,13 @@ namespace PlayerViewer.Player
             CurrentShoes,
             CurrentBottom,
             CurrentTank,
-            CurrentWeapon;
+            CurrentWeapon,
+            CurrentGlove;
+        public readonly GearEntry[] CurrentGadgets = new GearEntry[4];
         public int EyeColor = 0; //0..20 (Color_Eye TPA frame)
         public int SkinTone = 0; //0..8  (Color_Skin SPA frame)
+        public bool Freckles;
+        const int NoFrecklesFrameOffset = 10;
         public int TeamColorIndex = 0;
         public int TeamIndex = 0; //0=Alpha 1=Bravo 2=Charlie
 
@@ -83,9 +87,10 @@ namespace PlayerViewer.Player
         #region Model loading
 
         /// <summary>
-        /// Loads a bfres model by romfs model name into a renderable BFRES.
+        /// Loads a bfres model by romfs model name into a renderable BFRES. Without
+        /// <paramref name="withAnimArchive"/> a Raiders model leaves its archive's animations out.
         /// </summary>
-        public BFRES LoadModelFile(string modelName)
+        public BFRES LoadModelFile(string modelName, bool withAnimArchive = true)
         {
             var data = Romfs.ReadModel(modelName);
             if (data == null)
@@ -98,7 +103,7 @@ namespace PlayerViewer.Player
                 Path.Combine(Romfs.Root, "Model", modelName + ".bfres")
             );
             if (bfres != null)
-                BfresHelpers.ResolveSharedAssets(bfres, data, Romfs);
+                BfresHelpers.ResolveSharedAssets(bfres, data, Romfs, modelName, withAnimArchive);
             return bfres;
         }
 
@@ -181,15 +186,25 @@ namespace PlayerViewer.Player
             PartKind kind,
             string modelName,
             BFRES loaded = null,
-            string subModel = null
+            string subModel = null,
+            string variationAnim = null
         )
         {
             if (string.IsNullOrEmpty(modelName))
                 return null;
 
             //Parts created from a pre-loaded BFRES (custom drops) are not cacheable.
-            string cacheKey = loaded == null ? modelName : null;
-            var bfres = loaded ?? TakeCachedPart(modelName) ?? LoadModelFile(modelName);
+            string cacheKey =
+                loaded != null ? null
+                : variationAnim != null ? modelName + "+" + variationAnim
+                : modelName;
+            var bfres = loaded ?? TakeCachedPart(cacheKey);
+            if (bfres == null)
+            {
+                bfres = LoadModelFile(modelName, withAnimArchive: kind != PartKind.Human);
+                if (bfres != null && variationAnim != null)
+                    BfresHelpers.AttachAnimArchive(bfres, variationAnim, Romfs);
+            }
             if (bfres == null || bfres.Renderer.Models.Count == 0)
                 return null;
 
@@ -260,6 +275,8 @@ namespace PlayerViewer.Player
                 throw new Exception($"Failed to load {PlayerModelName}");
 
             animTask.Wait();
+            foreach (var file in Anims.Files)
+                BfresHelpers.AttachTextures(Human.Bfres, file, null, Romfs);
 
             //Defaults: id 0 rows. Weapon and Tank default to none so they can stay unequipped.
             //Head defaults to Hed_INV000 (no-headgear actor, still applies hair-arrange presets).
@@ -280,6 +297,7 @@ namespace PlayerViewer.Player
             SetGear(GearSlot.Shoes, CurrentShoes);
             SetBottom(CurrentBottom);
             SetTank(CurrentTank);
+            SetGlove(CurrentGlove);
             SetWeapon(CurrentWeapon);
             ApplyEyeColor(EyeColor);
             ApplySkinTone(SkinTone);
@@ -331,6 +349,11 @@ namespace PlayerViewer.Player
             part.IdleMaterialAnims.Clear();
             foreach (var anim in part.Bfres.MaterialAnimations)
             {
+                if (entry.VariationAnim != null && anim.Name == entry.VariationAnim)
+                {
+                    ScopedAnimPlayer.ApplyMaterialAnim(anim, 0, new[] { part.ModelAsset });
+                    continue;
+                }
                 bool named = anim.Name == part.ModelName;
                 if (named && entry.VariationCount > 1)
                     ScopedAnimPlayer.ApplyMaterialAnim(
@@ -395,7 +418,9 @@ namespace PlayerViewer.Player
                 return;
             }
 
-            string modelName = entry.IsCustom ? entry.RowId : entry.RowId + GenderSuffix;
+            string modelName = entry.IsCustom
+                ? entry.RowId
+                : Database.GenderedModel(entry.RowId, GenderSuffix);
             var part = entry.IsCustom
                 ? CreateCustomPart(PartKind.Hair, entry)
                 : CreatePart(PartKind.Hair, modelName);
@@ -455,7 +480,9 @@ namespace PlayerViewer.Player
                 return;
             }
 
-            string modelName = entry.IsCustom ? entry.RowId : entry.RowId + GenderSuffix;
+            string modelName = entry.IsCustom
+                ? entry.RowId
+                : Database.GenderedModel(entry.RowId, GenderSuffix);
             var part = entry.IsCustom
                 ? CreateCustomPart(PartKind.Eyebrow, entry)
                 : CreatePart(PartKind.Eyebrow, modelName);
@@ -497,6 +524,9 @@ namespace PlayerViewer.Player
                 case GearSlot.Tank:
                     SetTank(entry);
                     break;
+                case GearSlot.Glove:
+                    SetGlove(entry);
+                    break;
                 case GearSlot.MainWeapon:
                 case GearSlot.SpecialWeapon:
                     SetWeapon(entry);
@@ -536,7 +566,7 @@ namespace PlayerViewer.Player
                     ApplyHeadgearParams();
                     return;
                 }
-                part = CreatePart(PartKind.Head, modelName);
+                part = CreatePart(PartKind.Head, modelName, variationAnim: entry.VariationAnim);
             }
             if (part == null)
             {
@@ -574,13 +604,20 @@ namespace PlayerViewer.Player
 
         void SetClothes(GearEntry entry)
         {
+            bool changed = entry != CurrentClothes;
             CurrentClothes = entry;
             DestroyPart(PartKind.Clothes);
+            if (changed && entry?.GloveModel != null)
+                SetGlove(Database.Glove.FirstOrDefault(g => g.RowId == entry.GloveModel));
             if (entry != null)
             {
                 PartModel part = entry.IsCustom
                     ? CreateCustomPart(PartKind.Clothes, entry)
-                    : CreatePart(PartKind.Clothes, ResolveGearModelForEntry(entry));
+                    : CreatePart(
+                        PartKind.Clothes,
+                        ResolveGearModelForEntry(entry),
+                        variationAnim: entry.VariationAnim
+                    );
                 if (part != null)
                 {
                     ApplyVariationAnim(part, entry);
@@ -640,7 +677,9 @@ namespace PlayerViewer.Player
             DestroyPart(PartKind.Bottom);
             if (entry != null)
             {
-                string modelName = entry.IsCustom ? null : entry.RowId + GenderSuffix;
+                string modelName = entry.IsCustom
+                    ? null
+                    : Database.GenderedModel(entry.RowId, GenderSuffix);
                 PartModel part = entry.IsCustom
                     ? CreateCustomPart(PartKind.Bottom, entry)
                     : CreatePart(PartKind.Bottom, modelName);
@@ -668,15 +707,120 @@ namespace PlayerViewer.Player
                     : entry.RowId;
                 PartModel part = entry.IsCustom
                     ? CreateCustomPart(PartKind.Tank, entry)
-                    : CreatePart(PartKind.Tank, Database.ResolveModelName(actor));
+                    : CreatePart(
+                        PartKind.Tank,
+                        entry.ModelName ?? Database.ResolveModelName(actor)
+                    );
                 if (part != null)
                 {
                     part.ResolveWelds(Human.Skeleton, null);
                     Parts[PartKind.Tank] = part;
+                    //The game always drives the ink level; frame 0 is a full tank.
+                    var gauge = part.Bfres.MaterialAnimations.FirstOrDefault(a => a.Name == "Gauge");
+                    if (gauge != null)
+                        ScopedAnimPlayer.ApplyMaterialAnim(gauge, 0, new[] { part.ModelAsset });
                 }
             }
             UpdateTankHarness();
+            foreach (var slot in Enum.GetValues<GadgetSlot>())
+                AttachGadget(slot);
             OnPartsChanged?.Invoke();
+        }
+
+        /// <summary>Gloves: a part welded to the hands like clothes.</summary>
+        public void SetGlove(GearEntry entry)
+        {
+            CurrentGlove = entry;
+            DestroyPart(PartKind.Glove);
+            if (entry != null)
+            {
+                var part = entry.IsCustom
+                    ? CreateCustomPart(PartKind.Glove, entry)
+                    : CreatePart(PartKind.Glove, entry.ModelName ?? entry.RowId);
+                if (part != null)
+                {
+                    part.ResolveWelds(Human.Skeleton, null);
+                    Parts[PartKind.Glove] = part;
+                }
+            }
+            OnPartsChanged?.Invoke();
+        }
+
+        static PartKind GadgetPart(GadgetSlot slot) =>
+            slot switch
+            {
+                GadgetSlot.L => PartKind.GadgetL,
+                GadgetSlot.R => PartKind.GadgetR,
+                GadgetSlot.A => PartKind.GadgetA,
+                _ => PartKind.GadgetSpecial,
+            };
+
+        /// <summary>Puts a gadget in one of the tank's slots, or empties it with null.</summary>
+        public void SetGadget(GadgetSlot slot, GearEntry entry)
+        {
+            CurrentGadgets[(int)slot] = entry;
+            AttachGadget(slot);
+            OnPartsChanged?.Invoke();
+        }
+
+        /// <summary>
+        /// Mounts the slot's gadget on the tank's Gadget bone with the gadget's offset for
+        /// that slot, and shows the tank's pipe for a full slot or its cap for an empty one. The
+        /// special goes on the tank's special mount, showing only its own part of the model.
+        /// </summary>
+        void AttachGadget(GadgetSlot slot)
+        {
+            var kind = GadgetPart(slot);
+            DestroyPart(kind);
+            if (!Parts.TryGetValue(PartKind.Tank, out var tank))
+                return;
+            var entry = CurrentGadgets[(int)slot];
+            var mount = tank.Skeleton.SearchBone(
+                slot == GadgetSlot.Special ? "SurimiSP_TankRoot" : $"Gadget_{slot}"
+            );
+            PartModel part = null;
+            if (entry != null && mount != null)
+                part = entry.IsCustom
+                    ? CreateCustomPart(kind, entry)
+                    : CreatePart(kind, entry.ModelName);
+            var root = part?.Skeleton.Bones.FirstOrDefault(b => b.Parent == null);
+            if (root != null)
+            {
+                part.ResolveWelds(
+                    tank.Skeleton,
+                    new Dictionary<string, string> { { root.Name, mount.Name } },
+                    mapOnly: true
+                );
+                part.AttachBone = root;
+                part.RestoreAttachBind = true;
+                if (
+                    !entry.IsCustom
+                    && Database.GadgetPlacements.TryGetValue(entry.RowId, out var placement)
+                )
+                    part.AttachOffset = GadgetOffset(placement.Scale, placement.Slots[(int)slot]);
+                if (entry.ShowBone != null)
+                    foreach (var bone in part.Skeleton.Bones)
+                        if (bone.Name.StartsWith("SurimiSP_") && bone.Name.EndsWith("_Grp") && bone.Name != "SurimiSP_Grp")
+                            bone.Visible = bone.Name == entry.ShowBone;
+                Parts[kind] = part;
+            }
+            else if (part != null)
+                ParkPart(part.CacheKey, part.Bfres);
+            bool full = Parts.ContainsKey(kind);
+            tank.SetBoneVisible($"Gadget{slot}_Connect_Grp", full);
+            tank.SetBoneVisible($"Gadget{slot}_Cap_Grp", !full);
+        }
+
+        //The game adds the rotated position offset to the mount twice, so it lands at double.
+        static Matrix4 GadgetOffset(float scale, GadgetPlacement placement)
+        {
+            var r = placement.Rotation;
+            var t = placement.Position * 2;
+            return Matrix4.CreateScale(scale)
+                * Matrix4.CreateRotationX(MathHelper.DegreesToRadians(r.X))
+                * Matrix4.CreateRotationY(MathHelper.DegreesToRadians(r.Y))
+                * Matrix4.CreateRotationZ(MathHelper.DegreesToRadians(r.Z))
+                * Matrix4.CreateTranslation(t.X, t.Y, t.Z);
         }
 
         void SetWeapon(GearEntry entry)
@@ -712,12 +856,7 @@ namespace PlayerViewer.Player
                     : CreatePart(PartKind.WeaponMain, mainModel.file, subModel: mainModel.model);
                 if (part != null)
                 {
-                    part.ResolveWelds(
-                        Human.Skeleton,
-                        new Dictionary<string, string> { { "Root", mainHandBone } },
-                        mapOnly: true
-                    );
-                    part.AttachBone = part.Skeleton.SearchBone("Root");
+                    WeldWeapon(part, mainHandBone);
                     ApplyWeaponCarryPose(part);
                     Parts[PartKind.WeaponMain] = part;
                     SelectWeaponAnim(part);
@@ -732,12 +871,7 @@ namespace PlayerViewer.Player
                 );
                 if (part != null)
                 {
-                    part.ResolveWelds(
-                        Human.Skeleton,
-                        new Dictionary<string, string> { { "Root", "Weapon_L" } },
-                        mapOnly: true
-                    );
-                    part.AttachBone = part.Skeleton.SearchBone("Root");
+                    WeldWeapon(part, "Weapon_L");
 
                     bool isMirrorCopy =
                         leftModel.file == mainModel.file && leftModel.model == mainModel.model;
@@ -759,6 +893,19 @@ namespace PlayerViewer.Player
                 }
             }
             OnPartsChanged?.Invoke();
+        }
+
+        //Root goes to the hand. Bones above it (nw4f_root) go there too, since rigid shapes can
+        //sit on them and the game places the whole model at the hand.
+        void WeldWeapon(PartModel part, string handBone)
+        {
+            var map = new Dictionary<string, string> { { "Root", handBone } };
+            var root = part.Skeleton.SearchBone("Root");
+            for (var bone = root?.Parent; bone != null; bone = bone.Parent)
+                map[bone.Name] = handBone;
+            part.ResolveWelds(Human.Skeleton, map, mapOnly: true);
+            part.AttachBone = root;
+            part.AttachAbove = true;
         }
 
         static bool IsShelterOpenShape(string name) =>
@@ -935,13 +1082,34 @@ namespace PlayerViewer.Player
             {
                 var raw = File.ReadAllBytes(entry.CustomPath);
                 raw = Romfs.Decompress(raw);
+                string stem = Path.GetFileNameWithoutExtension(entry.CustomPath.Replace(".zs", ""));
+                Conversion.ConvertedModel converted = null;
+                var game = Conversion.ModelConvert.GameOf(raw);
+                if (game == GameKind.Spiral && Romfs.Game == GameKind.Thunder)
+                    converted = Conversion.ModelConvert.ToThunder(
+                        raw,
+                        Conversion.ModelConvert.SourceFiles(entry.CustomPath, null)
+                    );
+                else if (game == GameKind.Thunder && Romfs.Game == GameKind.Spiral)
+                    converted = Conversion.ModelConvert.ToSpiral(raw, stem, stem);
+                if (converted != null)
+                {
+                    raw = converted.Bfres;
+                    stem += "~converted";
+                    Console.WriteLine($"[Scene] Custom part converted from the other game: {entry.CustomPath}");
+                }
                 //Fake path inside romfs Model so shader lookup works.
-                string fakePath = Path.Combine(
-                    Romfs.Root,
-                    "Model",
-                    Path.GetFileNameWithoutExtension(entry.CustomPath.Replace(".zs", "")) + ".bfres"
-                );
+                string fakePath = Path.Combine(Romfs.Root, "Model", stem + ".bfres");
                 var bfres = LoadModelData(raw, fakePath);
+                if (bfres != null && Romfs.Layout.SplitsModelFiles)
+                    BfresHelpers.AttachSpiralFiles(
+                        bfres,
+                        bfres.ResFile,
+                        Conversion.ModelConvert.SplitName(bfres.ResFile.Name).Archive,
+                        converted != null
+                            ? converted.ReadFile
+                            : Conversion.ModelConvert.SourceFiles(entry.CustomPath, Romfs)
+                    );
                 return bfres == null ? null : CreatePart(kind, entry.RowId, bfres);
             }
             catch (Exception ex)
@@ -969,6 +1137,7 @@ namespace PlayerViewer.Player
             if (Parts.TryGetValue(PartKind.Hair, out var hair))
             {
                 hair.HairArrange = null;
+                hair.Visible = true;
                 ApplyAfroShell(hair, null);
             }
             if (Parts.TryGetValue(PartKind.Head, out var head))
@@ -1029,7 +1198,11 @@ namespace PlayerViewer.Player
 
             //--- HideEar: Visible / HideAll / HideLong / HideLeft (absent = Visible)
             if (varEntry != null)
-                EarHideMode = Byml.GetString(varEntry, "HideEar") ?? "Visible";
+                EarHideMode = EnumName(varEntry.GetValueOrDefault("HideEar"), EarHideModes);
+
+            //Raiders: a head that covers the hair hides it whole.
+            if (hair != null && root.GetValueOrDefault("IsHideHair") is true)
+                hair.Visible = false;
 
             //--- HairArrange.V<k>.PresetMap.<HAIR>
             if (hair != null && hairKey != null)
@@ -1054,6 +1227,18 @@ namespace PlayerViewer.Player
                 }
             }
         }
+
+        static readonly string[] EarHideModes = { "Visible", "HideAll", "HideLong", "HideLeft" };
+
+        //An enum value as Splatoon 3 writes it, a name, or as Raiders does, its name's hash.
+        static string EnumName(object value, string[] names) =>
+            value switch
+            {
+                string s when s.Length > 0 => s,
+                uint hash => names.FirstOrDefault(n => Murmur3.Hash(n) == hash) ?? names[0],
+                int hash => names.FirstOrDefault(n => Murmur3.Hash(n) == (uint)hash) ?? names[0],
+                _ => names[0],
+            };
 
         //Afro-style hairs (Har_OCT003) contain one mesh shell per headgear family,
         //each hanging off a marker bone; the arrange preset's AfroType picks the
@@ -1197,7 +1382,7 @@ namespace PlayerViewer.Player
                 && Database.ClothesRows.TryGetValue(CurrentClothes.RowId, out var row)
             )
             {
-                type = Byml.GetString(row, "HarnessType");
+                type = GameDatabase.HarnessTypeOf(row);
                 if (string.IsNullOrEmpty(type))
                     type = "S";
                 hide = Byml.GetBool(row, "IsHideHarness");
@@ -1207,10 +1392,14 @@ namespace PlayerViewer.Player
                 tank.SetBoneVisible($"Harness_{suffix}", false);
             tank.SetBoneVisible("Harness_Hide", false);
 
+            //Raiders tanks have one harness per size for both bodies.
+            bool gendered = tank.Skeleton.Bones.Any(b =>
+                b.Name.StartsWith("Harness_") && b.Name.EndsWith("F")
+            );
             if (hide)
                 tank.SetBoneVisible("Harness_Hide", true);
             else
-                tank.SetBoneVisible($"Harness_{type}{(IsFemale ? "F" : "")}", true);
+                tank.SetBoneVisible($"Harness_{type}{(IsFemale && gendered ? "F" : "")}", true);
         }
 
         #endregion
@@ -1312,8 +1501,9 @@ namespace PlayerViewer.Player
             SkinTone = index;
             //Color_Skin is a shader param anim; the wrapper type is the same.
             var anim = FindMaterialAnim("Color_Skin");
+            int frame = index + (!Freckles && Romfs.Game == GameKind.Spiral ? NoFrecklesFrameOffset : 0);
             if (anim != null && Human != null)
-                ScopedAnimPlayer.ApplyMaterialAnim(anim, index, new[] { Human.ModelAsset });
+                ScopedAnimPlayer.ApplyMaterialAnim(anim, frame, new[] { Human.ModelAsset });
             ApplyGearSkinColor();
         }
 
@@ -1370,8 +1560,9 @@ namespace PlayerViewer.Player
 
         BfresMaterialAnim FindMaterialAnim(string name)
         {
-            //Material animations that live in the player model file itself.
-            return Human?.Bfres.MaterialAnimations.FirstOrDefault(x => x.Name == name);
+            return Human?.Bfres.MaterialAnimations.FirstOrDefault(x => x.Name == name)
+                ?? Anims.GetShaderParam(name)
+                ?? Anims.GetTexPattern(name);
         }
 
         public void ApplyTeamColor(TeamColorSet set, int team)
@@ -1515,9 +1706,13 @@ namespace PlayerViewer.Player
             UpdateIdleAnims();
             UpdateWeaponAnims();
 
-            //Weld all parts to the updated human skeleton.
+            //Weld all parts to the updated human skeleton, then the gadgets to the tank.
             foreach (var part in Parts.Values)
-                part.ApplyWeld();
+                if (!IsGadget(part.Kind))
+                    part.ApplyWeld();
+            foreach (var part in Parts.Values)
+                if (IsGadget(part.Kind))
+                    part.ApplyWeld();
 
             //Hair cloth sim runs on top of the welded animation pose. Bones the
             //current hair-arrange collapses (scale ~0, e.g. the OCT001 ponytail
@@ -1529,6 +1724,9 @@ namespace PlayerViewer.Player
                 _hairCloth?.Update(deltaSeconds, hairPart?.HairArrange, hairConvergeWeight);
             }
         }
+
+        static bool IsGadget(PartKind kind) =>
+            kind is PartKind.GadgetL or PartKind.GadgetR or PartKind.GadgetA or PartKind.GadgetSpecial;
 
         /// <summary>Restarts hair cloth from the current pose (e.g. anim switch).</summary>
         public void ResetHairPhysics()

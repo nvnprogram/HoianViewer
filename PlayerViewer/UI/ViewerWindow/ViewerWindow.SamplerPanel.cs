@@ -6,6 +6,7 @@ using BfresLibrary;
 using GLFrameworkEngine;
 using ImGuiNET;
 using PlayerViewer.Materials;
+using PlayerViewer.Shaders;
 using PlayerViewer.Textures;
 using TextureTarget = OpenTK.Graphics.OpenGL.TextureTarget;
 using Vector2 = System.Numerics.Vector2;
@@ -113,6 +114,8 @@ namespace PlayerViewer.UI
                 "A sampler the shader archive declares. The material reaches it through one of "
                     + "its own sampler slots, named beside it."
             );
+            if (!engine && SpliceLoss.SamplerHasNoEffect(_uber, shaderSampler))
+                NoEffectWhenSpliced(ApproximatedWhenSpliced(material, shaderSampler));
             if (changed)
             {
                 ImGui.SameLine();
@@ -175,28 +178,23 @@ namespace PlayerViewer.UI
             float buttonColumn = ImGui.GetCursorPosX();
             Widgets.DisabledButton(
                 $"Import...##impsamp{shaderSampler}",
-                Textures?.Bntx != null,
+                Textures?.Editable == true,
                 importSize,
                 () => ImportOntoSampler(material, shaderSampler)
             );
-            Widgets.ItemTooltip(
-                "Adds an image to the model as a new texture and binds it here in one step, in "
-                    + "the format the game normally uses for this sampler."
-            );
+            Widgets.ItemTooltip("Adds an image as a new texture and binds it here");
 
             ImGui.SameLine();
             string refusal = TextureStore.ReplaceRefusal(Textures?.Find(current));
             Widgets.DisabledButton(
                 $"Replace##repsamp{shaderSampler}",
-                Textures?.Bntx != null && Textures.Has(current) && refusal == null,
+                Textures?.Editable == true && Textures.Has(current) && refusal == null,
                 replaceSize,
                 () => ReplaceOnSampler(current)
             );
             Widgets.ItemTooltip(
                 refusal
-                    ?? "Reads an image over the texture already bound here, keeping its name and "
-                        + "the format it is stored in. Nothing is added, so every other material "
-                        + "that binds the same texture follows this edit too."
+                    ?? "Overwrites the bound texture with an image; materials sharing it change too"
             );
 
             //Under the other two and at their column, because the three are one group: what is
@@ -210,8 +208,7 @@ namespace PlayerViewer.UI
                 () => ExportTexture(bound, current)
             );
             Widgets.ItemTooltip(
-                "Writes mip 0 of the bound texture out as a PNG. Reading that file back in "
-                    + "with Replace lands on the same texture, in the same format."
+                "Saves the bound texture as a PNG"
             );
 
             if (TextureImport.IsGenerated(current) && !(Textures?.Has(current) ?? false))

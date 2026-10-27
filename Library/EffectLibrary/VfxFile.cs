@@ -11,7 +11,11 @@ namespace EffectLibrary
     public sealed class VfxFile
     {
         public const int HeaderSize = 0x40;
-        public const ushort SupportedVersion = 46;
+        /// <summary>VFXB v46, the Switch effect runtime's.</summary>
+        public const ushort SwitchV46 = 46;
+
+        /// <summary>VFXB v54, the Ounce effect runtime's.</summary>
+        public const ushort OunceV54 = 54;
 
         /// <summary>The 0x40 byte file header. The file size at 0x1C is rewritten on save.</summary>
         public byte[] Header { get; }
@@ -37,9 +41,9 @@ namespace EffectLibrary
                 throw new InvalidOperationException("Not a VFXB file");
             var header = span[..HeaderSize].ToArray();
             ushort version = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(0x0A));
-            if (version != SupportedVersion)
+            if (version != SwitchV46 && version != OunceV54)
                 throw new NotSupportedException(
-                    $"VFXB version {version}; only {SupportedVersion} (Splatoon 3) is read"
+                    $"VFXB version {version}; only {SwitchV46} (Switch) and {OunceV54} (Ounce) are read"
                 );
             int first = BinaryPrimitives.ReadUInt16LittleEndian(header.AsSpan(0x16));
             return new VfxFile(header, VfxLayout.ReadTop(data, first));
@@ -56,6 +60,9 @@ namespace EffectLibrary
         }
 
         public ushort Version => BinaryPrimitives.ReadUInt16LittleEndian(Header.AsSpan(0x0A));
+
+        /// <summary>The emitter layout of this file's version.</summary>
+        public EmitterMap EmitterMap => EmitterMap.For(Version);
 
         /// <summary>The file name stored at 0x20, such as "static.Product.b00".</summary>
         public string Name

@@ -121,8 +121,8 @@ namespace Toolbox.Core.Animations
             var last = KeyFrames[KeyFrames.Count - 1];
 
             left = lo > 0 ? KeyFrames[lo - 1] : KeyFrames[0];
-            right = first < KeyFrames.Count && KeyFrames[first].Frame < last.Frame
-                ? KeyFrames[first] : last;
+            //Of a key written twice at the last frame, the segment ends at the first.
+            right = first < KeyFrames.Count ? KeyFrames[first] : last;
         }
 
         private float GetWrapFrame(float frame)

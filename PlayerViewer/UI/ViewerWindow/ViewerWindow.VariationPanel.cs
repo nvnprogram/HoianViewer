@@ -97,6 +97,7 @@ namespace PlayerViewer.UI
             if (_standalone != null)
                 EnsureUberContext();
             bool enabled = _config.UseSplicer && _standalone != null;
+            Queue.Approximate = _config.Spiral.ApproxMissingOpts;
             if (enabled && Queue.Ready)
             {
                 PruneStaleBundle();
@@ -208,6 +209,12 @@ namespace PlayerViewer.UI
                     Widgets.ErrorText("  " + u);
                 Widgets.DimText("Those stages are not queued.");
             }
+            var approximated = v.Approximated;
+            if (approximated.Count > 0)
+                Widgets.ColoredText(Theme.Cyan, "Approximated: " + string.Join(", ", approximated));
+            var lost = v.Lost;
+            if (lost.Count > 0)
+                Widgets.ColoredText(Theme.Gold, "Spliced without " + string.Join(", ", lost));
             foreach (var d in v.Dropped)
                 Widgets.DimText("dropped: " + d);
 

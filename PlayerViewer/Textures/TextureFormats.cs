@@ -148,7 +148,7 @@ namespace PlayerViewer.Textures
                 );
 
         /// <summary>
-        /// What the game packer typically uses for each sampler assign key
+        /// The format the shipped textures mostly use for each shader sampler.
         /// </summary>
         static readonly Dictionary<string, SurfaceFormat> ByAssign = new Dictionary<
             string,
@@ -168,7 +168,52 @@ namespace PlayerViewer.Textures
             { "_t0", SurfaceFormat.BC1_SRGB },
             { "_b0", SurfaceFormat.BC1_SRGB },
             { "_b1", SurfaceFormat.BC1_SRGB },
+            { "_pw0", SurfaceFormat.BC1_SRGB },
         };
+
+        /// <summary>
+        /// The channel mapping the shipped textures of a format carry, which a new texture
+        /// gets. One channel formats repeat red into all four.
+        /// </summary>
+        public static ChannelType[] Channels(TextureFormat format)
+        {
+            const ChannelType R = ChannelType.Red,
+                G = ChannelType.Green;
+            switch (Stored(format))
+            {
+                case 1:
+                    return new[] { R, R, R, R };
+                case 2 when format.Signed:
+                    return new[] { R, G, ChannelType.Zero, ChannelType.One };
+                case 2:
+                    return new[] { R, G, ChannelType.One, ChannelType.One };
+                default:
+                    return new[] { R, G, ChannelType.Blue, ChannelType.Alpha };
+            }
+        }
+
+        /// <summary>Whether a texture of this format stores every channel the mapping reads.</summary>
+        public static bool Holds(TextureFormat format, IEnumerable<ChannelType> mapping)
+        {
+            int stored = Stored(format);
+            return mapping.All(c =>
+                c switch
+                {
+                    ChannelType.Green => stored >= 2,
+                    ChannelType.Blue => stored >= 3,
+                    ChannelType.Alpha => stored >= 4,
+                    _ => true,
+                }
+            );
+        }
+
+        static int Stored(TextureFormat format) =>
+            format.Compression switch
+            {
+                CompressionFormat.Bc4 => 1,
+                CompressionFormat.Bc5 => 2,
+                _ => 4,
+            };
 
         /// <summary>
         /// What to import as

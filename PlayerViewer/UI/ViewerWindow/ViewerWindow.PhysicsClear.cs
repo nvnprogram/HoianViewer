@@ -38,7 +38,6 @@ namespace PlayerViewer.UI
                 return;
             }
             _authoringOpen = true;
-            _focusAuthoring = true;
         }
 
         void DrawClearPhysicsModal()
@@ -82,7 +81,6 @@ namespace PlayerViewer.UI
                     {
                         ClearOriginalPhysics();
                         _authoringOpen = true;
-                        _focusAuthoring = true;
                     },
                     replace: true
                 );
@@ -97,7 +95,6 @@ namespace PlayerViewer.UI
                     () =>
                     {
                         _authoringOpen = true;
-                        _focusAuthoring = true;
                     },
                     replace: true
                 );

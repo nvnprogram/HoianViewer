@@ -44,11 +44,13 @@ namespace PlayerViewer.Icons
                 return null;
             return entry.Slot switch
             {
-                GearSlot.Head or GearSlot.Clothes or GearSlot.Shoes => "Gear/" + entry.RowId,
+                GearSlot.Head or GearSlot.Clothes or GearSlot.Shoes => "Gear/"
+                    + (entry.IconRowId ?? entry.RowId),
                 GearSlot.MainWeapon => "Wpn/" + (entry.IconRowId ?? entry.RowId),
                 GearSlot.Bottom => $"Bottom/{entry.RowId}/{entry.Variation}",
                 GearSlot.Hair => "Hair/" + entry.RowId,
                 GearSlot.Eyebrow => $"Eyebrow/{entry.RowId}/{(female ? "F" : "M")}",
+                GearSlot.Gadget or GearSlot.Special => "Gadget/" + entry.RowId,
                 _ => null,
             };
         }
@@ -63,6 +65,8 @@ namespace PlayerViewer.Icons
         public IconImage Load(string key)
         {
             var parts = key.Split('/');
+            if (_romfs.Game == GameKind.Spiral)
+                return LoadSpiral(parts);
             switch (parts[0])
             {
                 case "Gear":
@@ -88,6 +92,33 @@ namespace PlayerViewer.Icons
             return null;
         }
 
+        //Raiders keeps one texture per icon under UI/Tex, hair and eyebrows included.
+        IconImage LoadSpiral(string[] parts) =>
+            parts[0] switch
+            {
+                "Gear" => LoadSingle($"UI/Tex/Gear/{parts[1]}.bntx"),
+                "Wpn" => LoadSingle($"UI/Tex/Weapon/{parts[1]}.bntx"),
+                "Gadget" => LoadSingle($"UI/Tex/Gadget/{parts[1]}.bntx"),
+                "Hair" => Tinted($"UI/Tex/PlayerMake/{parts[1]}.bntx", "P_Icon_00"),
+                "Eyebrow" => Tinted(
+                    $"UI/Tex/PlayerMake/{parts[1]}_{parts[2]}.bntx",
+                    "P_Eyeblow_00"
+                ),
+                "PlayerType" => LayoutIcons.SpiralPlayerType(
+                    CommonLayout("BtnPlayerMakeType_00"),
+                    int.Parse(parts[1])
+                ),
+                "Skin" => LayoutIcons.SpiralColour(
+                    CommonLayout("BtnPlayerMakeColor_00"),
+                    int.Parse(parts[1])
+                ),
+                "Eye" => LayoutIcons.SpiralColour(
+                    CommonLayout("BtnPlayerMakeColor_00"),
+                    LayoutIcons.EyeFrameBase + int.Parse(parts[1])
+                ),
+                _ => null,
+            };
+
         IconImage LoadSingle(string path)
         {
             var data = _romfs.ReadFile(path);
@@ -96,6 +127,68 @@ namespace PlayerViewer.Icons
             var bntx = new BntxFile(new MemoryStream(data));
             var texture = bntx.Textures.FirstOrDefault();
             return texture == null ? null : Surface.DecodeImage(bntx, texture);
+        }
+
+        //Raiders' hair and eyebrow icons are greyscale, coloured by the character maker's
+        //head button picture that shows them.
+        IconImage Tinted(string path, string picture)
+        {
+            var data = _romfs.ReadFile(path);
+            if (data == null)
+                return null;
+            var bntx = new BntxFile(new MemoryStream(data));
+            var texture = bntx.Textures.FirstOrDefault();
+            if (texture == null)
+                return null;
+            var mat = CommonLayout("BtnPlayerMakeHead_00")
+                ?.Layout.Pictures.GetValueOrDefault(picture)
+                ?.Material;
+            if (mat == null)
+                return Surface.DecodeImage(bntx, texture);
+            return LayoutIcons.Tint(Surface.Decode(bntx, texture), mat.Black, mat.White);
+        }
+
+        //The character maker's layouts the Raiders icons use.
+        static readonly string[] CommonLayouts =
+        {
+            "BtnPlayerMakeHead_00",
+            "BtnPlayerMakeType_00",
+            "BtnPlayerMakeColor_00",
+        };
+
+        bool _commonRead;
+
+        //Raiders keeps its whole common UI in one archive, so the layouts the icons need are
+        //taken out of it at once and the archive is let go.
+        LayoutArchive CommonLayout(string name)
+        {
+            if (!_commonRead)
+            {
+                _commonRead = true;
+                try
+                {
+                    var data = _romfs.ReadProduct(
+                        "UI/LayoutArchive",
+                        "GameCommon",
+                        "Nin_Ounce_NVN2.blarc*"
+                    );
+                    if (data != null)
+                    {
+                        var sarc = new Sarc(data);
+                        var textures = sarc.GetFile("timg/__Combined.bntx");
+                        var bntx = textures != null
+                            ? new BntxFile(new MemoryStream(textures))
+                            : null;
+                        foreach (var layout in CommonLayouts)
+                            _layouts[layout] = LayoutArchive.FromShared(sarc, bntx, layout);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[IconSource] common layouts: {ex.Message}");
+                }
+            }
+            return _layouts.GetValueOrDefault(name);
         }
 
         //The Type animation keys a bottom's Id; Order is only the menu's sort key.

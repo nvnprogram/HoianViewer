@@ -10,7 +10,7 @@ using Vector4 = System.Numerics.Vector4;
 
 namespace PlayerViewer.UI
 {
-    // The collidables of the generated cloth: their list in the authoring window, a small window
+    // The collidables of the generated cloth: their list in the Physics Maker, a small window
     // per collidable, the checklist in each limb's window, and the viewport's view of the one in
     // use. They live in the generator, so a rebuild keeps them. An edit applies when let go.
     public partial class ViewerWindow

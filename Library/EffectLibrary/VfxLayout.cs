@@ -101,7 +101,7 @@ namespace EffectLibrary
                 }
                 case SectionKind.Blob:
                 case SectionKind.Table:
-                    section.HasPayload = true;
+                    section.HasPayload = section.Kind == SectionKind.Table || bin != VfxSection.None;
                     section.Payload = Slice(file, offset, bin, size);
                     break;
             }
@@ -119,8 +119,17 @@ namespace EffectLibrary
                 }
             }
 
-            //GRSN stores a zero count with its GRSC child, and a zero offset when it has none.
-            int children = tag == "GRSN" ? (child != VfxSection.None && child != 0 ? 1 : 0) : count;
+            //v46's GRSN stores a zero count with its GRSC child, and a zero offset when it
+            //has none. v54 counts its GRSR and GRSC.
+            int children =
+                tag == "GRSN" && count == 0
+                    ? (child != VfxSection.None && child != 0 ? 1 : 0)
+                    : count;
+            if (child == VfxSection.None && children > 0)
+            {
+                section.EmptyCount = count;
+                children = 0;
+            }
             if (children > 0)
             {
                 int at = Step(file, offset, child, "child");
@@ -180,6 +189,8 @@ namespace EffectLibrary
             sink.WriteU32(VfxSection.None);
             sink.WriteU32(VfxSection.None);
             sink.WriteU32(section.Reserved18);
+            if (count == 0)
+                count = section.EmptyCount;
             sink.WriteU32((uint)(count | section.Reserved1E << 16));
         }
 
@@ -261,8 +272,18 @@ namespace EffectLibrary
 
         static void WriteBlob(ByteSink sink, VfxSection section)
         {
+            if (section.Tag == "GRSN" && section.FindChild("GRSR") != null)
+            {
+                WriteShaderContainer(sink, section);
+                return;
+            }
             int start = sink.Position;
             bool grsn = section.Tag == "GRSN";
+            if (!section.HasPayload && section.Children.Count == 0 && !grsn)
+            {
+                WriteHeader(sink, section, 0);
+                return;
+            }
             WriteHeader(sink, section, grsn ? (ushort)0 : (ushort)section.Children.Count);
             sink.PatchU32(start + 0x04, (uint)section.Payload.Length);
 
@@ -304,6 +325,30 @@ namespace EffectLibrary
             //Without a compute archive the packager still aligns for its empty payload.
             if (grsn && deferred.Count == 0)
                 sink.Align(BlobAlignment);
+        }
+
+        static void WriteShaderContainer(ByteSink sink, VfxSection section)
+        {
+            int start = sink.Position;
+            WriteHeader(sink, section, (ushort)section.Children.Count);
+            sink.PatchU32(start + 0x04, (uint)section.Payload.Length);
+            sink.PatchU32(start + 0x14, (uint)(sink.Position - start));
+            sink.Write(section.Payload.Span);
+            int previous = -1;
+            foreach (var child in section.Children)
+            {
+                int at = Align(sink.Position + VfxSection.HeaderSize, BlobAlignment) - VfxSection.HeaderSize;
+                sink.PadTo(at);
+                if (previous >= 0)
+                    sink.PatchU32(previous + 0x0C, (uint)(at - previous));
+                else
+                    sink.PatchU32(start + 0x08, (uint)(at - start));
+                WriteHeader(sink, child, 0);
+                sink.PatchU32(at + 0x04, (uint)child.Payload.Length);
+                sink.PatchU32(at + 0x14, (uint)(sink.Position - at));
+                sink.Write(child.Payload.Span);
+                previous = at;
+            }
         }
 
         static int Align(int value, int alignment) =>

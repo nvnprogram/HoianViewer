@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.Serialization;
 using System.Text;
 using Newtonsoft.Json;
 
@@ -51,6 +52,7 @@ namespace PlayerViewer.Core
         public int PlayerType;
         public int EyeColor;
         public int SkinTone;
+        public bool Freckles;
         public string Hair;
         public int HairVariation;
         public string Eyebrow;
@@ -67,6 +69,8 @@ namespace PlayerViewer.Core
         public int TankVariation;
         public string Weapon;
         public int WeaponVariation;
+        public string Glove;
+        public string[] Gadgets; //Raiders tank slots L, R, A
         public int TeamColorIndex;
         public int TeamIndex;
         public bool UseCustomTeamColor = true;
@@ -76,6 +80,17 @@ namespace PlayerViewer.Core
 
         //Composited export/viewport background, saved and loaded with the preset.
         public BackgroundConfig Background = new();
+
+        /// <summary>The look a game starts with: Raiders always wears an outfit and a tank.</summary>
+        public static PlayerConfig DefaultFor(GameKind game) =>
+            game == GameKind.Spiral
+                ? new PlayerConfig
+                {
+                    Clothes = "Clt_AGL001",
+                    Glove = "Glv_NRM001",
+                    Tank = "Tnk_Agility00",
+                }
+                : new PlayerConfig();
 
         public void Normalize()
         {
@@ -147,6 +162,26 @@ namespace PlayerViewer.Core
         YetDarker,
     }
 
+    /// <summary>One game's settings: its romfs, its mod overlay and the look.</summary>
+    public class GameSettings
+    {
+        public string RomfsPath = "";
+        public string LayeredFsPath = "";
+        public bool UseLayeredFs;
+        public PlayerConfig Player;
+
+        //Raiders only: splice stand-ins for features its ubershader lacks.
+        public bool ApproxMissingOpts = true;
+
+        public void Normalize(GameKind game)
+        {
+            RomfsPath ??= "";
+            LayeredFsPath ??= "";
+            Player ??= PlayerConfig.DefaultFor(game);
+            Player.Normalize();
+        }
+    }
+
     /// <summary>
     /// Persisted app configuration (romfs paths etc). Stored in the per-user data folder.
     /// </summary>
@@ -197,10 +232,54 @@ namespace PlayerViewer.Core
                 : mode;
         }
 
-        public string RomfsPath = "";
+        //The game that loads, by codename.
+        public string Game = nameof(GameKind.Thunder);
+
+        [JsonIgnore]
+        public GameKind CurrentGame
+        {
+            get =>
+                Enum.TryParse(Game, true, out GameKind g) && Enum.IsDefined(g)
+                    ? g
+                    : GameKind.Thunder;
+            set => Game = value.ToString();
+        }
+
+        [JsonIgnore]
+        public GameSettings Thunder { get; } = new();
+
+        [JsonIgnore]
+        public GameSettings Spiral { get; } = new();
+
+        public GameSettings Of(GameKind game) => game == GameKind.Spiral ? Spiral : Thunder;
+
+        [JsonIgnore]
+        public GameSettings Active => Of(CurrentGame);
+
+        //settings.json keeps each game's settings under these keys, the unprefixed ones
+        //Splatoon 3's. They are read into Thunder and Spiral on load and written back on save.
+        [JsonProperty]
+        string RomfsPath = "";
         public string SdodrRomfsPath = "";
-        public string LayeredFsPath = "";
-        public bool UseLayeredFs = false;
+
+        [JsonProperty]
+        string RaidersRomfsPath = "";
+
+        [JsonProperty]
+        string LayeredFsPath = "";
+
+        [JsonProperty]
+        bool UseLayeredFs = false;
+
+        [JsonProperty]
+        string RaidersLayeredFsPath = "";
+
+        [JsonProperty]
+        bool RaidersUseLayeredFs = false;
+
+        [JsonProperty]
+        bool RaidersApproxMissingOpts = true;
+
         public int WindowWidth = 1600;
         public int WindowHeight = 900;
 
@@ -248,9 +327,54 @@ namespace PlayerViewer.Core
         public int ExportFps = 60;
         public int AnimMode = 0; //0 Single, 1 Sequence
 
-        public PlayerConfig Player = new();
+        //The look per game, since their rows differ.
+        [JsonProperty]
+        PlayerConfig Player = new();
+
+        [JsonProperty]
+        PlayerConfig RaidersPlayer = PlayerConfig.DefaultFor(GameKind.Spiral);
 
         public EffectConfig Effect = new();
+
+        public AppConfig() => FromKeys();
+
+        [OnDeserialized]
+        void OnDeserialized(StreamingContext _) => FromKeys();
+
+        [OnSerializing]
+        void OnSerializing(StreamingContext _)
+        {
+            (RomfsPath, LayeredFsPath, UseLayeredFs, Player) = (
+                Thunder.RomfsPath,
+                Thunder.LayeredFsPath,
+                Thunder.UseLayeredFs,
+                Thunder.Player
+            );
+            (RaidersRomfsPath, RaidersLayeredFsPath, RaidersUseLayeredFs, RaidersPlayer) = (
+                Spiral.RomfsPath,
+                Spiral.LayeredFsPath,
+                Spiral.UseLayeredFs,
+                Spiral.Player
+            );
+            RaidersApproxMissingOpts = Spiral.ApproxMissingOpts;
+        }
+
+        void FromKeys()
+        {
+            (Thunder.RomfsPath, Thunder.LayeredFsPath, Thunder.UseLayeredFs, Thunder.Player) = (
+                RomfsPath,
+                LayeredFsPath,
+                UseLayeredFs,
+                Player
+            );
+            (Spiral.RomfsPath, Spiral.LayeredFsPath, Spiral.UseLayeredFs, Spiral.Player) = (
+                RaidersRomfsPath,
+                RaidersLayeredFsPath,
+                RaidersUseLayeredFs,
+                RaidersPlayer
+            );
+            Spiral.ApproxMissingOpts = RaidersApproxMissingOpts;
+        }
 
         static string FilePath => Path.Combine(AppPaths.DataDir, "settings.json");
 
@@ -313,8 +437,10 @@ namespace PlayerViewer.Core
             UiMode = Mode.ToString();
             UiTheme = Theme.ToString();
             UiBorder = Border.ToString();
-            Player ??= new PlayerConfig();
-            Player.Normalize();
+            Game = CurrentGame.ToString();
+            SdodrRomfsPath ??= "";
+            Thunder.Normalize(GameKind.Thunder);
+            Spiral.Normalize(GameKind.Spiral);
             Effect ??= new EffectConfig();
             Effect.Normalize();
         }

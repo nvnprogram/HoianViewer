@@ -34,6 +34,9 @@ namespace PlayerViewer.Effects.Gl
         /// target the program declares; null leaves it blank.</summary>
         public Func<string, TextureTarget, HostTexture?> HostSource { get; set; }
 
+        /// <summary>A fragment storage buffer's contents by reflection name, read per draw.</summary>
+        public Func<string, byte[]> FragmentStorageSource { get; set; }
+
         sealed class FileResources : IDisposable
         {
             public EffectProgramCache Programs;
@@ -55,7 +58,14 @@ namespace PlayerViewer.Effects.Gl
         int _particleBuffer,
             _vao,
             _storageBuffer,
+            _zeroStorage,
             _stripeIndices;
+
+        /// <summary>A buffer and binding per fragment storage name, with the contents it holds.
+        /// The stripe points take binding 0, these follow from 1.</summary>
+        readonly Dictionary<string, (int Buffer, int Binding, byte[] Data)> _fragmentStorage = new(
+            StringComparer.Ordinal
+        );
 
         /// <summary>
         /// The runtime's two stripe index buffers, one after the other: even vertex ids for the
@@ -274,6 +284,24 @@ namespace PlayerViewer.Effects.Gl
                 }
                 Upload(program.Id, vs, fs, 2 + (int)block, data ?? ZeroBlock);
             }
+            if (program.StorageBlocks > 0)
+            {
+                if (_zeroStorage == 0)
+                {
+                    _zeroStorage = GL.GenBuffer();
+                    GL.BindBuffer(BufferTarget.ShaderStorageBuffer, _zeroStorage);
+                    GL.BufferData(
+                        BufferTarget.ShaderStorageBuffer,
+                        ZeroBlock.Length,
+                        ZeroBlock,
+                        BufferUsageHint.StaticDraw
+                    );
+                }
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, _zeroStorage);
+                for (int i = 0; i < program.StorageBlocks; i++)
+                    GL.ShaderStorageBlockBinding(program.Id, i, 0);
+            }
+            BindFragmentStorage(program);
         }
 
         void Upload(int programId, int vsIndex, int fsIndex, int binding, byte[] data)
@@ -529,6 +557,7 @@ namespace PlayerViewer.Effects.Gl
             GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, 0, _storageBuffer);
             for (int i = 0; i < program.StorageBlocks; i++)
                 GL.ShaderStorageBlockBinding(program.Id, i, 0);
+            BindFragmentStorage(program);
 
             var (vs, fs) = BlockSlots(program, EffectBlock.EmitterPlugin);
             foreach (var d in inputs.Stripes)
@@ -550,6 +579,35 @@ namespace PlayerViewer.Effects.Gl
                         DrawElementsType.UnsignedShort,
                         StripeIndexCount * 2
                     );
+            }
+            GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0);
+        }
+
+        /// <summary>Binds each fragment storage block by name to its buffer from
+        /// <see cref="FragmentStorageSource"/>.</summary>
+        void BindFragmentStorage(GlEffectProgram program)
+        {
+            foreach (var (block, name) in program.FragmentStorageBlocks)
+            {
+                string key = name ?? "";
+                byte[] data =
+                    (name != null ? FragmentStorageSource?.Invoke(name) : null) ?? ZeroBlock;
+                if (!_fragmentStorage.TryGetValue(key, out var s))
+                    s = (GL.GenBuffer(), 1 + _fragmentStorage.Count, null);
+                if (s.Data != data)
+                {
+                    GL.BindBuffer(BufferTarget.ShaderStorageBuffer, s.Buffer);
+                    GL.BufferData(
+                        BufferTarget.ShaderStorageBuffer,
+                        Math.Max(data.Length, 16),
+                        data,
+                        BufferUsageHint.DynamicDraw
+                    );
+                    s.Data = data;
+                }
+                _fragmentStorage[key] = s;
+                GL.BindBufferBase(BufferRangeTarget.ShaderStorageBuffer, s.Binding, s.Buffer);
+                GL.ShaderStorageBlockBinding(program.Id, block, s.Binding);
             }
             GL.BindBuffer(BufferTarget.ShaderStorageBuffer, 0);
         }
@@ -590,9 +648,14 @@ namespace PlayerViewer.Effects.Gl
             }
             if (_storageBuffer != 0)
                 GL.DeleteBuffer(_storageBuffer);
+            if (_zeroStorage != 0)
+                GL.DeleteBuffer(_zeroStorage);
             if (_stripeIndices != 0)
                 GL.DeleteBuffer(_stripeIndices);
-            _storageBuffer = _stripeIndices = 0;
+            foreach (var s in _fragmentStorage.Values)
+                GL.DeleteBuffer(s.Buffer);
+            _fragmentStorage.Clear();
+            _storageBuffer = _zeroStorage = _stripeIndices = 0;
             foreach (int t in _blank.Values)
                 GL.DeleteTexture(t);
             _blank.Clear();

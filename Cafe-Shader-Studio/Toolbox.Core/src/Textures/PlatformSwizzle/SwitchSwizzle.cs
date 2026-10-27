@@ -14,6 +14,7 @@ namespace Toolbox.Core.Imaging
         public uint Alignment;
         public uint TileMode;
         public int Target = 1; //Platform PC or NX
+        public bool XbarGob;
 
         //Adjusted on encode
         public uint ReadTextureLayout;
@@ -46,7 +47,7 @@ namespace Toolbox.Core.Imaging
                     BlockHeightLog2 -= 1;
             }
 
-            return TegraX1Swizzle.GetImageData(texture, data, array, mip, 0, BlockHeightLog2, Target, LinearMode);
+            return TegraX1Swizzle.GetImageData(texture, data, array, mip, 0, BlockHeightLog2, Target, LinearMode, XbarGob);
         }
 
         public byte[] EncodeImage(STGenericTexture texture, byte[] data, uint width, uint height, int array, int mip) {
@@ -151,7 +152,7 @@ namespace Toolbox.Core.Imaging
                         SurfaceSize += Pitch * TegraX1Swizzle.round_up(height__, (1u << (int)mipBlockHeightLog2) * 8);
                     }
 
-                    Span<byte> SwizzledData = TegraX1Swizzle.swizzle(width_, height_, depth_, blkWidth, blkHeight, blkDepth, Target, bpp, (uint)TileMode, (int)mipBlockHeightLog2, data_);
+                    Span<byte> SwizzledData = TegraX1Swizzle.swizzle(width_, height_, depth_, blkWidth, blkHeight, blkDepth, Target, bpp, (uint)TileMode, (int)mipBlockHeightLog2, data_, XbarGob);
                     mipmaps.Add(AlignedData.Concat(SwizzledData.ToArray()).ToArray());
                 }
 

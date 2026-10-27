@@ -25,7 +25,7 @@ namespace PlayerViewer.Physics
 
         Sarc LoadBootup()
         {
-            var data = _romfs.ReadFile("Pack/Bootup.Nin_NX_NVN.pack");
+            var data = _romfs.ReadFile($"Pack/Bootup.{_romfs.Layout.Platform}.pack");
             return data != null ? new Sarc(data) : null;
         }
 
@@ -166,12 +166,38 @@ namespace PlayerViewer.Physics
         public string FirstCloth(PackFiles pack) =>
             ClothEntries(pack).FirstOrDefault(e => pack.Files.ContainsKey(e));
 
-        /// <summary>The bytes of the first cloth an actor's pack carries, null when it has none.</summary>
+        /// <summary>
+        /// The bytes of the actor's cloth: the first its pack carries, else the first of its
+        /// ClothList kept loose in the romfs. Null when it has none.
+        /// </summary>
         public byte[] ClothOf(string actor)
         {
             var pack = ReadPack(actor);
-            return pack?.Get(FirstCloth(pack));
+            if (pack == null)
+                return null;
+            return pack.Get(FirstCloth(pack)) ?? ReadLoose(LooseCloth(pack));
         }
+
+        /// <summary>
+        /// The romfs path of the first ClothList cloth kept outside the pack:
+        /// <c>Phive/Cloth/X.Nin_Ounce_NVN2.bphcl</c>. Null when none.
+        /// </summary>
+        public string LooseCloth(PackFiles pack)
+        {
+            if (!_romfs.Layout.KeepsClothLoose)
+                return null;
+            foreach (var entry in ClothEntries(pack))
+            {
+                if (!entry.EndsWith(".bphcl", StringComparison.Ordinal))
+                    continue;
+                string loose = entry[..^".bphcl".Length] + $".{_romfs.Layout.Platform}.bphcl";
+                if (_romfs.Resolve(loose) != null)
+                    return loose;
+            }
+            return null;
+        }
+
+        byte[] ReadLoose(string path) => path != null ? _romfs.ReadFile(path) : null;
 
         /// <summary>
         /// The cloth a model's actor carries: the actor named after the model, and for a
@@ -185,7 +211,7 @@ namespace PlayerViewer.Physics
                 return null;
             var source = new ClothSource();
             source.Actors.Add(actor);
-            source.Entry = FirstCloth(pack);
+            source.Entry = FirstCloth(pack) ?? LooseCloth(pack);
             if (source.Entry == null)
             {
                 source.IsNew = true;
@@ -213,7 +239,9 @@ namespace PlayerViewer.Physics
             : null;
 
         public byte[] ReadCloth(ClothSource source) =>
-            source.IsNew ? null : ReadPack(source.Actors[0])?.Get(source.Entry);
+            source.IsNew
+                ? null
+                : ReadPack(source.Actors[0])?.Get(source.Entry) ?? ReadLoose(source.Entry);
 
         /// <summary>The stock hair cloths the editor takes classes and a starting file from.</summary>
         static readonly string[] Donors =

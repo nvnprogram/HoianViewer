@@ -9,14 +9,19 @@ using Vector4 = System.Numerics.Vector4;
 
 namespace PlayerViewer.UI
 {
-    // The physics authoring windows: the main one (what the viewport shows, hair or not, the test
-    // motion, the limbs and the two ways to add one) and a small window per limb holding its
-    // settings. A setting applies to the running cloth when its control is let go.
+    // The physics authoring: the Physics Maker, docked in the right panel in place of the
+    // animation
     public partial class ViewerWindow
     {
         bool _authoringOpen;
-        bool _focusAuthoring;
         bool _showBones = true;
+
+        /// <summary>Whether the Physics Maker takes the right panel this frame. A paint session keeps it up.</summary>
+        bool AuthoringShown =>
+            _standalone != null && _physicsTabActive && (_authoringOpen || _paint != null);
+
+        //The animation playing when the Physics Maker came up, put back when it goes.
+        (string Name, float Frame, bool Paused)? _makerAnim;
 
         //Whether the model is authored as hair, from its file name at first: Har_ is hair.
         bool _authorHair;
@@ -53,11 +58,11 @@ namespace PlayerViewer.UI
         readonly Dictionary<object, (Vector2 Min, Vector2 Max)> _sideWindowRects = new();
         readonly Dictionary<PaintedLimb, string> _limbPresetPick = new();
 
-        //The authoring window's content height last frame, which its height follows, and where
-        //it sat, which new limb windows open beside.
-        float _authoringHeight = 640;
-        Vector2 _authoringMin,
-            _authoringMax;
+        //Where the docked Physics Maker sat, which new limb windows open beside, and the frame
+        //it last drew in.
+        Vector2 _makerMin,
+            _makerMax;
+        int _makerFrame = -1;
 
         const string SuggestedPreset = "Suggested";
         const float SideWindowWidth = 350;
@@ -164,7 +169,7 @@ namespace PlayerViewer.UI
             public readonly string IdPrefix;
             public readonly float FirstHeight;
 
-            //Opened since they last drew, so they are placed beside the authoring window.
+            //Opened since they last drew, so they are placed beside the Physics Maker.
             public readonly HashSet<T> Place = new();
 
             //Each window's content height last frame, which its height follows.
@@ -245,10 +250,9 @@ namespace PlayerViewer.UI
             CloseColliderWindows();
         }
 
-        void DrawPhysicsAuthoringWindows()
+        /// <summary>Clears last frame's hover, once a frame before the first authoring control draws.</summary>
+        void BeginAuthoringFrame()
         {
-            if (_standalone == null || !_physicsTabActive)
-                return;
             _genHovered = -1;
             _colHovered = null;
             //The focused limb is the one whose window was used last, while it is open.
@@ -259,8 +263,25 @@ namespace PlayerViewer.UI
                 || !_limbWindows.Contains(_gen.Limbs[_genSelected])
             )
                 _genSelected = -1;
-            if (_authoringOpen || _paint != null)
-                DrawAuthoringWindow();
+        }
+
+        /// <summary>The Physics Maker as the right panel draws it, in place of the animation.</summary>
+        void DrawAuthoringPanel()
+        {
+            BeginAuthoringFrame();
+            _makerFrame = ImGui.GetFrameCount();
+            _makerMin = ImGui.GetWindowPos();
+            _makerMax = _makerMin + ImGui.GetWindowSize();
+            Widgets.SectionHeader("Physics Maker");
+            Widgets.Guarded("HairGen", DrawAuthoringContents);
+        }
+
+        void DrawPhysicsAuthoringWindows()
+        {
+            if (_standalone == null || !_physicsTabActive)
+                return;
+            if (_makerFrame != ImGui.GetFrameCount())
+                BeginAuthoringFrame();
             //A window of a limb or collidable that is gone is not drawn, and its place is freed.
             var shown = new HashSet<object>();
             if (_paint == null && _gen != null)
@@ -283,29 +304,39 @@ namespace PlayerViewer.UI
                 _sideWindowRects.Remove(gone);
         }
 
-        void DrawAuthoringWindow()
+        /// <summary>
+        /// Holds the model at rest while the Physics Maker is shown, and puts back the animation
+        /// it took off, at its frame and pause, once the maker goes. Run after the frame's UI.
+        /// </summary>
+        void SyncMakerPose()
         {
-            ImGui.SetNextWindowPos(ToolWindowPos(), ImGuiCond.FirstUseEver);
-            ImGui.SetNextWindowSize(new Vector2(390, _authoringHeight), ImGuiCond.FirstUseEver);
-            float height = FitHeight(_authoringHeight);
-            ImGui.SetNextWindowSizeConstraints(new Vector2(300, height), new Vector2(900, height));
-            if (_focusAuthoring)
+            if (AuthoringShown)
             {
-                ImGui.SetNextWindowFocus();
-                _focusAuthoring = false;
+                HoldMakerPose();
+                //An export drives the animation itself until it ends.
+                if (PlaybackCurrentAnim != null && !_animExporting && _bufferedExporter == null)
+                    PlaybackPlay(null, resetHair: false);
+                return;
             }
-            bool open = true;
-            if (BeginCardWindow("Physics Maker###physicsauthoring", ref open))
-            {
-                Widgets.Guarded("HairGen", DrawAuthoringContents);
-                _authoringHeight = ContentHeight();
-                _authoringMin = ImGui.GetWindowPos();
-                _authoringMax = _authoringMin + ImGui.GetWindowSize();
-            }
-            ImGui.End();
-            //A paint session keeps the window up: its Done and Cancel are here.
-            if (!open && _paint == null)
-                _authoringOpen = false;
+            if (_makerAnim is not { } held)
+                return;
+            _makerAnim = null;
+            if (held.Name == null || !PlaybackHasAnimNamed(held.Name))
+                return;
+            PlaybackPlay(held.Name, resetHair: false);
+            PlaybackSetFrame(held.Frame);
+            PlaybackSetPaused(held.Paused);
+        }
+
+        /// <summary>Takes the animation off for the Physics Maker, keeping it, unless it already has.</summary>
+        void HoldMakerPose()
+        {
+            if (_makerAnim != null)
+                return;
+            StopAnimChain();
+            _makerAnim = (PlaybackCurrentAnim, PlaybackAnimFrame, PlaybackPaused);
+            if (PlaybackCurrentAnim != null)
+                PlaybackPlay(null, resetHair: false);
         }
 
         /// <summary>A window's height for its content, kept inside the main window.</summary>
@@ -326,7 +357,18 @@ namespace PlayerViewer.UI
 
         void DrawAuthoringContents()
         {
-            DrawUndoButtons();
+            float width = DrawUndoButtons(3);
+            ImGui.SameLine();
+            //A paint session keeps the maker up: its Done and Cancel are here.
+            Widgets.DisabledButton(
+                "Close",
+                _paint == null,
+                new Vector2(width, 0),
+                () => _authoringOpen = false
+            );
+            Widgets.ItemTooltip(
+                _paint != null ? "Finish or cancel the limb first." : "Back to the animation."
+            );
             Widgets.SectionHeader("Show");
             DrawAuthorShow();
             Widgets.SectionHeader("Model");
@@ -412,7 +454,7 @@ namespace PlayerViewer.UI
             Widgets.EndDisabled();
             Widgets.ItemTooltip(
                 otherwise
-                    ?? $"Hair only: {why}. Turn Hair on in the Physics Maker window to use it."
+                    ?? $"Hair only: {why}. Turn Hair on in the Physics Maker to use it."
             );
             return false;
         }
@@ -798,26 +840,31 @@ namespace PlayerViewer.UI
         }
 
         /// <summary>
-        /// Where a limb or collidable window opens: right of the authoring window, else left of
-        /// it, at the first place down the columns it covers nothing; cascaded when there is none.
+        /// Where a limb or collidable window opens: over the viewport, in columns from the right
+        /// panel leftward, at the first place down a column it covers nothing; cascaded when there
+        /// is none.
         /// </summary>
         Vector2 PlaceSideWindow(object window, float height)
         {
             var viewport = ImGui.GetMainViewport();
             float gap = SideOrderLayout.Gap;
             float bottom = viewport.Pos.Y + viewport.Size.Y - SideOrderLayout.BottomGap;
+            bool docked = _makerFrame >= ImGui.GetFrameCount() - 1;
             float right =
-                SideOrderControls.On && _rightCardLeft > 0
-                    ? _rightCardLeft - 2 * gap
-                    : viewport.Pos.X + viewport.Size.X - 300 - gap;
-            bool authoring = _authoringMax.X > 0;
-            float top = authoring ? _authoringMin.Y : viewport.Pos.Y + 64;
-            float left = authoring ? _authoringMax.X + gap : viewport.Pos.X + LeftPanelWidth + 420;
+                docked ? _makerMin.X - 2 * gap
+                : SideOrderControls.On && _rightCardLeft > 0 ? _rightCardLeft - 2 * gap
+                : viewport.Pos.X + viewport.Size.X - ClassicRightWidth - gap;
+            float leftmost =
+                SideOrderControls.On && _leftCardRight > 0
+                    ? _leftCardRight + 2 * gap
+                    : viewport.Pos.X + LeftPanelWidth + gap;
+            float top =
+                docked ? _makerMin.Y
+                : SideOrderControls.On ? viewport.Pos.Y + SideOrderLayout.CardsTop + gap
+                : viewport.Pos.Y + 64;
             float width = SideWindowWidth;
-            left = Math.Max(Math.Min(left, right - width), viewport.Pos.X);
+            float left = Math.Max(right - width, viewport.Pos.X);
             var others = _sideWindowRects.Where(r => r.Key != window).Select(r => r.Value).ToList();
-            if (authoring)
-                others.Add((_authoringMin, _authoringMax));
             //A limb's window leaves its own gizmo in sight.
             if (window is PaintedLimb limb && AimRect(limb) is { } gizmo)
                 others.Add(gizmo);
@@ -826,16 +873,9 @@ namespace PlayerViewer.UI
                     Math.Max(0, Math.Min(r.Max.X, at.X + width) - Math.Max(r.Min.X, at.X))
                     * Math.Max(0, Math.Min(r.Max.Y, at.Y + height) - Math.Max(r.Min.Y, at.Y))
                 );
-            int columns = Math.Max(1, (int)((right - left + gap) / (width + gap)));
-            var xs = Enumerable.Range(0, columns).Select(c => left + c * (width + gap)).ToList();
-            //Then left of the authoring window, over the viewport's other side.
-            float leftmost =
-                SideOrderControls.On && _leftCardRight > 0
-                    ? _leftCardRight + 2 * gap
-                    : viewport.Pos.X + LeftPanelWidth + gap;
-            if (authoring)
-                for (float x = _authoringMin.X - gap - width; x >= leftmost; x -= width + gap)
-                    xs.Add(x);
+            var xs = new List<float> { left };
+            for (float x = left - gap - width; x >= leftmost; x -= width + gap)
+                xs.Add(x);
             foreach (float x in xs)
             {
                 //Below each window already in the column, or down the column in steps.
@@ -855,7 +895,7 @@ namespace PlayerViewer.UI
             for (int k = 0; k < 24; k++)
             {
                 var at = new Vector2(
-                    Math.Min(left + k * 24, right - width),
+                    Math.Max(left - k * 24, Math.Min(leftmost, left)),
                     top + (k % 12) * title
                 );
                 bool clear = others.All(r =>
@@ -867,7 +907,7 @@ namespace PlayerViewer.UI
             return new Vector2(left, top);
         }
 
-        /// <summary>A limb's or collidable's window, as high as its content and opened beside the authoring window.</summary>
+        /// <summary>A limb's or collidable's window, as high as its content and opened beside the Physics Maker.</summary>
         void DrawSideWindow<T>(
             SideWindows<T> windows,
             T item,
@@ -881,7 +921,7 @@ namespace PlayerViewer.UI
             if (!windows.Heights.TryGetValue(item, out float content))
                 content = windows.FirstHeight;
             float height = FitHeight(content);
-            //A window opens beside the authoring window rather than where it was last left.
+            //A window opens beside the Physics Maker rather than where it was last left.
             if (windows.Place.Remove(item))
                 ImGui.SetNextWindowPos(PlaceSideWindow(item, height), ImGuiCond.Always);
             ImGui.SetNextWindowSize(new Vector2(SideWindowWidth, content), ImGuiCond.FirstUseEver);

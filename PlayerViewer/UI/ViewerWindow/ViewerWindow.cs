@@ -32,6 +32,7 @@ namespace PlayerViewer.UI
 
         string _romfsInput = "";
         string _sdodrInput = "";
+        string _raidersInput = "";
         string _layeredInput = "";
         string _romfsError = null;
         bool _needsLoad;
@@ -86,7 +87,7 @@ namespace PlayerViewer.UI
         bool _showSettings;
 
         //The background is saved with the preset; these track when the viewport's copy is rebuilt.
-        Core.BackgroundConfig Bg => _config.Player.Background;
+        Core.BackgroundConfig Bg => _config.Active.Player.Background;
         bool _bgDirty = true; //rebuild the live preview buffer on next frame
         int _bgPreviewW = -1,
             _bgPreviewH = -1;
@@ -109,9 +110,12 @@ namespace PlayerViewer.UI
             )
         {
             _config = config;
-            _romfsInput = config.RomfsPath ?? "";
+            _romfsInput = config.Thunder.RomfsPath ?? "";
             _sdodrInput = config.SdodrRomfsPath ?? "";
-            _layeredInput = config.LayeredFsPath ?? "";
+            _raidersInput = config.Spiral.RomfsPath ?? "";
+            _layeredInput = config.Active.LayeredFsPath ?? "";
+            _thunderLayeredInput = config.Thunder.LayeredFsPath ?? "";
+            _raidersLayeredInput = config.Spiral.LayeredFsPath ?? "";
 
             //Clamped in case the ranges changed.
             _captureRes = Math.Clamp(config.CaptureResIndex, 0, CaptureSizes.Length - 1);
@@ -161,7 +165,7 @@ namespace PlayerViewer.UI
             _pipeline = new ScenePipeline();
             _pipeline.Init();
 
-            if (Romfs.IsValidRoot(_config.RomfsPath))
+            if (Romfs.IsValidRoot(_config.Active.RomfsPath, _config.CurrentGame))
                 _needsLoad = true;
         }
 
@@ -182,13 +186,22 @@ namespace PlayerViewer.UI
                 ReleaseShaderPrograms();
                 CompactHeap();
 
+                //Each game has its own overlay; the DLC is Splatoon 3's.
+                var game = _config.CurrentGame;
                 _romfs = new Romfs(
-                    _config.RomfsPath,
-                    _config.LayeredFsPath,
-                    _config.UseLayeredFs,
-                    _config.SdodrRomfsPath
+                    _config.Active.RomfsPath,
+                    _config.Active.LayeredFsPath,
+                    _config.Active.UseLayeredFs,
+                    game == GameKind.Thunder ? _config.SdodrRomfsPath : null,
+                    game
                 );
-                BfresEditor.HoianNXRender.GamePath = _config.RomfsPath;
+                _layeredInput = _config.Active.LayeredFsPath ?? "";
+                BfresEditor.HoianNXRender.GamePath = _config.Active.RomfsPath;
+                (BfresEditor.HoianNXRender.FrameSource as IDisposable)?.Dispose();
+                BfresEditor.HoianNXRender.FrameSource =
+                    game == GameKind.Spiral
+                        ? LoadRaidersFrame(_romfs, _raidersEnvGroup)
+                        : BfresEditor.ThunderFrame.Instance;
                 //Decompress/parse the ~25MB UBER shader archive while the database loads.
                 BfresEditor.HoianNXRender.PrewarmShaderArchives();
                 //Load default/cubemap textures now instead of during the first material render.
@@ -207,7 +220,11 @@ namespace PlayerViewer.UI
                         Math.Max(_db.TeamColors.Count - 1, 0)
                     );
                 }
-                else if (_config.Player?.Hair != null || _config.Player?.PlayerType != 0)
+                else if (
+                    _config.Active.Player?.Hair != null
+                    || _config.Active.Player?.Clothes != null
+                    || _config.Active.Player?.PlayerType != 0
+                )
                 {
                     RestorePlayerConfig();
                 }
@@ -232,6 +249,7 @@ namespace PlayerViewer.UI
             int _playerType;
             int _eye,
                 _skin;
+            bool _freckles;
             string _anim;
             float _frame;
             bool _paused;
@@ -245,6 +263,7 @@ namespace PlayerViewer.UI
                     _playerType = scene.PlayerType,
                     _eye = scene.EyeColor,
                     _skin = scene.SkinTone,
+                    _freckles = scene.Freckles,
                     _anim = scene.CurrentAnimName,
                     _frame = scene.AnimFrame,
                     _paused = scene.AnimPaused,
@@ -294,6 +313,7 @@ namespace PlayerViewer.UI
                         scene.SetGear(slot, entry);
                 }
                 scene.ApplyEyeColor(_eye);
+                scene.Freckles = _freckles;
                 scene.ApplySkinTone(_skin);
                 if (_anim != null)
                 {
@@ -383,7 +403,12 @@ namespace PlayerViewer.UI
                 if (hadPrevious)
                     CompactHeap();
 
-                _standalone = StandaloneScene.FromFile(file, _romfs);
+                var raw = Romfs.Decompress(File.ReadAllBytes(file));
+                var from = Conversion.ModelConvert.GameOf(raw);
+                _standalone =
+                    from is { } other && other != _romfs.Game
+                        ? OpenConverted(file, raw, other)
+                        : StandaloneScene.FromFile(file, _romfs);
                 _standaloneError = _standalone == null ? "Failed to load model" : null;
                 if (_standalone != null)
                 {
@@ -418,6 +443,7 @@ namespace PlayerViewer.UI
             _standalone?.Dispose();
             _standalone = null;
             _standaloneError = null;
+            _convertNotice = _convertClash = null;
             _selectedMaterial = null;
             _selectedTexture = null;
             _animSearch = "";
@@ -425,6 +451,7 @@ namespace PlayerViewer.UI
             ResetMaterialEditor();
             ResetClothEditor();
             _authoringOpen = false;
+            _makerAnim = null;
             ResetSkeletonTab();
             ReleaseShaderPrograms();
         }

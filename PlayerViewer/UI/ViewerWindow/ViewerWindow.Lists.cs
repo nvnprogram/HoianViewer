@@ -34,7 +34,13 @@ namespace PlayerViewer.UI
             slot is GearSlot.Head or GearSlot.Clothes or GearSlot.Shoes or GearSlot.MainWeapon;
 
         static bool HasIcons(GearSlot slot) =>
-            HasGrid(slot) || slot is GearSlot.Bottom or GearSlot.Hair or GearSlot.Eyebrow;
+            HasGrid(slot)
+            || slot
+                is GearSlot.Bottom
+                    or GearSlot.Hair
+                    or GearSlot.Eyebrow
+                    or GearSlot.Gadget
+                    or GearSlot.Special;
 
         /// <summary>Icons and names for a freshly loaded romfs.</summary>
         void InitLists()

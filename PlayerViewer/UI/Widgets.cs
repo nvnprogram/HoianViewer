@@ -912,6 +912,199 @@ namespace PlayerViewer.UI
             return pressed;
         }
 
+        //Frame padding either side of a list tree node's arrow in Side Order. ImGui sizes the arrow's
+        //column as the font size plus twice the frame padding, and the style's is a pill's.
+        const float TreeArrowPad = 2;
+
+        /// <summary>
+        /// A tree node in a list row, its arrow kept close to what is before it. With
+        /// <paramref name="sameLine"/> it follows the last item on its line.
+        /// </summary>
+        public static bool ListTreeNode(string label, bool sameLine = false)
+        {
+            if (!SideOrder)
+            {
+                if (sameLine)
+                    ImGui.SameLine();
+                return ImGui.TreeNode(label);
+            }
+            //The arrow sits inside its column with room either side already.
+            if (sameLine)
+                ImGui.SameLine(0, 0);
+            ImGui.PushStyleVar(
+                ImGuiStyleVar.FramePadding,
+                new Vector2(TreeArrowPad, ImGui.GetStyle().FramePadding.Y)
+            );
+            bool open = ImGui.TreeNode(label);
+            ImGui.PopStyleVar();
+            return open;
+        }
+
+        /// <summary>Where the label of the <see cref="ListTreeNode"/> just drawn starts, in screen space.</summary>
+        public static float ListTreeLabelX() =>
+            ImGui.GetItemRectMin().X
+            + ImGui.GetFontSize()
+            + 2 * (SideOrder ? TreeArrowPad : ImGui.GetStyle().FramePadding.X);
+
+        /// <summary>A square button with a pencil, as tall as a frame.</summary>
+        public static bool PencilButton(string id)
+        {
+            float s = ImGui.GetFrameHeight();
+            bool pressed = ImGui.InvisibleButton(id, new Vector2(s));
+            var min = ImGui.GetItemRectMin();
+            var max = ImGui.GetItemRectMax();
+            bool hot = ImGui.IsItemHovered();
+            bool held = ImGui.IsItemActive();
+            var dl = ImGui.GetWindowDrawList();
+            if (SideOrder)
+            {
+                float inset = _listDepth > 0 ? 2 : 0;
+                if (hot || held)
+                    SideOrderControls.Pill(
+                        dl,
+                        min + new Vector2(inset),
+                        max - new Vector2(inset),
+                        new SideOrderControls.State(true, held)
+                    );
+            }
+            else if (hot || held)
+                dl.AddRectFilled(
+                    min,
+                    max,
+                    ImGui.GetColorU32(held ? ImGuiCol.ButtonActive : ImGuiCol.ButtonHovered),
+                    ImGui.GetStyle().FrameRounding
+                );
+            var colour = ImGui.GetStyle().Colors[(int)ImGuiCol.Text];
+            if (!hot && !held)
+                colour.W *= 0.6f;
+            DrawPencil(dl, (min + max) / 2, s, ImGui.GetColorU32(colour));
+            return pressed;
+        }
+
+        //A pencil on the diagonal of a box of side s, its tip at the lower left: tip, body and
+        //end cap as separate fills with a pixel between them.
+        static void DrawPencil(ImDrawListPtr dl, Vector2 centre, float s, uint colour)
+        {
+            var along = Vector2.Normalize(new Vector2(1, -1));
+            var across = Vector2.Normalize(new Vector2(1, 1));
+            float half = s * 0.36f,
+                width = MathF.Max(1.6f, s * 0.12f),
+                tip = s * 0.24f,
+                cap = s * 0.14f,
+                gap = MathF.Max(1, s * 0.05f);
+            Vector2 At(float t, float w) => centre + along * t + across * w;
+            float tipEnd = -half + tip;
+            dl.AddTriangleFilled(At(-half, 0), At(tipEnd, -width), At(tipEnd, width), colour);
+            float bodyStart = tipEnd + gap,
+                bodyEnd = half - cap - gap;
+            dl.AddQuadFilled(
+                At(bodyStart, -width),
+                At(bodyEnd, -width),
+                At(bodyEnd, width),
+                At(bodyStart, width),
+                colour
+            );
+            dl.AddQuadFilled(
+                At(half - cap, -width),
+                At(half, -width),
+                At(half, width),
+                At(half - cap, width),
+                colour
+            );
+        }
+
+        /// <summary>How an <see cref="InlineField"/> stands after a frame.</summary>
+        public enum FieldState
+        {
+            Typing,
+            Commit,
+            Cancel,
+        }
+
+        static uint _inlineId;
+        static int _inlineFrame;
+        static bool _inlineSeen;
+        static int _inlineWait;
+
+        /// <summary>
+        /// A text field typed into in place of a label, <paramref name="width"/> wide: focused with
+        /// its text selected when it appears, Enter or clicking elsewhere commits, Escape cancels.
+        /// </summary>
+        public static FieldState InlineField(
+            string id,
+            ref string text,
+            uint maxLength,
+            float width
+        )
+        {
+            uint key = ImGui.GetID(id);
+            int frame = ImGui.GetFrameCount();
+            if (_inlineId != key || _inlineFrame < frame - 1)
+            {
+                _inlineId = key;
+                _inlineSeen = false;
+                _inlineWait = 0;
+                ImGui.SetKeyboardFocusHere();
+            }
+            _inlineFrame = frame;
+            var style = ImGui.GetStyle();
+            ImGui.PushStyleVar(ImGuiStyleVar.FramePadding, new Vector2(6, style.FramePadding.Y));
+            ImGui.PushItemWidth(Math.Max(width, ImGui.GetFrameHeight()));
+            var dl = ImGui.GetWindowDrawList();
+            var boxMin = ImGui.GetCursorScreenPos();
+            var boxMax = boxMin + new Vector2(ImGui.CalcItemWidth(), ImGui.GetFrameHeight());
+            if (SideOrder)
+            {
+                SideOrderControls.Well(dl, boxMin, boxMax);
+                SideOrderControls.PushClearFrame();
+            }
+            ImGui.InputText(id, ref text, maxLength, ImGuiInputTextFlags.AutoSelectAll);
+            if (SideOrder)
+            {
+                SideOrderControls.PopClearFrame();
+                dl.AddRect(
+                    boxMin - Vector2.One,
+                    boxMax + Vector2.One,
+                    ImGui.GetColorU32(SideOrderControls.Colours.AccentTop),
+                    (boxMax.Y - boxMin.Y) / 2 + 1,
+                    ImDrawCornerFlags.All,
+                    1.5f
+                );
+            }
+            else
+                dl.AddRect(
+                    boxMin,
+                    boxMax,
+                    ImGui.GetColorU32(Theme.Gold),
+                    style.FrameRounding,
+                    ImDrawCornerFlags.All,
+                    1
+                );
+            ImGui.PopItemWidth();
+            ImGui.PopStyleVar();
+            bool active = ImGui.IsItemActive();
+            _inlineSeen |= active;
+            if (_inlineSeen && ImGui.IsKeyPressed(ImGui.GetKeyIndex(ImGuiKey.Escape)))
+            {
+                _inlineId = 0;
+                return FieldState.Cancel;
+            }
+            if (!_inlineSeen)
+            {
+                //The focus request never took.
+                if (++_inlineWait > 5)
+                {
+                    _inlineId = 0;
+                    return FieldState.Cancel;
+                }
+                return FieldState.Typing;
+            }
+            if (active)
+                return FieldState.Typing;
+            _inlineId = 0;
+            return FieldState.Commit;
+        }
+
         /// <summary>A text field with flags, a raised pill in Side Order.</summary>
         public static bool InputText(
             string id,
@@ -1816,13 +2009,24 @@ namespace PlayerViewer.UI
         /// A text field with greyed hint text while it is empty. This build has no
         /// InputTextWithHint.
         /// </summary>
-        public static bool SearchBox(string id, ref string text, string hint, float width)
+        public static bool SearchBox(string id, ref string text, string hint, float width) =>
+            SearchBox(id, ref text, hint, width, out _);
+
+        /// <summary>The same, with <paramref name="typing"/> true while the field has the keyboard.</summary>
+        public static bool SearchBox(
+            string id,
+            ref string text,
+            string hint,
+            float width,
+            out bool typing
+        )
         {
             if (SideOrder)
-                return SearchField(id, ref text, hint, width);
+                return SearchField(id, ref text, hint, width, out typing);
             ImGui.SetNextItemWidth(width);
             var min = ImGui.GetCursorScreenPos();
             bool changed = ImGui.InputText(id, ref text, 64);
+            typing = ImGui.IsItemActive();
             if (string.IsNullOrEmpty(text))
                 DrawText(
                     ImGui.GetWindowDrawList(),
@@ -1837,7 +2041,16 @@ namespace PlayerViewer.UI
         /// The Side Order search field: a raised pill with a magnifier before the text and an x
         /// that clears it. <paramref name="width"/> as for SetNextItemWidth.
         /// </summary>
-        public static bool SearchField(string id, ref string text, string hint, float width)
+        public static bool SearchField(string id, ref string text, string hint, float width) =>
+            SearchField(id, ref text, hint, width, out _);
+
+        static bool SearchField(
+            string id,
+            ref string text,
+            string hint,
+            float width,
+            out bool typing
+        )
         {
             var style = ImGui.GetStyle();
             var dl = ImGui.GetWindowDrawList();
@@ -1862,6 +2075,7 @@ namespace PlayerViewer.UI
             ImGui.SetNextItemWidth(w - iconRoom + style.FramePadding.X - h);
             SideOrderControls.PushClearFrame();
             bool changed = ImGui.InputText(id, ref text, 64);
+            typing = ImGui.IsItemActive();
             SideOrderControls.PopClearFrame();
             SideOrderControls.Remember(gid);
             if (!clearable && !string.IsNullOrEmpty(hint))
@@ -2349,6 +2563,13 @@ namespace PlayerViewer.UI
         /// </summary>
         public static int ListNav(string id, int count, int current) =>
             Navigate(id, count, current, ImGui.IsWindowFocused() && !ImGui.IsAnyItemActive());
+
+        /// <summary>
+        /// The same for a list driven from its search field, while
+        /// <see cref="SearchBox(string, ref string, string, float, out bool)"/> says it is typing.
+        /// </summary>
+        public static int SearchListNav(string id, int count, int current, bool typing) =>
+            Navigate(id, count, current, typing);
 
         /// <summary>
         /// The same for a list inside a combo popup, where the focus sits on the popup or on

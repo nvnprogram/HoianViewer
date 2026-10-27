@@ -15,7 +15,9 @@ namespace PlayerViewer.Core
 
         public static string ShaderCacheDir { get; } = ResolveCacheDir("ShaderCache");
 
-        public static string UberSliceCacheDir { get; } = ResolveCacheDir("UberSliceCache");
+        /// <summary>What the Raiders ubershader can express, kept apart from the splice cache,
+        /// which a new specialiser empties.</summary>
+        public static string RaidersUberReachPath { get; } = ResolveCacheDir("UberReachRaiders.txt");
 
         static string CreateDataDir()
         {
@@ -26,6 +28,10 @@ namespace PlayerViewer.Core
             Directory.CreateDirectory(dir);
             return dir;
         }
+
+        /// <summary>A cache folder or file beside the exe, or under the data folder when the exe
+        /// folder is not writable.</summary>
+        public static string CacheDir(string name) => ResolveCacheDir(name);
 
         static string ResolveCacheDir(string name)
         {

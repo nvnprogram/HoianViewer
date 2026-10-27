@@ -364,8 +364,8 @@ namespace PlayerViewer.Effects.Sim
             ref int ageSettle
         )
         {
-            var b = d.StaticBlock;
-            var data = d.Source.Section;
+            var b = d.Static;
+            var data = d.Raw;
             float F(int o) => BitConverter.ToSingle(b, o);
             // Rotation advances by the add rate times age, or its decaying sum, or not at all.
             float regist = F(0xA2C);

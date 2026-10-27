@@ -509,6 +509,7 @@ namespace PlayerViewer.UI
 
             var layered = scene as ILayeredScene;
             BfresEditor.HoianNXRender.LightClusterOverride = null;
+            BfresEditor.HoianNXRender.FrameSource.ClearLights();
             layered?.BeginRender(
                 new SceneRenderInfo(keepAlpha, materialOverlay, ssWidth, ssHeight)
             );

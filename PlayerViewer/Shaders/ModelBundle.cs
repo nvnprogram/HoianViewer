@@ -133,7 +133,15 @@ namespace PlayerViewer.Shaders
                 undo.Add(SyncGeneratedTextures(bfres, textures, report));
 
                 bool compress = outPath.EndsWith(".zs", StringComparison.OrdinalIgnoreCase);
-                report.FileBytes = Write(bfres, outPath, compress);
+                var restore = uber == null ? null : WriteDrawn(bfres);
+                try
+                {
+                    report.FileBytes = Write(bfres, outPath, compress);
+                }
+                finally
+                {
+                    restore?.Invoke();
+                }
 
                 Verify(outPath, build, plans, carried, uber, report);
             }
@@ -412,6 +420,17 @@ namespace PlayerViewer.Shaders
                 report.MaterialsServed++;
                 report.ProgramsGenerated += plan.Emits.Count(x => x.Generated);
                 report.ProgramsCopied += plan.Emits.Count(x => !x.Generated);
+                var lost = plan
+                    .Emits.Where(x => x.Generated)
+                    .SelectMany(x => x.Cell == null ? new List<string>() : v.LostOf(x.Cell))
+                    .Distinct()
+                    .ToList();
+                if (lost.Count > 0)
+                    report.Notes.Add($"{mat.Name}: spliced without {string.Join(", ", lost)}");
+                if (v.Layer?.Drawn != null && plan.Emits.Any(x => x.Generated))
+                    report.Notes.Add(
+                        $"{mat.Name}: approximated {string.Join(", ", v.Layer.Approximated)}"
+                    );
             }
 
             if (unexamined > 0)
@@ -488,7 +507,7 @@ namespace PlayerViewer.Shaders
                     var full = new Dictionary<string, string>();
                     OptionVector.Complete(
                         source.Model,
-                        GsysShaderOptions.BuildStaticOptions(mat.Material),
+                        GsysShaderOptions.BuildStaticOptions(mat.Drawn),
                         full,
                         null
                     );
@@ -680,13 +699,11 @@ namespace PlayerViewer.Shaders
             var built = builder.Build(requests);
             report.Notes.AddRange(built.Notes);
 
-            using var ms = new MemoryStream();
-            built.Bfsha.Save(ms);
             return new Build
             {
                 FileName = archiveName + ".bfsha",
                 ModelName = modelName,
-                Bytes = ms.ToArray(),
+                Bytes = ShaderBundler.Archive.BfshaWriter.Write(built.Bfsha),
                 ProgramCount = built.Model.Programs.Count,
             };
         }
@@ -710,8 +727,7 @@ namespace PlayerViewer.Shaders
                 .GroupBy(x => x)
                 .ToDictionary(g => g.Key, g => g.Count());
 
-            var bntx = textures?.Bntx;
-            if (bntx == null)
+            if (textures?.Editable != true)
             {
                 if (refs.Count > 0)
                     report.Problems.Add(
@@ -724,13 +740,13 @@ namespace PlayerViewer.Shaders
             var undo = new List<Action>();
             foreach (var (name, _) in TextureImport.Generated)
             {
-                bool carried = bntx.Textures.Any(x => x.Name == name);
+                bool carried = textures.Carries(name);
                 if (refs.TryGetValue(name, out int slots))
                 {
                     if (!carried)
                     {
                         textures.Install(
-                            TextureImport.Generate(name, bntx.Textures.FirstOrDefault())
+                            TextureImport.Generate(name, textures.Donor, textures.Platform)
                         );
                         undo.Add(() => textures.Delete(name));
                     }
@@ -740,7 +756,7 @@ namespace PlayerViewer.Shaders
                 }
                 else if (carried)
                 {
-                    var kept = bntx.Textures.First(x => x.Name == name);
+                    var kept = textures.Get(name);
                     textures.Delete(name);
                     undo.Add(() => textures.Install(kept));
                     report.Notes.Add($"removed {name}, which nothing binds any more");
@@ -750,6 +766,27 @@ namespace PlayerViewer.Shaders
             {
                 for (int i = undo.Count - 1; i >= 0; i--)
                     undo[i]();
+            };
+        }
+
+        /// <summary>
+        /// Gives each material that is drawn through a layer the layer's options and sampler
+        /// assigns for the write, so the game looks up the programs the save embeds.
+        /// </summary>
+        static Action WriteDrawn(BFRES bfres)
+        {
+            var swapped = new List<(Material Material, ShaderAssign Edited)>();
+            foreach (var mat in bfres.Models.SelectMany(m => m.Materials.OfType<FMAT>()))
+            {
+                if (mat.DrawnMaterial == null)
+                    continue;
+                swapped.Add((mat.Material, mat.Material.ShaderAssign));
+                mat.Material.ShaderAssign = mat.DrawnMaterial.ShaderAssign;
+            }
+            return () =>
+            {
+                foreach (var (material, edited) in swapped)
+                    material.ShaderAssign = edited;
             };
         }
 

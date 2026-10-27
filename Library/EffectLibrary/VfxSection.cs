@@ -15,7 +15,7 @@ namespace EffectLibrary
         Record,
 
         /// <summary>An embedded file: child headers first, the payload 4096 aligned after them
-        /// (GRTF, G3PR, GRSN, GRSC).</summary>
+        /// (GRTF, G3PR, GRSN, GRSC, GRSR).</summary>
         Blob,
 
         /// <summary>A plain payload after the header whose size field excludes the header (GTNT,
@@ -54,6 +54,9 @@ namespace EffectLibrary
         /// <summary>Header bytes at 0x1E, zero in every S3 file.</summary>
         public ushort Reserved1E { get; set; }
 
+        /// <summary>The count field of a section that has no children.</summary>
+        public ushort EmptyCount { get; set; }
+
         /// <summary>Where the header sat in the file it was read from, for diagnostics.</summary>
         public int SourceOffset { get; internal set; } = -1;
 
@@ -70,7 +73,7 @@ namespace EffectLibrary
             tag switch
             {
                 "ESTA" or "PRMA" or "TRMA" => SectionKind.Container,
-                "GRTF" or "G3PR" or "GRSN" or "GRSC" => SectionKind.Blob,
+                "GRTF" or "G3PR" or "GRSN" or "GRSC" or "GRSR" => SectionKind.Blob,
                 "GTNT" or "G3NT" or "PRIM" => SectionKind.Table,
                 _ => SectionKind.Record,
             };

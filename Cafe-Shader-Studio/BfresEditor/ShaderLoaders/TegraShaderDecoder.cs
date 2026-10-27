@@ -65,7 +65,7 @@ namespace BfresEditor
         public static readonly System.Diagnostics.Stopwatch TotalTime = new System.Diagnostics.Stopwatch();
         public static int LoadCount = 0;
 
-        const int CacheVersion = 7;
+        const int CacheVersion = 10;
         static bool _cacheVersionChecked;
 
         public static string CacheDir = "ShaderCache";
@@ -117,9 +117,7 @@ namespace BfresEditor
                 if (!Directory.Exists(CacheDir))
                     Directory.CreateDirectory(CacheDir);
 
-                WriteDecompiled(vertPath, fragPath,
-                    GetShaderData(shaderData.VertexShaderCode),
-                    GetShaderData(shaderData.PixelShaderCode));
+                WriteDecompiled(vertPath, fragPath, shaderData.VertexShaderCode, shaderData.PixelShaderCode);
             }));
         }
 
@@ -344,9 +342,7 @@ namespace BfresEditor
 
             DecompileTime.Start();
             var (freshVert, freshFrag) = WriteDecompiled(
-                vertPath, fragPath,
-                () => GetShaderData(shaderData.VertexShaderCode),
-                () => GetShaderData(shaderData.PixelShaderCode));
+                vertPath, fragPath, shaderData.VertexShaderCode, shaderData.PixelShaderCode);
             DecompileTime.Stop();
 
             //Try the driver program binary cache first, which skips the costly GL compile/link.
@@ -516,63 +512,43 @@ namespace BfresEditor
         {
             var data = ((BfshaLibrary.ShaderCodeDataBinary)shaderData).BinaryData;
             var stream = data[1];
+            int skip = Platform(shaderData).CodeHeaderSkip;
             if (!stream.CanSeek)
             {
                 byte[] whole = stream.ToArray();
-                return ByteUtils.SubArray(whole, 48, (uint)whole.Length - 48);
+                return ByteUtils.SubArray(whole, (uint)skip, (uint)(whole.Length - skip));
             }
 
-            int length = (int)(stream.Length - 48);
+            int length = (int)(stream.Length - skip);
             if (length <= 0)
                 return Array.Empty<byte>();
 
             byte[] result = new byte[length];
-            stream.Position = 48;
+            stream.Position = skip;
             stream.ReadExactly(result, 0, length);
             return result;
         }
 
+        /// <summary>The NVN generation a stage is for, as its control section says.</summary>
+        public static ShaderLibrary.NvnPlatform Platform(BfshaLibrary.ShaderCodeData shaderData) =>
+            ShaderLibrary.NvnPlatform.Of(((BfshaLibrary.ShaderCodeDataBinary)shaderData)._shaderCode?.ControlCode);
+
         static byte[] GetConstants(BfshaLibrary.ShaderCodeData shaderData)
         {
-            var data = ((BfshaLibrary.ShaderCodeDataBinary)shaderData).BinaryData;
-
-            //Bnsh has 2 shader code sections. The first section has block info for constants
-            using (var reader = new Toolbox.Core.IO.FileReader(data[0])) {
-                long ctrlLen = reader.BaseStream.Length;
-                if (ctrlLen < 1800)
-                    return null;
-                reader.SeekBegin(1776);
-                ulong ofsUnk = reader.ReadUInt64();
-                uint lenByteCode = reader.ReadUInt32();
-                uint lenConstData = reader.ReadUInt32();
-                uint ofsConstBlockDataStart = reader.ReadUInt32();
-                uint ofsConstBlockDataEnd = reader.ReadUInt32();
-
-                long byteCodeLen = data[1].Length;
-
-                if (lenConstData == 0)
-                    return null;
-                if (ofsConstBlockDataStart + lenConstData > byteCodeLen)
-                    return null;
-                return GetConstantsFromCode(data[1], ofsConstBlockDataStart, lenConstData);
-            }
-        }
-
-        static byte[] GetConstantsFromCode(Stream shaderCode, uint offset, uint length)
-        {
-            using (var reader = new Toolbox.Core.IO.FileReader(shaderCode, true))
-            {
-                reader.SeekBegin(offset);
-                return reader.ReadBytes((int)length);
-            }
+            var code = ((BfshaLibrary.ShaderCodeDataBinary)shaderData)._shaderCode;
+            return ShaderLibrary.NvnPlatform.EmbeddedConstants(code?.ControlCode, code?.ByteCode);
         }
 
         //Decompiles a vertex/pixel pair. The two stages have to go through the translator
         //together, see TegraShaderTranslator.TranslatePair, which is why the decompiled
         //vertex source is cached per program rather than per vertex bytecode hash.
-        static (string Vertex, string Pixel) DecompilePair(byte[] vertexData, byte[] pixelData)
+        static (string Vertex, string Pixel) DecompilePair(
+            BfshaLibrary.ShaderCodeData vertexCode, BfshaLibrary.ShaderCodeData pixelCode)
         {
-            var (vertex, pixel) = TegraShaderTranslator.TranslatePair(vertexData, pixelData);
+            byte[] vertexData = GetShaderData(vertexCode);
+            byte[] pixelData = GetShaderData(pixelCode);
+            var (vertex, pixel) = TegraShaderTranslator.TranslatePair(
+                vertexData, GetConstants(vertexCode), pixelData, GetConstants(pixelCode), Platform(vertexCode).Isa);
             return (ReduceTrig(StripSamplerBindings(vertex)),
                 AppendPixelShaderCode(ReduceTrig(StripSamplerBindings(pixel))));
         }
@@ -600,24 +576,21 @@ namespace BfresEditor
         //Writes the decompiled sources for a program if they are not cached yet.
         //The vertex source is keyed by the program (vertex + pixel hash), the pixel
         //source only by its own hash since it does not depend on the vertex shader.
-        static void WriteDecompiled(string vertPath, string fragPath, byte[] vertexData, byte[] fragData) =>
-            WriteDecompiled(vertPath, fragPath, () => vertexData, () => fragData);
-
         /// <summary>
-        /// The bytecode is fetched through the callbacks so a pair that is already on disk
+        /// The bytecode is only fetched when a source is missing, so a pair that is already on disk
         /// costs two File.Exists and nothing else. Returns the sources it produced, or nulls
         /// when it produced none.
         /// </summary>
         static (string Vertex, string Pixel) WriteDecompiled(
             string vertPath, string fragPath,
-            Func<byte[]> vertexData, Func<byte[]> fragData)
+            BfshaLibrary.ShaderCodeData vertexCode, BfshaLibrary.ShaderCodeData pixelCode)
         {
             bool needVert = !File.Exists(vertPath);
             bool needFrag = !File.Exists(fragPath);
             if (!needVert && !needFrag)
                 return (null, null);
 
-            var (vertex, pixel) = DecompilePair(vertexData(), fragData());
+            var (vertex, pixel) = DecompilePair(vertexCode, pixelCode);
 
             if (needVert) WriteAtomic(vertPath, vertex);
             if (needFrag) WriteAtomic(fragPath, pixel);

@@ -8,8 +8,8 @@ using Toolbox.Core;
 namespace PlayerViewer.Textures
 {
     /// <summary>
-    /// The two block formats Toolbox has no decoder for. BC6 is HDR and comes out through the
-    /// float decoder, clamped to the 8 bit range an export can hold.
+    /// The formats Toolbox has no decoder for: BC6 and BC7, and the float formats R11G11B10 and
+    /// RGBA16F. The HDR ones are clamped to the 8 bit range an export can hold.
     /// </summary>
     public static class BlockDecoder
     {
@@ -17,6 +17,8 @@ namespace PlayerViewer.Textures
         public static Image<Rgba32> Decode(STGenericTexture texture)
         {
             var format = texture.Platform.OutputFormat;
+            if (format == TexFormat.RG11B10_FLOAT || format == TexFormat.RGBA16_FLOAT)
+                return DecodeFloat(texture);
             CompressionFormat compression;
             bool hdr = false;
             switch (format)
@@ -82,6 +84,33 @@ namespace PlayerViewer.Textures
 
             if (alignedWidth != width || alignedHeight != height)
                 image.Mutate(x => x.Crop(new Rectangle(0, 0, width, height)));
+            return image;
+        }
+
+        static Image<Rgba32> DecodeFloat(STGenericTexture texture)
+        {
+            int width = (int)texture.Width;
+            int height = (int)texture.Height;
+            var texels = FloatTexels.Decode(
+                texture.GetDeswizzledSurface(),
+                texture.Platform.OutputFormat,
+                width * height
+            );
+            if (texels == null)
+                return null;
+            var image = new Image<Rgba32>(width, height);
+            image.ProcessPixelRows(rows =>
+            {
+                for (int y = 0; y < rows.Height; y++)
+                {
+                    var row = rows.GetRowSpan(y);
+                    for (int x = 0; x < row.Length; x++)
+                    {
+                        var p = texels[y * width + x];
+                        row[x] = new Rgba32(Unit(p.X), Unit(p.Y), Unit(p.Z), Unit(p.W));
+                    }
+                }
+            });
             return image;
         }
 

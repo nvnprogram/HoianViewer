@@ -120,7 +120,7 @@ namespace PlayerViewer.UI
             return _gen.Limbs.FirstOrDefault(l => l.Replaced.Contains(name));
         }
 
-        /// <summary>The picking controls in the authoring window: the bone list, the chains and Done and Cancel.</summary>
+        /// <summary>The picking controls in the Physics Maker: the bone list, the chains and Done and Cancel.</summary>
         void DrawBonePickControls()
         {
             var limb = _paint.Limb;

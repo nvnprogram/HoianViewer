@@ -79,6 +79,18 @@ namespace PlayerViewer.UI
                 );
             }
 
+            if (_romfs.Game == GameKind.Spiral)
+                Widgets.Checkbox(
+                    "Freckles",
+                    _scene.Freckles,
+                    v =>
+                    {
+                        _scene.Freckles = v;
+                        _scene.ApplySkinTone(_scene.SkinTone);
+                        SavePlayerConfig();
+                    }
+                );
+
             Widgets.Checkbox(
                 "Hair physics",
                 _scene.HairPhysicsEnabled,
@@ -95,12 +107,30 @@ namespace PlayerViewer.UI
             Widgets.SectionHeader("Gear");
             GearRow("Head", GearSlot.Head, _scene.CurrentHead, allowNone: false);
             GearRow("Clothes", GearSlot.Clothes, _scene.CurrentClothes);
+            if (_db.Glove.Count > 0)
+                GearRow("Gloves", GearSlot.Glove, _scene.CurrentGlove);
             GearRow("Bottom", GearSlot.Bottom, _scene.CurrentBottom);
-            GearRow("Shoes", GearSlot.Shoes, _scene.CurrentShoes);
+            if (_db.Shoes.Count > 0)
+                GearRow("Shoes", GearSlot.Shoes, _scene.CurrentShoes);
 
             Widgets.SectionHeader("Equipment");
             GearRow("Weapon", GearSlot.MainWeapon, _scene.CurrentWeapon, noneLabel: "Free");
             GearRow("Tank", GearSlot.Tank, _scene.CurrentTank);
+            if (_db.Special.Count > 0)
+                GearRow(
+                    "Special",
+                    GearSlot.Special,
+                    _scene.CurrentGadgets[(int)GadgetSlot.Special],
+                    apply: e => _scene.SetGadget(GadgetSlot.Special, e)
+                );
+            if (_db.Gadget.Count > 0)
+                foreach (var slot in new[] { GadgetSlot.L, GadgetSlot.R, GadgetSlot.A })
+                    GearRow(
+                        $"Gadget {slot}",
+                        GearSlot.Gadget,
+                        _scene.CurrentGadgets[(int)slot],
+                        apply: e => _scene.SetGadget(slot, e)
+                    );
 
             DrawLightingSection();
             DrawViewSection();
@@ -278,7 +308,7 @@ namespace PlayerViewer.UI
             ImGui.SetNextItemWidth(-70);
             if (Widgets.PathInput("##layeredpath", ref _layeredInput, 512))
             {
-                _config.LayeredFsPath = _layeredInput;
+                _config.Active.LayeredFsPath = _layeredInput;
                 _config.Save();
             }
             ImGui.SameLine();
@@ -291,15 +321,15 @@ namespace PlayerViewer.UI
                 if (!string.IsNullOrEmpty(folder))
                 {
                     _layeredInput = folder;
-                    _config.LayeredFsPath = folder;
+                    _config.Active.LayeredFsPath = folder;
                     _config.Save();
                 }
             }
 
             Widgets.Checkbox(
                 "Enable LayeredFS",
-                _config.UseLayeredFs,
-                v => _config.UseLayeredFs = v,
+                _config.Active.UseLayeredFs,
+                v => _config.Active.UseLayeredFs = v,
                 () =>
                 {
                     _config.Save();
@@ -351,7 +381,8 @@ namespace PlayerViewer.UI
             GearSlot slot,
             GearEntry current,
             bool allowNone = true,
-            string noneLabel = "Blank"
+            string noneLabel = "Blank",
+            Action<GearEntry> apply = null
         )
         {
             //The grid opens beside the panel, so it needs the panel's right edge.
@@ -386,7 +417,10 @@ namespace PlayerViewer.UI
                             );
                     if (changed)
                     {
-                        _scene.SetGear(slot, selected);
+                        if (apply != null)
+                            apply(selected);
+                        else
+                            _scene.SetGear(slot, selected);
                         SavePlayerConfig();
                     }
                 }
@@ -591,8 +625,13 @@ namespace PlayerViewer.UI
             _scene.CurrentShoes = null;
             _scene.CurrentTank = null;
             _scene.CurrentWeapon = null;
+            var defaults = Core.PlayerConfig.DefaultFor(_config.CurrentGame);
+            _scene.CurrentClothes = FindGear(_db.Clothes, defaults.Clothes);
+            _scene.CurrentTank = FindGear(_db.Tank, defaults.Tank);
+            RestoreRaidersGear(defaults);
             _scene.EyeColor = 0;
             _scene.SkinTone = 0;
+            _scene.Freckles = false;
             _scene.SetPlayerType(0);
 
             _teamColorIndex = 0;
@@ -608,10 +647,11 @@ namespace PlayerViewer.UI
         {
             if (_scene == null)
                 return;
-            var p = _config.Player;
+            var p = _config.Active.Player;
             p.PlayerType = _scene.PlayerType;
             p.EyeColor = _scene.EyeColor;
             p.SkinTone = _scene.SkinTone;
+            p.Freckles = _scene.Freckles;
             static void SaveGear(GearEntry e, out string rowId, out int variation)
             {
                 rowId = e?.RowId;
@@ -625,6 +665,8 @@ namespace PlayerViewer.UI
             SaveGear(_scene.CurrentShoes, out p.Shoes, out p.ShoesVariation);
             SaveGear(_scene.CurrentTank, out p.Tank, out p.TankVariation);
             SaveGear(_scene.CurrentWeapon, out p.Weapon, out p.WeaponVariation);
+            p.Glove = _scene.CurrentGlove?.RowId;
+            p.Gadgets = _scene.CurrentGadgets.Select(g => g?.RowId).ToArray();
             p.TeamColorIndex = _teamColorIndex;
             p.TeamIndex = _teamIndex;
             p.UseCustomTeamColor = _useCustomTeamColor;
@@ -639,22 +681,34 @@ namespace PlayerViewer.UI
             _config.Save();
         }
 
+        static GearEntry FindGear(List<GearEntry> list, string rowId, int variation = 0)
+        {
+            if (rowId == null)
+                return null;
+            return list.FirstOrDefault(x => x.RowId == rowId && x.Variation == variation)
+                ?? list.FirstOrDefault(x => x.RowId == rowId);
+        }
+
+        //The pieces only Raiders has, from a saved look.
+        void RestoreRaidersGear(Core.PlayerConfig p)
+        {
+            _scene.CurrentGlove = FindGear(_db.Glove, p.Glove);
+            for (int i = 0; i < _scene.CurrentGadgets.Length; i++)
+                _scene.CurrentGadgets[i] = FindGear(
+                    i == (int)GadgetSlot.Special ? _db.Special : _db.Gadget,
+                    p.Gadgets?.ElementAtOrDefault(i)
+                );
+        }
+
         void RestorePlayerConfig()
         {
-            var p = _config.Player;
+            var p = _config.Active.Player;
             if (p == null)
                 return;
 
-            GearEntry FindGear(List<GearEntry> list, string rowId, int variation)
-            {
-                if (rowId == null)
-                    return null;
-                return list.FirstOrDefault(x => x.RowId == rowId && x.Variation == variation)
-                    ?? list.FirstOrDefault(x => x.RowId == rowId);
-            }
-
             _scene.EyeColor = p.EyeColor;
             _scene.SkinTone = p.SkinTone;
+            _scene.Freckles = p.Freckles;
             _scene.CurrentHair = FindGear(_db.Hair, p.Hair, p.HairVariation);
             _scene.CurrentEyebrow = FindGear(_db.Eyebrow, p.Eyebrow, p.EyebrowVariation);
             _scene.CurrentHead = FindGear(_db.Head, p.Head, p.HeadVariation);
@@ -663,6 +717,7 @@ namespace PlayerViewer.UI
             _scene.CurrentShoes = FindGear(_db.Shoes, p.Shoes, p.ShoesVariation);
             _scene.CurrentTank = FindGear(_db.Tank, p.Tank, p.TankVariation);
             _scene.CurrentWeapon = FindGear(_db.MainWeapons, p.Weapon, p.WeaponVariation);
+            RestoreRaidersGear(p);
             _scene.SetPlayerType(p.PlayerType);
 
             _teamColorIndex = p.TeamColorIndex;

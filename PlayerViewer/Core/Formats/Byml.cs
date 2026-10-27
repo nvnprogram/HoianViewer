@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Text;
 
@@ -27,8 +28,37 @@ namespace PlayerViewer.Core.Formats
     }
 
     /// <summary>
-    /// Minimal little-endian BYML reader. Binary nodes come back as byte[] (0xA1) and
-    /// <see cref="BymlBinary"/> (0xA2).
+    /// A hash keyed by the hash of each name rather than the name (0x20, or 0x21 with
+    /// <see cref="Wide"/>). The keys are "#" and the hash in hex.
+    /// </summary>
+    public sealed class BymlKeyHash : Dictionary<string, object>
+    {
+        public bool Wide { get; }
+
+        public BymlKeyHash(bool wide, int capacity = 0)
+            : base(capacity)
+        {
+            Wide = wide;
+        }
+    }
+
+    /// <summary>A 16 byte value stored by offset (0x40).</summary>
+    public sealed class BymlValue128
+    {
+        public byte[] Bytes { get; }
+
+        public BymlValue128(byte[] bytes)
+        {
+            if (bytes.Length != 16)
+                throw new ArgumentException("A 0x40 value is 16 bytes", nameof(bytes));
+            Bytes = bytes;
+        }
+    }
+
+    /// <summary>
+    /// Minimal BYML reader for either byte order. Binary nodes come back as byte[] (0xA1) and
+    /// <see cref="BymlBinary"/> (0xA2), the hash keyed hashes as <see cref="BymlKeyHash"/>, the
+    /// 16 byte value as <see cref="BymlValue128"/>.
     /// </summary>
     public class Byml
     {
@@ -37,6 +67,7 @@ namespace PlayerViewer.Core.Formats
         public ushort Version { get; private set; }
 
         readonly byte[] _data;
+        readonly bool _bigEndian;
         string[] _hashKeys = Array.Empty<string>();
         string[] _strings = Array.Empty<string>();
 
@@ -44,10 +75,16 @@ namespace PlayerViewer.Core.Formats
         {
             _data = data;
 
-            if (data.Length < 16 || data[0] != 'Y' || data[1] != 'B')
-                throw new InvalidOperationException("Not a little-endian BYML file.");
+            if (
+                data.Length < 16
+                || !(data[0] == 'Y' && data[1] == 'B' || data[0] == 'B' && data[1] == 'Y')
+            )
+                throw new InvalidOperationException("Not a BYML file.");
+            _bigEndian = data[0] == 'B';
 
-            Version = BitConverter.ToUInt16(data, 2);
+            Version = _bigEndian
+                ? BinaryPrimitives.ReadUInt16BigEndian(data.AsSpan(2))
+                : BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(2));
             uint hashKeyTableOff = ReadU32(4);
             uint stringTableOff = ReadU32(8);
             uint rootOff = ReadU32(12);
@@ -61,10 +98,20 @@ namespace PlayerViewer.Core.Formats
                 Root = ReadNode(_data[rootOff], rootOff);
         }
 
-        uint ReadU32(int offset) => BitConverter.ToUInt32(_data, offset);
+        uint ReadU32(int offset) =>
+            _bigEndian
+                ? BinaryPrimitives.ReadUInt32BigEndian(_data.AsSpan(offset))
+                : BinaryPrimitives.ReadUInt32LittleEndian(_data.AsSpan(offset));
+
+        ulong ReadU64(int offset) =>
+            _bigEndian
+                ? BinaryPrimitives.ReadUInt64BigEndian(_data.AsSpan(offset))
+                : BinaryPrimitives.ReadUInt64LittleEndian(_data.AsSpan(offset));
 
         uint ReadU24(int offset) =>
-            (uint)(_data[offset] | (_data[offset + 1] << 8) | (_data[offset + 2] << 16));
+            _bigEndian
+                ? (uint)(_data[offset] << 16 | _data[offset + 1] << 8 | _data[offset + 2])
+                : (uint)(_data[offset] | (_data[offset + 1] << 8) | (_data[offset + 2] << 16));
 
         string[] ReadStringTable(uint offset)
         {
@@ -108,20 +155,31 @@ namespace PlayerViewer.Core.Formats
                     return ReadArray(valueOrOffset);
                 case 0xC1:
                     return ReadHash(valueOrOffset);
+                case 0x20:
+                    return ReadKeyHashHash(valueOrOffset);
+                case 0x21:
+                    return ReadKeyHash64Hash(valueOrOffset);
                 case 0xD0:
                     return ReadU32((int)valueOrOffset) != 0;
                 case 0xD1:
-                    return BitConverter.ToInt32(_data, (int)valueOrOffset);
+                    return (int)ReadU32((int)valueOrOffset);
                 case 0xD2:
-                    return BitConverter.ToSingle(_data, (int)valueOrOffset);
+                    return BitConverter.Int32BitsToSingle((int)ReadU32((int)valueOrOffset));
                 case 0xD3:
                     return ReadU32((int)valueOrOffset);
+                //The 64 bit values and the 16 byte one arrive here already at their data.
                 case 0xD4:
-                    return BitConverter.ToInt64(_data, (int)ReadU32((int)valueOrOffset));
+                    return (long)ReadU64((int)valueOrOffset);
                 case 0xD5:
-                    return BitConverter.ToUInt64(_data, (int)ReadU32((int)valueOrOffset));
+                    return ReadU64((int)valueOrOffset);
                 case 0xD6:
-                    return BitConverter.ToDouble(_data, (int)ReadU32((int)valueOrOffset));
+                    return BitConverter.Int64BitsToDouble((long)ReadU64((int)valueOrOffset));
+                case 0x40:
+                {
+                    var bytes = new byte[16];
+                    Array.Copy(_data, (int)valueOrOffset, bytes, 0, 16);
+                    return new BymlValue128(bytes);
+                }
                 case 0xFF:
                     return null;
                 default:
@@ -134,6 +192,8 @@ namespace PlayerViewer.Core.Formats
         {
             switch (type)
             {
+                case 0x20:
+                case 0x21:
                 case 0xA1:
                 case 0xA2:
                 case 0xC0:
@@ -141,6 +201,7 @@ namespace PlayerViewer.Core.Formats
                 case 0xD4:
                 case 0xD5:
                 case 0xD6:
+                case 0x40:
                     return ReadNode(type, ReadU32(slotOffset));
                 default:
                     return ReadNode(type, (uint)slotOffset);
@@ -171,6 +232,43 @@ namespace PlayerViewer.Core.Formats
             }
             return dict;
         }
+
+        /// <summary>
+        /// A hash keyed by the hash of each name (0x20): u32 hash and value per entry, then the
+        /// type bytes. Read with <see cref="HashKey"/> as the key.
+        /// </summary>
+        Dictionary<string, object> ReadKeyHashHash(uint offset)
+        {
+            uint count = ReadU24((int)offset + 1);
+            var dict = new BymlKeyHash(false, (int)count);
+            uint types = offset + 4 + count * 8;
+            for (uint i = 0; i < count; i++)
+            {
+                int entry = (int)(offset + 4 + i * 8);
+                dict[$"#{ReadU32(entry):x8}"] = ReadNodeIndirect(_data[types + i], entry + 4);
+            }
+            return dict;
+        }
+
+        /// <summary>
+        /// The 64 bit form of the hash keyed node (0x21): u64 hash and value per entry, then the
+        /// type bytes. Keys are the hash in hex.
+        /// </summary>
+        Dictionary<string, object> ReadKeyHash64Hash(uint offset)
+        {
+            uint count = ReadU24((int)offset + 1);
+            var dict = new BymlKeyHash(true, (int)count);
+            uint types = offset + 4 + count * 12;
+            for (uint i = 0; i < count; i++)
+            {
+                int entry = (int)(offset + 4 + i * 12);
+                dict[$"#{ReadU64(entry):x16}"] = ReadNodeIndirect(_data[types + i], entry + 8);
+            }
+            return dict;
+        }
+
+        /// <summary>The key a hash-keyed node files a name under.</summary>
+        public static string HashKey(string name) => $"#{Murmur3.Hash(name):x8}";
 
         #region typed access helpers
 

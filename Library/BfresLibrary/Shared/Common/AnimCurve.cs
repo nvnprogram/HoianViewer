@@ -32,6 +32,10 @@ namespace BfresLibrary
         private const ushort _flagsMaskFrameType = 0b00000000_00000011;
         private const ushort _flagsMaskKeyType = 0b00000000_00001100;
         private const ushort _flagsMaskCurveType = 0b00000000_01110000;
+        private const ushort _flagsValueKeys = 0x4000;
+        private const ushort _flagsSlopeQuantized = 0x0800;
+        private const ushort _flagsFrameScaled = 0x0400;
+        private const ushort _curveTypeStepFloat = 3 << 4;
 
         // ---- FIELDS -------------------------------------------------------------------------------------------------
 
@@ -138,6 +142,31 @@ namespace BfresLibrary
         /// </summary>
         public uint[] BooleanWords { get; set; } = new uint[0];
 
+        /// <summary>
+        /// The flags as the file stored them. A value keyed curve is converted on load to the
+        /// encoding of earlier files, so <see cref="Keys"/> and the type properties describe the
+        /// converted curve.
+        /// </summary>
+        public ushort SourceFlags { get; private set; }
+
+        /// <summary>Whether the file stored this curve as value keys.</summary>
+        public bool IsValueKeyed => (SourceFlags & _flagsValueKeys) != 0;
+
+        /// <summary>Whether the file stored this curve as Hermite values and slopes.</summary>
+        public bool IsHermite => IsValueKeyed && (SourceFlags & _flagsMaskCurveType) == 0;
+
+        /// <summary>
+        /// Whether the file stored this curve as a held float value per key, a type earlier files
+        /// lack. It loads as a linear curve with no slope.
+        /// </summary>
+        public bool IsStepFloat => IsValueKeyed && (SourceFlags & _flagsMaskCurveType) == _curveTypeStepFloat;
+
+        /// <summary>The decoded value at each key of a Hermite curve, null for other curves.</summary>
+        public float[] HermiteValues { get; set; }
+
+        /// <summary>The decoded slope per frame at each key of a Hermite curve.</summary>
+        public float[] HermiteSlopes { get; set; }
+
         private int ElementsPerKey
         {
             get
@@ -225,6 +254,12 @@ namespace BfresLibrary
                 Offset = loader.ReadSingle();
                 Delta = loader.ReadSingle();
                 int padding = loader.ReadInt32();
+                SourceFlags = _flags;
+                if ((_flags & _flagsValueKeys) != 0)
+                {
+                    LoadValueKeys(loader, numKey, FrameArrayOffset, KeyArrayOffset);
+                    return;
+                }
             }
             else
             {
@@ -327,6 +362,136 @@ namespace BfresLibrary
             }, (uint)KeyArrayOffset);
         }
 
+        private void LoadValueKeys(ResFileLoader loader, int numKey, long frameOffset, long keyOffset)
+        {
+            float frameScale = Scale;
+            float valueScale = Offset;
+            float valueOffset = Delta;
+            bool frameScaled = (_flags & _flagsFrameScaled) != 0;
+            Frames = new float[numKey];
+            using (loader.TemporarySeek(frameOffset, System.IO.SeekOrigin.Begin))
+            {
+                for (int i = 0; i < numKey; i++)
+                {
+                    switch (FrameType)
+                    {
+                        case AnimCurveFrameType.Single:
+                            Frames[i] = loader.ReadSingle();
+                            break;
+                        case AnimCurveFrameType.Decimal10x5:
+                            Frames[i] = frameScaled ? loader.ReadUInt16() * frameScale : loader.ReadInt16() / 32f;
+                            break;
+                        default:
+                            Frames[i] = frameScaled ? loader.ReadByte() * frameScale : loader.ReadByte();
+                            break;
+                    }
+                }
+            }
+
+            ushort curveType = (ushort)(_flags & _flagsMaskCurveType);
+            if (CurveType == AnimCurveType.StepBool)
+            {
+                int wordCount = (numKey + 31) / 32;
+                BooleanWords = loader.LoadCustom(() => loader.ReadUInt32s(wordCount), (uint)keyOffset);
+                KeyStepBoolData = new bool[numKey];
+                for (int i = 0; i < numKey; i++)
+                    KeyStepBoolData[i] = (BooleanWords[i >> 5] & (1u << (i & 31))) != 0;
+                Keys = new float[wordCount, 1];
+                for (int i = 0; i < wordCount; i++)
+                    Keys[i, 0] = BooleanWords[i];
+                FinishValueKeys(AnimCurveType.StepBool, 0);
+                return;
+            }
+
+            bool hermite = curveType == 0;
+            var values = new float[numKey];
+            var slopes = hermite ? new float[numKey] : null;
+            using (loader.TemporarySeek(keyOffset, System.IO.SeekOrigin.Begin))
+            {
+                float slopeScale = 0, slopeOffset = 0;
+                if (hermite && (_flags & _flagsSlopeQuantized) != 0)
+                {
+                    slopeScale = loader.ReadSingle();
+                    slopeOffset = loader.ReadSingle();
+                }
+                for (int i = 0; i < numKey; i++)
+                {
+                    values[i] = ReadQuantizedValue(loader, valueScale, valueOffset);
+                    if (hermite)
+                        slopes[i] = ReadQuantizedValue(loader, slopeScale, slopeOffset);
+                }
+            }
+
+            if (hermite)
+            {
+                HermiteValues = values;
+                HermiteSlopes = slopes;
+                // The rest of the library and the viewer read cubic coefficients over each segment.
+                Keys = new float[numKey, 4];
+                for (int i = 0; i < numKey; i++)
+                {
+                    float p0 = values[i];
+                    Keys[i, 0] = p0;
+                    if (i + 1 >= numKey)
+                        continue;
+                    float dt = Frames[i + 1] - Frames[i];
+                    if (dt <= 0)
+                        continue;
+                    float m0 = slopes[i] * dt;
+                    float p1 = values[i + 1];
+                    float m1 = slopes[i + 1] * dt;
+                    Keys[i, 1] = m0;
+                    Keys[i, 2] = 3 * (p1 - p0) - 2 * m0 - m1;
+                    Keys[i, 3] = 2 * (p0 - p1) + m0 + m1;
+                }
+                FinishValueKeys(AnimCurveType.Cubic, numKey > 0 ? values[numKey - 1] - values[0] : 0);
+            }
+            else if (CurveType == AnimCurveType.StepInt)
+            {
+                Keys = new float[numKey, 1];
+                for (int i = 0; i < numKey; i++)
+                    Keys[i, 0] = (float)System.Math.Round(values[i]);
+                FinishValueKeys(AnimCurveType.StepInt, 0);
+            }
+            else
+            {
+                // A linear key holds its value and the change to the next; a held value has none.
+                bool linear = curveType == (ushort)AnimCurveType.Linear;
+                Keys = new float[numKey, 2];
+                for (int i = 0; i < numKey; i++)
+                {
+                    Keys[i, 0] = values[i];
+                    if (linear && i + 1 < numKey)
+                        Keys[i, 1] = values[i + 1] - values[i];
+                }
+                FinishValueKeys(AnimCurveType.Linear, numKey > 0 ? values[numKey - 1] - values[0] : 0);
+            }
+        }
+
+        private float ReadQuantizedValue(ResFileLoader loader, float scale, float offset)
+        {
+            switch (KeyType)
+            {
+                case AnimCurveKeyType.Single:
+                    return loader.ReadSingle();
+                case AnimCurveKeyType.Int16:
+                    return loader.ReadUInt16() * scale + offset;
+                default:
+                    return loader.ReadByte() * scale + offset;
+            }
+        }
+
+        private void FinishValueKeys(AnimCurveType type, float delta)
+        {
+            _flags = (ushort)(_flags & ~(_flagsValueKeys | _flagsSlopeQuantized | _flagsFrameScaled));
+            FrameType = AnimCurveFrameType.Single;
+            KeyType = AnimCurveKeyType.Single;
+            CurveType = type;
+            Scale = 1;
+            Offset = 0;
+            Delta = delta;
+        }
+
         internal long PosFrameOffset;
         internal long PosKeyDataOffset;
         internal bool SaveEntryBlock = true;
@@ -337,8 +502,22 @@ namespace BfresLibrary
 
             if (saver.IsSwitch)
             {
+                _valueKeysOut = UsesValueKeys(saver.ResFile) ? EncodeValueKeys() : null;
                 PosFrameOffset = saver.SaveOffset();
                 PosKeyDataOffset = saver.SaveOffset();
+                if (_valueKeysOut != null)
+                {
+                    saver.Write(_valueKeysOut.Flags);
+                    saver.Write((ushort)_valueKeysOut.Frames.Length);
+                    saver.Write(AnimDataOffset);
+                    saver.Write(StartFrame);
+                    saver.Write(EndFrame);
+                    saver.Write(1f);
+                    saver.Write(1f);
+                    saver.Write(0f);
+                    saver.Write(0);
+                    return;
+                }
                 saver.Write(_flags);
                 saver.Write((ushort)Frames.Length);
                 saver.Write(AnimDataOffset);
@@ -401,8 +580,126 @@ namespace BfresLibrary
                 this.Keys[i, 0] = words[i];
         }
 
+        private sealed class ValueKeyCurve
+        {
+            internal ushort Flags;
+            internal float[] Frames;
+            internal float[] Values;
+            internal uint[] Words;
+        }
+
+        private ValueKeyCurve _valueKeysOut;
+
+        private static bool UsesValueKeys(ResFile file) => file.VersionMajor == 10 && file.VersionMinor >= 3;
+
+        private ValueKeyCurve EncodeValueKeys()
+        {
+            int n = Frames.Length;
+            ushort wrap = (ushort)(_flags & 0x3300);
+            var frames = new List<float>();
+            var values = new List<float>();
+            switch (CurveType)
+            {
+                case AnimCurveType.Cubic:
+                    for (int i = 0; i < n; i++)
+                    {
+                        float f = Frames[i];
+                        float outValue = Keys[i, 0] * Scale + Offset.Single;
+                        float outDt = i + 1 < n ? Frames[i + 1] - f : 0;
+                        float outSlope = outDt > 0 ? Keys[i, 1] * Scale / outDt : 0;
+                        // A key read from a pair at one frame already holds the in side, so it is not doubled again.
+                        if (i == n - 1 && i > 0 && f <= Frames[i - 1])
+                            outSlope = values[values.Count - 1];
+                        if (i > 0 && f > Frames[i - 1])
+                        {
+                            float inDt = f - Frames[i - 1];
+                            float inValue = (Keys[i - 1, 0] + Keys[i - 1, 1] + Keys[i - 1, 2] + Keys[i - 1, 3]) * Scale + Offset.Single;
+                            float inSlope = (Keys[i - 1, 1] + 2 * Keys[i - 1, 2] + 3 * Keys[i - 1, 3]) * Scale / inDt;
+                            if (i == n - 1 || outDt <= 0)
+                                outSlope = inSlope;
+                            // A slope change counts by how far it can move the value over the longer
+                            // neighbouring segment, and both within the rounding of a summed segment.
+                            float span = 0.25f * System.Math.Max(inDt, outDt);
+                            float magnitude = System.Math.Max(System.Math.Abs(Keys[i - 1, 0] * Scale + Offset.Single), System.Math.Max(System.Math.Abs(inValue), System.Math.Abs(outValue)));
+                            if (!Near(inValue, outValue, magnitude) || !Near(inSlope * span, outSlope * span, magnitude))
+                            {
+                                frames.Add(f);
+                                values.Add(inValue);
+                                values.Add(inSlope);
+                            }
+                        }
+                        frames.Add(f);
+                        values.Add(outValue);
+                        values.Add(outSlope);
+                    }
+                    break;
+                case AnimCurveType.Linear:
+                    // A held float read from a 10.3 file stays one, a value per key.
+                    if (IsStepFloat)
+                    {
+                        for (int i = 0; i < n; i++)
+                        {
+                            frames.Add(Frames[i]);
+                            values.Add(Keys[i, 0] * Scale + Offset.Single);
+                        }
+                        return new ValueKeyCurve
+                        {
+                            Flags = (ushort)(_flagsValueKeys | wrap | _curveTypeStepFloat),
+                            Frames = frames.ToArray(),
+                            Values = values.ToArray(),
+                        };
+                    }
+                    for (int i = 0; i < n; i++)
+                    {
+                        float outValue = Keys[i, 0] * Scale + Offset.Single;
+                        if (i > 0)
+                        {
+                            float inValue = (Keys[i - 1, 0] + Keys[i - 1, 1]) * Scale + Offset.Single;
+                            if (!Near(inValue, outValue))
+                            {
+                                frames.Add(Frames[i]);
+                                values.Add(inValue);
+                            }
+                        }
+                        frames.Add(Frames[i]);
+                        values.Add(outValue);
+                    }
+                    break;
+                case AnimCurveType.StepInt:
+                    for (int i = 0; i < n; i++)
+                    {
+                        frames.Add(Frames[i]);
+                        values.Add(Keys[i, 0] + Offset.Int32);
+                    }
+                    break;
+                case AnimCurveType.StepBool:
+                    return new ValueKeyCurve
+                    {
+                        Flags = (ushort)(_flagsValueKeys | wrap | (ushort)AnimCurveType.StepBool),
+                        Frames = (float[])Frames.Clone(),
+                        Words = BooleanWords ?? new uint[0],
+                    };
+                default:
+                    return null;
+            }
+            return new ValueKeyCurve
+            {
+                Flags = (ushort)(_flagsValueKeys | wrap | (ushort)CurveType),
+                Frames = frames.ToArray(),
+                Values = values.ToArray(),
+            };
+        }
+
+        private static bool Near(float a, float b, float magnitude = 0) =>
+            System.Math.Abs(a - b) <= 1e-5f * System.Math.Max(System.Math.Max(1f, magnitude), System.Math.Max(System.Math.Abs(a), System.Math.Abs(b)));
+
         public void SaveFrames(ResFileSaver saver)
         {
+            if (_valueKeysOut != null)
+            {
+                saver.Write(_valueKeysOut.Frames);
+                return;
+            }
             switch (FrameType)
             {
                 case AnimCurveFrameType.Single:
@@ -425,6 +722,15 @@ namespace BfresLibrary
 
         public void SaveKeyData(ResFileSaver saver)
         {
+            if (_valueKeysOut != null)
+            {
+                if (_valueKeysOut.Words != null)
+                    foreach (uint word in _valueKeysOut.Words)
+                        saver.Write(word);
+                else
+                    saver.Write(_valueKeysOut.Values);
+                return;
+            }
             switch (KeyType)
             {
                 case AnimCurveKeyType.Single:

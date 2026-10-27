@@ -104,6 +104,23 @@ namespace BfshaLibrary
         public UniformBlockDict UniformBlocks { get; private set; }
 
         public int ProgramCount => _inner.Programs.Count;
+
+        /// <summary>The storage buffer names, in the order of each program's locations.</summary>
+        public IReadOnlyList<string> StorageBuffers
+        {
+            get
+            {
+                if (_storageBuffers == null)
+                {
+                    var names = new string[_inner.StorageBuffers.Count];
+                    for (int i = 0; i < names.Length; i++)
+                        names[i] = _inner.StorageBuffers.GetKey(i);
+                    _storageBuffers = names;
+                }
+                return _storageBuffers;
+            }
+        }
+        string[] _storageBuffers;
         public int[] KeyTable => _inner.KeyTable;
         public int StaticKeyLength => _inner.StaticKeyLength;
         public int DynamicKeyLength => _inner.DynamicKeyLength;
@@ -322,6 +339,9 @@ namespace BfshaLibrary
         public byte Index => _inner.Index;
         public BlockType Type => (BlockType)_inner.Type;
 
+        /// <summary>The block's default contents, which the archive carries for the material block only.</summary>
+        public byte[] DefaultBuffer => _inner.DefaultBuffer;
+
         public UniformDict Uniforms { get; private set; }
 
         public enum BlockType
@@ -414,6 +434,23 @@ namespace BfshaLibrary
                     {
                         VertexLocation = _inner.SamplerIndices[i].VertexLocation,
                         FragmentLocation = _inner.SamplerIndices[i].FragmentLocation
+                    };
+                }
+                return result;
+            }
+        }
+
+        public LocationInfo[] StorageBufferLocations
+        {
+            get
+            {
+                var result = new LocationInfo[_inner.StorageBufferIndices.Count];
+                for (int i = 0; i < result.Length; i++)
+                {
+                    result[i] = new LocationInfo
+                    {
+                        VertexLocation = _inner.StorageBufferIndices[i].VertexLocation,
+                        FragmentLocation = _inner.StorageBufferIndices[i].FragmentLocation
                     };
                 }
                 return result;

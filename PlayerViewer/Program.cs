@@ -45,9 +45,18 @@ namespace PlayerViewer
 
             Directory.SetCurrentDirectory(AppContext.BaseDirectory);
             BfresEditor.TegraShaderDecoder.CacheDir = AppPaths.ShaderCacheDir;
-            ShaderBundler.BundleStamp.Codegen = ShaderBundler.UberspecRunner.QueryCodegen(
-                ShaderBundler.UberspecRunner.FindExecutable(AppContext.BaseDirectory)
-            );
+            string specialiser = ShaderBundler.UberspecRunner.FindExecutable(AppContext.BaseDirectory);
+            foreach (
+                var platform in new[]
+                {
+                    ShaderBundler.SplicePlatform.Nvn,
+                    ShaderBundler.SplicePlatform.Nvn2,
+                }
+            )
+                platform.Codegen = ShaderBundler.UberspecRunner.QueryCodegen(
+                    specialiser,
+                    platform.CodegenCommand
+                );
 
             RenderResourceCreator.CreateTextureInstance += (sender, e) =>
             {

@@ -173,11 +173,13 @@ namespace PlayerViewer.Env
                 if (shape == null)
                     return null;
                 var material = model.Materials[shape.MaterialIndex];
-                if (
-                    material.TextureRefs.Count == 0
-                    || !res.Textures.TryGetValue(material.TextureRefs[0].Name, out var tex)
-                    || tex is not BfresLibrary.Switch.SwitchTexture switchTex
-                )
+                if (material.TextureRefs.Count == 0)
+                    return null;
+                string texName = material.TextureRefs[0].Name;
+                var switchTex = res.Textures.TryGetValue(texName, out var tex)
+                    ? tex as BfresLibrary.Switch.SwitchTexture
+                    : ExternalTexture(romfs, res, modelName, texName);
+                if (switchTex == null)
                     return null;
 
                 var texture = new BfresEditor.BntxTexture(switchTex.BntxFile, switchTex.Texture);
@@ -244,6 +246,20 @@ namespace PlayerViewer.Env
                 Console.WriteLine($"[Env] Sky model {modelName} unreadable: {ex.Message}");
                 return null;
             }
+        }
+
+        //Raiders keeps a model's textures in Tex, named by the model file's table.
+        static BfresLibrary.Switch.SwitchTexture ExternalTexture(
+            Romfs romfs,
+            ResFile res,
+            string modelName,
+            string texName
+        )
+        {
+            var stems = Textures.ExternalTextures.Stems(res, romfs.ArchiveOf(modelName));
+            if (stems == null || !stems.TryGetValue(texName, out var stem))
+                return null;
+            return Textures.ExternalTextures.Read(stem, texName, romfs.ReadFile);
         }
 
         //Splits a sky triangle into small ones, each weighted by its solid angle. Only the upper
@@ -332,7 +348,7 @@ namespace PlayerViewer.Env
             return MathF.Abs(2 * MathF.Atan2(num, den));
         }
 
-        static void Accumulate(Vector3[] sh, Vector3 d, Vector3 weighted)
+        internal static void Accumulate(Vector3[] sh, Vector3 d, Vector3 weighted)
         {
             sh[0] += weighted * 0.282095f;
             sh[1] += weighted * (0.488603f * d.Y);
@@ -349,7 +365,7 @@ namespace PlayerViewer.Env
         /// Radiance SH to the irradiance over pi form the shaders evaluate:
         /// dot(row0..2, (n, 1)) + dot(row3..5, (xy, yz, zz, xz)) + row6 * (x*x - y*y).
         /// </summary>
-        static Vector4[] Pack(Vector3[] sh)
+        internal static Vector4[] Pack(Vector3[] sh)
         {
             const float a1 = 2f / 3,
                 a2 = 0.25f;

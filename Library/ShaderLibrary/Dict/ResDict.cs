@@ -22,25 +22,35 @@ namespace ShaderLibrary
         //Cached key list/index map. Indexed access previously enumerated Keys via
         //ElementAt which made lookups O(n) (and callers looping over entries O(n^2)).
         //The cache is invalidated by count; dictionaries here are built once on load.
+        //It is built whole and then published, so threads reading one model at once are safe.
         private string[] _keyCache;
         private Dictionary<string, int> _indexCache;
         private int _cacheCount = -1;
+        private readonly object _cacheLock = new object();
 
         private void EnsureKeyCache()
         {
-            if (_cacheCount == Count)
+            if (System.Threading.Volatile.Read(ref _cacheCount) == Count)
                 return;
 
-            _keyCache = new string[Count];
-            _indexCache = new Dictionary<string, int>(Count);
-            int i = 0;
-            foreach (var key in Keys)
+            lock (_cacheLock)
             {
-                _keyCache[i] = key;
-                _indexCache[key] = i;
-                i++;
+                if (_cacheCount == Count)
+                    return;
+
+                var keys = new string[Count];
+                var index = new Dictionary<string, int>(Count);
+                int i = 0;
+                foreach (var key in Keys)
+                {
+                    keys[i] = key;
+                    index[key] = i;
+                    i++;
+                }
+                _keyCache = keys;
+                _indexCache = index;
+                System.Threading.Volatile.Write(ref _cacheCount, keys.Length);
             }
-            _cacheCount = Count;
         }
 
         public T this[int index]

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.IO.Hashing;
 using System.Text;
@@ -10,10 +11,10 @@ namespace ShaderBundler
     /// made from. A fragment splice costs about 3s seconds, so a hit is the difference between a
     /// responsive editor and an unusable one.
     ///
-    /// Same scheme as the GLSL shader cache: a version, a version.txt beside the entries,
-    /// and a purge of the whole directory on a mismatch.
+    /// One root holds a folder per game, and a version.txt at the root with a line per game.
+    /// A game whose line does not match has its folder purged; the other game keeps its own.
     ///
-    /// Preview splices live in a `preview` sub-directory of the same cache. Same keys, so a
+    /// Preview splices live in a `preview` sub-directory of the game's folder. Same keys, so a
     /// pair is addressed by (key, preview) and nothing that walks the full splices can pick one
     /// up: a preview program has had none of the specialiser's acceptance guards run over it
     /// and must never reach a saved archive. The sub-directory is inside so one version purge
@@ -21,17 +22,28 @@ namespace ShaderBundler
     /// </summary>
     public sealed class UberSliceCache
     {
-        public const int FormatVersion = 2;
+        public const int FormatVersion = 3;
 
+        /// <summary>The root folder's name.</summary>
+        public const string RootName = "UberSliceCache";
+
+        //One lock for every instance, since the games share the root's version.txt.
+        static readonly object RootLock = new();
+
+        readonly string _root;
+        readonly string _name;
         readonly string _dir;
         readonly string _previewDir;
         readonly string _version;
         bool _versionChecked;
-        readonly object _lock = new();
 
-        public UberSliceCache(string directory, int codegenVersion)
+        public UberSliceCache(string root, string name, int codegenVersion)
         {
-            _dir = directory ?? throw new ArgumentNullException(nameof(directory));
+            _root = Path.TrimEndingDirectorySeparator(
+                root ?? throw new ArgumentNullException(nameof(root))
+            );
+            _name = name ?? throw new ArgumentNullException(nameof(name));
+            _dir = Path.Combine(_root, _name);
             _previewDir = Path.Combine(_dir, "preview");
             _version = $"{FormatVersion}.{codegenVersion}";
         }
@@ -124,38 +136,86 @@ namespace ShaderBundler
 
         void EnsureVersion()
         {
-            lock (_lock)
+            lock (RootLock)
             {
                 if (_versionChecked)
                     return;
                 _versionChecked = true;
 
-                string versionPath = Path.Combine(_dir, "version.txt");
-                bool fresh = !System.IO.Directory.Exists(_dir);
-                System.IO.Directory.CreateDirectory(_previewDir);
-                if (fresh)
+                string versionPath = Path.Combine(_root, "version.txt");
+                var versions = ReadVersions(versionPath);
+                if (versions == null)
                 {
-                    File.WriteAllText(versionPath, _version);
-                    return;
+                    ClearLegacy();
+                    versions = new Dictionary<string, string>();
                 }
 
-                string existing = File.Exists(versionPath)
-                    ? File.ReadAllText(versionPath).Trim()
-                    : "";
-                if (existing == _version)
+                bool fresh = !System.IO.Directory.Exists(_dir);
+                System.IO.Directory.CreateDirectory(_previewDir);
+                if (!fresh && versions.TryGetValue(_name, out var existing) && existing == _version)
                     return;
 
                 //Both directories, or a purge would leave the preview splices of the previous
                 //uberspec behind and they are the ones drawn first.
-                foreach (var dir in new[] { _dir, _previewDir })
+                if (!fresh)
+                    DeleteFiles(_dir, _previewDir);
+                versions[_name] = _version;
+                var lines = new List<string>();
+                foreach (var entry in versions)
+                    lines.Add($"{entry.Key} {entry.Value}");
+                File.WriteAllLines(versionPath, lines);
+            }
+        }
+
+        //Null when the file is missing or in the single version form of the old layout.
+        static Dictionary<string, string> ReadVersions(string path)
+        {
+            if (!File.Exists(path))
+                return null;
+            var versions = new Dictionary<string, string>();
+            foreach (var line in File.ReadAllLines(path))
+            {
+                if (line.Trim().Length == 0)
+                    continue;
+                var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length != 2)
+                    return null;
+                versions[parts[0]] = parts[1];
+            }
+            return versions;
+        }
+
+        //Before format 3 the entries sat loose in the root.
+        void ClearLegacy()
+        {
+            string preview = Path.Combine(_root, "preview");
+            DeleteFiles(_root, preview);
+            TryDeleteDirectory(preview);
+        }
+
+        static void DeleteFiles(params string[] dirs)
+        {
+            foreach (var dir in dirs)
+            {
+                if (!System.IO.Directory.Exists(dir))
+                    continue;
                 foreach (var f in System.IO.Directory.GetFiles(dir))
                     try
                     {
                         File.Delete(f);
                     }
                     catch { }
-                File.WriteAllText(versionPath, _version);
             }
+        }
+
+        static void TryDeleteDirectory(string dir)
+        {
+            try
+            {
+                if (System.IO.Directory.Exists(dir))
+                    System.IO.Directory.Delete(dir, true);
+            }
+            catch { }
         }
     }
 }

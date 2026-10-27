@@ -17,6 +17,9 @@ namespace PlayerViewer.Core
         Tank,
         MainWeapon,
         SpecialWeapon,
+        Glove,
+        Gadget,
+        Special, //Raiders: the special a tank carries
     }
 
     /// <summary>One selectable entry (gear piece, hair, weapon, ...).</summary>
@@ -36,6 +39,13 @@ namespace PlayerViewer.Core
 
         public string LocalizedName; //The game's name in the chosen language, null without one
         public string IconRowId; //Row whose icon stands in when this one has none, else null
+
+        public string NameKey; //Message label of the name when it is not derived from the row id
+        public string ModelName; //The model, for rows that name it directly
+        public string Style = ""; //Raiders tank style a tank or gadget belongs to
+        public string GloveModel; //Raiders clothes: the gloves they come with
+        public string VariationAnim; //Raiders: the material anim that dresses a shared model
+        public string ShowBone; //Raiders special: the bone group of the special tank it shows
 
         /// <summary>The localized name when there is one, else the row id.</summary>
         public string Name => LocalizedName ?? RowId;
@@ -71,7 +81,7 @@ namespace PlayerViewer.Core
     /// <summary>
     /// Parsed RSDB tables + model name resolution through actor packs.
     /// </summary>
-    public class GameDatabase
+    public partial class GameDatabase
     {
         public Romfs Romfs { get; }
 
@@ -85,6 +95,8 @@ namespace PlayerViewer.Core
         public List<GearEntry> Tank = new();
         public List<GearEntry> MainWeapons = new();
         public List<GearEntry> SpecialWeapons = new();
+        public List<GearEntry> Glove = new();
+        public List<GearEntry> Gadget = new();
         public List<TeamColorSet> TeamColors = new();
 
         /// <summary>TeamColorOffset rows by name, or null when the romfs has no table.</summary>
@@ -114,16 +126,56 @@ namespace PlayerViewer.Core
                 GearSlot.Tank => Tank,
                 GearSlot.MainWeapon => MainWeapons,
                 GearSlot.SpecialWeapon => SpecialWeapons,
+                GearSlot.Glove => Glove,
+                GearSlot.Gadget => Gadget,
+                GearSlot.Special => Special,
                 _ => new List<GearEntry>(),
             };
 
+        /// <summary>A game's own load steps, each run after the shared table it follows.</summary>
+        sealed class LoadSteps
+        {
+            public Action AfterHead,
+                AfterHair,
+                AfterTank,
+                AfterWeapons;
+        }
+
+        //The tables both games have, in load order.
         void Load()
         {
+            var steps = Romfs.Game == GameKind.Spiral ? SpiralSteps() : ThunderSteps();
             LoadGearTable("GearInfoHead", GearSlot.Head, Head, HeadRows);
-            //Hed_INV000 ("INVISIBLE") is the game's real no-headgear: it renders
-            //nothing but still carries the default hair-arrange presets (e.g.
-            //Blitz_SQD004_0 collapsing SQD004's extra curl shells). It replaces the
-            //old "Blank" option, so float it to the top as the default head.
+            steps.AfterHead?.Invoke();
+            LoadGearTable("GearInfoClothes", GearSlot.Clothes, Clothes, ClothesRows);
+            LoadGearTable("GearInfoShoes", GearSlot.Shoes, Shoes, ShoesRows);
+            LoadSimpleTable("HairInfo", GearSlot.Hair, Hair);
+            steps.AfterHair?.Invoke();
+            LoadSimpleTable("EyebrowInfo", GearSlot.Eyebrow, Eyebrow);
+            LoadGearTable("BottomInfo", GearSlot.Bottom, Bottom, BottomRows);
+            LoadSimpleTable("TankInfo", GearSlot.Tank, Tank);
+            steps.AfterTank?.Invoke();
+            LoadWeaponTable("WeaponInfoMain", GearSlot.MainWeapon, MainWeapons);
+            steps.AfterWeapons?.Invoke();
+            LoadTeamColors();
+            LoadTeamColorOffsets();
+        }
+
+        LoadSteps ThunderSteps() =>
+            new()
+            {
+                AfterHead = FloatInvisibleHead,
+                AfterHair = LoadHairTags,
+                AfterWeapons = () =>
+                    LoadWeaponTable("WeaponInfoSpecial", GearSlot.SpecialWeapon, SpecialWeapons),
+            };
+
+        //Hed_INV000 ("INVISIBLE") is the game's real no-headgear: it renders
+        //nothing but still carries the default hair-arrange presets (e.g.
+        //Blitz_SQD004_0 collapsing SQD004's extra curl shells). It replaces the
+        //old "Blank" option, so float it to the top as the default head.
+        void FloatInvisibleHead()
+        {
             int inv = Head.FindIndex(x => x.RowId == "Hed_INV000");
             if (inv > 0)
             {
@@ -131,17 +183,6 @@ namespace PlayerViewer.Core
                 Head.RemoveAt(inv);
                 Head.Insert(0, entry);
             }
-            LoadGearTable("GearInfoClothes", GearSlot.Clothes, Clothes, ClothesRows);
-            LoadGearTable("GearInfoShoes", GearSlot.Shoes, Shoes, ShoesRows);
-            LoadSimpleTable("HairInfo", GearSlot.Hair, Hair);
-            LoadHairTags();
-            LoadSimpleTable("EyebrowInfo", GearSlot.Eyebrow, Eyebrow);
-            LoadGearTable("BottomInfo", GearSlot.Bottom, Bottom, BottomRows);
-            LoadSimpleTable("TankInfo", GearSlot.Tank, Tank);
-            LoadWeaponTable("WeaponInfoMain", GearSlot.MainWeapon, MainWeapons);
-            LoadWeaponTable("WeaponInfoSpecial", GearSlot.SpecialWeapon, SpecialWeapons);
-            LoadTeamColors();
-            LoadTeamColorOffsets();
         }
 
         List<object> ReadTable(string table)
@@ -317,9 +358,23 @@ namespace PlayerViewer.Core
                 if (dot >= 0)
                     name = name.Substring(0, dot);
 
-                System.Numerics.Vector3 ReadColor(string key)
+                //Splatoon 3 keys each team's fields by prefix, AlphaTeamColor; Raiders nests them,
+                //Alpha.TeamColor, and Neutral is a team of its own.
+                bool nested = Byml.AsHash(row.GetValueOrDefault("Alpha")) != null;
+                Dictionary<string, object> Team(string team) =>
+                    nested ? Byml.AsHash(row.GetValueOrDefault(team)) : row;
+                string Key(string team, string field) => nested ? field : team + field;
+
+                System.Numerics.Vector3 ReadColor(string team)
                 {
-                    var c = Byml.AsHash(row.GetValueOrDefault(key));
+                    var c = Byml.AsHash(
+                        Team(team)
+                            ?.GetValueOrDefault(
+                                nested ? "TeamColor"
+                                : team == "Neutral" ? "NeutralColor"
+                                : team + "TeamColor"
+                            )
+                    );
                     return c == null
                         ? System.Numerics.Vector3.Zero
                         : new System.Numerics.Vector3(
@@ -335,16 +390,19 @@ namespace PlayerViewer.Core
                 {
                     if (!Byml.GetBool(row, "HueOffsetEnable"))
                         return default;
-                    if (Byml.GetBool(row, team + "HueOffsetDetailEnable"))
+                    var t = Team(team);
+                    if (t == null)
+                        return default;
+                    if (Byml.GetBool(t, Key(team, "HueOffsetDetailEnable")))
                         return new BfresEditor.TeamColorVariants.HueOffset(
                             true,
                             0f,
-                            Byml.GetFloat(row, team + "HueOffsetDetailBright"),
-                            Byml.GetFloat(row, team + "HueOffsetDetailDark")
+                            Byml.GetFloat(t, Key(team, "HueOffsetDetailBright")),
+                            Byml.GetFloat(t, Key(team, "HueOffsetDetailDark"))
                         );
                     return new BfresEditor.TeamColorVariants.HueOffset(
                         false,
-                        Byml.GetFloat(row, team + "HueOffset"),
+                        Byml.GetFloat(t, Key(team, "HueOffset")),
                         0f,
                         0f
                     );
@@ -354,10 +412,10 @@ namespace PlayerViewer.Core
                     new TeamColorSet
                     {
                         Name = name,
-                        Alpha = ReadColor("AlphaTeamColor"),
-                        Bravo = ReadColor("BravoTeamColor"),
-                        Charlie = ReadColor("CharlieTeamColor"),
-                        Neutral = ReadColor("NeutralColor"),
+                        Alpha = ReadColor("Alpha"),
+                        Bravo = ReadColor("Bravo"),
+                        Charlie = ReadColor("Charlie"),
+                        Neutral = ReadColor("Neutral"),
                         Hue = new[] { ReadHue("Alpha"), ReadHue("Bravo"), ReadHue("Charlie") },
                     }
                 );
@@ -423,10 +481,13 @@ namespace PlayerViewer.Core
                 string modelInfo = pack.FindFile(x => x.StartsWith("Component/ModelInfo/"));
                 if (modelInfo != null)
                 {
-                    var byml = new Byml(pack.GetFile(modelInfo));
-                    string fmdb = Byml.GetString(Byml.AsHash(byml.Root), "Fmdb");
+                    var info = Byml.AsHash(new Byml(pack.GetFile(modelInfo)).Root);
+                    string fmdb = Byml.GetString(info, "Fmdb");
                     if (!string.IsNullOrEmpty(fmdb))
                         result = ParseFmdb(fmdb).file;
+                    //Raiders names the model itself, which the romfs finds in its archive.
+                    else if (Byml.GetString(info, "FmdbName") is { Length: > 0 } name)
+                        result = name;
                 }
             }
 
@@ -489,10 +550,12 @@ namespace PlayerViewer.Core
                 string modelInfo = current.FindFile(x => x.StartsWith("Component/ModelInfo/"));
                 if (modelInfo != null && main.Item1 == null)
                 {
-                    var byml = new Byml(current.GetFile(modelInfo));
-                    string fmdb = Byml.GetString(Byml.AsHash(byml.Root), "Fmdb");
+                    var info = Byml.AsHash(new Byml(current.GetFile(modelInfo)).Root);
+                    string fmdb = Byml.GetString(info, "Fmdb");
                     if (!string.IsNullOrEmpty(fmdb))
                         main = ParseFmdb(fmdb);
+                    else if (Byml.GetString(info, "FmdbName") is { Length: > 0 } name)
+                        main = (name, name);
                 }
 
                 if (main.Item1 != null && left.Item1 != null)
@@ -530,6 +593,14 @@ namespace PlayerViewer.Core
                 left = (null, null);
             }
 
+            //A Raiders file holds one model, found by its own name.
+            if (Romfs.Game == GameKind.Spiral)
+            {
+                if (main.Item2 != null)
+                    main = (main.Item2, main.Item2);
+                if (left.Item2 != null)
+                    left = (left.Item2, left.Item2);
+            }
             return (main, left);
         }
 

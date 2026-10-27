@@ -31,6 +31,8 @@ namespace PlayerViewer.Shaders
         readonly HashSet<(VariationCell Cell, bool Preview)> _pendingCells = new();
         string[] _demandKeys = Array.Empty<string>();
 
+        readonly Dictionary<string, string> _failures = new(StringComparer.Ordinal);
+
         //A grid is a few ms to build and a model can carry a couple of hundred, so the sweep
         //that follows the splicer being switched on is spread over frames.
         const int GridsPerFrame = 2;
@@ -58,6 +60,23 @@ namespace PlayerViewer.Shaders
         public int SplicesDone { get; private set; }
         public int SplicesFailed { get; private set; }
 
+        /// <summary>Whether a material the shipped programs do not serve is spliced with
+        /// stand-ins for what the ubershader lacks. A change rebuilds every grid.</summary>
+        public bool Approximate
+        {
+            get => _approximate;
+            set
+            {
+                if (_approximate == value)
+                    return;
+                _approximate = value;
+                foreach (var material in _variations.Keys)
+                    _dirty.Add(material);
+            }
+        }
+
+        bool _approximate = true;
+
         public bool Ready => Uber != null && Uber.State == UberState.Ready;
         public bool Loading => Uber != null && Uber.State == UberState.Loading;
 
@@ -80,6 +99,9 @@ namespace PlayerViewer.Shaders
         /// </summary>
         public void Reset()
         {
+            //Before the preview hands the materials back, so they resolve as edited.
+            foreach (var material in _variations.Keys)
+                material.DrawnMaterial = null;
             Preview.Reset(_models());
             _variations.Clear();
             _dirty.Clear();
@@ -97,6 +119,7 @@ namespace PlayerViewer.Shaders
             Scheduler?.Dispose();
             Scheduler = null;
             Uber = null;
+            _failures.Clear();
         }
 
         /// <summary>An edit happened; the grid is rebuilt on the next pull. held means the
@@ -132,6 +155,9 @@ namespace PlayerViewer.Shaders
             return v;
         }
 
+        /// <summary>Every grid built so far.</summary>
+        public IEnumerable<MaterialVariations> Grids => _variations.Values;
+
         public bool TryGet(FMAT material, out MaterialVariations v)
         {
             v = null;
@@ -156,11 +182,29 @@ namespace PlayerViewer.Shaders
                 if (uber == null)
                     v.RebuildExistence(_weights(v.Material));
                 else
-                    v.Rebuild(uber, _weights(v.Material));
+                    v.Rebuild(uber, _weights(v.Material), Approximate);
             }
             catch (Exception ex)
             {
                 v.Fail(ex.Message);
+            }
+            if (v.ExistenceOnly)
+                return;
+            foreach (var cell in v.Cells)
+            {
+                if (
+                    cell.State == CellState.None
+                    && _failures.TryGetValue(cell.Key.Job(false), out string failure)
+                )
+                {
+                    cell.State = CellState.Failed;
+                    cell.Failure = failure;
+                }
+                if (
+                    cell.PreviewState == CellState.None
+                    && _failures.ContainsKey(cell.Key.Job(true))
+                )
+                    cell.PreviewState = CellState.Failed;
             }
         }
 
@@ -168,6 +212,7 @@ namespace PlayerViewer.Shaders
         public void Forget(VariationCell cell)
         {
             Scheduler?.Forget(cell.Key.Job(false));
+            _failures.Remove(cell.Key.Job(false));
             cell.State = CellState.None;
             cell.Failure = null;
         }
@@ -243,6 +288,11 @@ namespace PlayerViewer.Shaders
 
         void ApplyOutcome(CompileOutcome outcome)
         {
+            if (outcome.Success)
+                _failures.Remove(outcome.Key);
+            else
+                _failures[outcome.Key] = outcome.Message;
+
             foreach (var v in _variations.Values)
             foreach (var cell in v.Cells)
             {

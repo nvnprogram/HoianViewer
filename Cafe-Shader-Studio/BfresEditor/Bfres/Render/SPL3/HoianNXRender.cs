@@ -64,9 +64,26 @@ namespace BfresEditor
         /// </summary>
         public static readonly bool DebugMaterials = TegraShaderDecoder.DebugLog;
 
+        /// <summary>
+        /// Off, materials draw with the plain textured shader. For a game whose programs the
+        /// translator cannot read yet.
+        /// </summary>
+        public static bool GameShadersEnabled = true;
+
+        /// <summary>
+        /// The game's own fill of the shared blocks, storage buffers and system textures. Setting
+        /// null puts back <see cref="ThunderFrame"/>.
+        /// </summary>
+        public static IHoianFrameSource FrameSource
+        {
+            get => _frameSource;
+            set => _frameSource = value ?? ThunderFrame.Instance;
+        }
+        static IHoianFrameSource _frameSource = ThunderFrame.Instance;
+
         public override bool UseRenderer(FMAT material, string archive, string model)
         {
-            bool use = archive != null && archive.StartsWith("Hoian_UBER");
+            bool use = GameShadersEnabled && archive != null && archive.StartsWith("Hoian_UBER");
             if (use) IsActive = true;
             return use;
         }
@@ -74,9 +91,6 @@ namespace BfresEditor
         #region Dumped uniform data (Resources/SPL3)
 
         static bool _resourcesLoaded = false;
-        static byte[] ContextTemplate;  // fp_c3.bin - gsys_context (camera etc)
-        static byte[] EnvironmentData;  // fp_c5.bin - gsys_environment
-        static byte[] User0Data;        // fp_c7.bin - gsys_user0
         static byte[] User3Data;        // fp_c8.bin - gsys_user3 (team colors)
         static byte[] User2Data;        // fp_c10.bin - gsys_user2 (light clusters)
 
@@ -86,18 +100,11 @@ namespace BfresEditor
         /// </summary>
         public static OpenTK.Vector3? LightDirOverride = null;
 
-        /// <summary>
-        /// Generated gsys_environment and gsys_user0 contents. When set they replace the dumped
-        /// blocks of the current uniform set; the other blocks still come from the dump.
-        /// </summary>
-        public static byte[] EnvironmentOverride = null;
-        public static byte[] User0Override = null;
-
         /// <summary>A light cluster to bind as gsys_user2 in place of the empty one.</summary>
         public static byte[] LightClusterOverride = null;
 
-        static byte[] EnvBlock => EnvironmentOverride ?? EnvironmentData;
-        static byte[] User0Block => User0Override ?? User0Data;
+        static byte[] EnvBlock => FrameSource.Block("gsys_environment");
+        static byte[] User0Block => FrameSource.Block("gsys_user0");
 
         //Offset of the main directional light vector inside fp_c5 (env block).
         const int EnvLightDirOffset = 22 * 16 + 16;
@@ -179,23 +186,20 @@ namespace BfresEditor
             if (_resourcesLoaded) return;
             _resourcesLoaded = true;
 
-            string dir = Path.Combine("Resources", UniformSetDir);
-            byte[] TryLoad(string file)
-            {
-                string path = Path.Combine(dir, file);
-                if (File.Exists(path)) return File.ReadAllBytes(path);
-                Console.WriteLine($"[SPL3] Missing uniform data file {path}; using zeros.");
-                return null;
-            }
-
-            ContextTemplate = TryLoad("fp_c3.bin");
-            EnvironmentData = TryLoad("fp_c5.bin");
-            User0Data = TryLoad("fp_c7.bin");
-            User3Data = TryLoad("fp_c8.bin");
-            User2Data = TryLoad("fp_c10.bin");
+            User3Data = ReadUniformFile("fp_c8.bin");
+            User2Data = ReadUniformFile("fp_c10.bin");
 
             ClearClusterLights();
             InitTeamColorData();
+        }
+
+        /// <summary>A file of the current dumped uniform set, or null when it is missing.</summary>
+        internal static byte[] ReadUniformFile(string file)
+        {
+            string path = Path.Combine("Resources", UniformSetDir, file);
+            if (File.Exists(path)) return File.ReadAllBytes(path);
+            Console.WriteLine($"[SPL3] Missing uniform data file {path}; using zeros.");
+            return null;
         }
 
         /// <summary>
@@ -545,7 +549,7 @@ namespace BfresEditor
         /// </summary>
         Dictionary<string, string> BuildOptions(FMAT mat, BfresMeshAsset mesh)
         {
-            var options = GsysShaderOptions.BuildStaticOptions(mat.Material);
+            var options = GsysShaderOptions.BuildStaticOptions(mat.Drawn);
             GsysShaderOptions.AddDynamicOptions(options, mesh.Shape.VertexSkinCount,
                 GsysShaderOptions.AssignTypes[0]);
             return options;
@@ -790,7 +794,7 @@ namespace BfresEditor
                 if (offset < 0 || offset + 4 > buffer.Length)
                     continue;
 
-                if (!mat.ShaderOptions.TryGetValue(uniformName, out string option)
+                if (!mat.DrawnOptions.TryGetValue(uniformName, out string option)
                     || option == GsysShaderOptions.Unset)
                 {
                     if (!defaults.TryGetValue(uniformName, out option))
@@ -836,57 +840,30 @@ namespace BfresEditor
         //The block's bytes, to write into in place.
         static Span<byte> Bytes(UniformBlock block) => CollectionsMarshal.AsSpan(block.Buffer);
 
-        /// <summary>
-        /// gsys_context: dumped template with the viewer camera patched in.
-        /// Layout (from the decompiled shader): cView (mat3x4), cViewProj (mat4),
-        /// cProj (mat4), cViewInv (mat3x4), cNearFar, cScreen, cDist, ...
-        /// </summary>
+        /// <summary>gsys_context, as the frame source writes it for the viewer camera.</summary>
         void SetContextBlock(Camera camera, UniformBlock block, int blockSize)
         {
-            block.SetData(ContextTemplate, blockSize);
-            var buffer = Bytes(block);
-
-            var viewMatrix = camera.ModelMatrix * camera.ViewMatrix;
-            var projMatrix = camera.ProjectionMatrix;
-            var viewInverted = viewMatrix.Inverted();
-            var viewProjMatrix = viewMatrix * projMatrix;
-
-            float znear = camera.ZNear;
-            float zfar = camera.ZFar;
-            float zDistance = zfar - znear;
-
-            void Write(Span<byte> buffer, int offset, Vector4 value)
-            {
-                if (offset + 16 > buffer.Length) return;
-                WriteFloat(buffer, offset, value.X);
-                WriteFloat(buffer, offset + 4, value.Y);
-                WriteFloat(buffer, offset + 8, value.Z);
-                WriteFloat(buffer, offset + 12, value.W);
-            }
-            void WriteMat3x4(Span<byte> buffer, int offset, Matrix4 m)
-            {
-                Write(buffer, offset, m.Column0); Write(buffer, offset + 16, m.Column1); Write(buffer, offset + 32, m.Column2);
-            }
-            void WriteMat4(Span<byte> buffer, int offset, Matrix4 m)
-            {
-                Write(buffer, offset, m.Column0); Write(buffer, offset + 16, m.Column1);
-                Write(buffer, offset + 32, m.Column2); Write(buffer, offset + 48, m.Column3);
-            }
-
-            WriteMat3x4(buffer, 0, viewMatrix);         // cView
-            WriteMat4(buffer, 48, viewProjMatrix);      // cViewProj
-            WriteMat4(buffer, 112, projMatrix);         // cProj
-            WriteMat3x4(buffer, 176, viewInverted);     // cViewInv
-            Write(buffer, 224, new Vector4(znear, zfar, zfar / znear, 1.0f - znear / zfar));                                    // cNearFar
-            Write(buffer, 240, new Vector4(1.0f / zDistance, znear / zDistance, camera.AspectRatio, 1.0f / camera.AspectRatio)); // cScreen
-            Write(buffer, 256, new Vector4(zDistance, 0, 0, 0));                                                                 // cDist
-
-            //Previous frame matrices (used for motion vectors); keep them equal to the current frame.
-            WriteMat3x4(buffer, 336, viewMatrix);       // cPrevView
-            WriteMat4(buffer, 384, viewProjMatrix);     // cPrevViewProj
-            WriteMat4(buffer, 448, projMatrix);         // cPrevProj
-            WriteMat3x4(buffer, 512, viewInverted);     // cPrevViewInv
+            block.SetData(default, blockSize);
+            FrameSource.WriteContext(Bytes(block), ViewOf(camera));
         }
+
+        static readonly int[] _viewport = new int[4];
+
+        static HoianView ViewOf(Camera camera)
+        {
+            GL.GetInteger(GetPName.Viewport, _viewport);
+            return new HoianView(camera.ModelMatrix * camera.ViewMatrix, camera.ProjectionMatrix,
+                camera.ZNear, camera.ZFar, camera.Fov, camera.AspectRatio,
+                Math.Max(1, _viewport[2]), Math.Max(1, _viewport[3]));
+        }
+
+        protected override bool UsesStorageBuffers => FrameSource.UsesStorageBuffers;
+
+        //Every stock Raiders material carries each parameter whose default is not zero, so this
+        //changes only a material from another game or one missing parameters.
+        protected override bool MaterialBlockFromDefault => FrameSource.MaterialBlockFromDefault;
+
+        protected override byte[] GetStorageBuffer(string name) => FrameSource.StorageBuffer(name);
 
         //gsys_user3 rows per team, as the game fills them. Bravo's last two rows stay zero.
         static readonly TeamColorVariants.Kind[] User3Rows =
@@ -984,7 +961,7 @@ namespace BfresEditor
         //The material's choice for an option, or the archive's default when it sets none.
         string GetOptionChoice(FMAT mat, string name)
         {
-            if (mat.ShaderOptions.TryGetValue(name, out string choice) && choice != GsysShaderOptions.Unset)
+            if (mat.DrawnOptions.TryGetValue(name, out string choice) && choice != GsysShaderOptions.Unset)
                 return choice;
             return GetDefaultChoices().TryGetValue(name, out choice) ? choice : null;
         }
@@ -1099,7 +1076,7 @@ namespace BfresEditor
             get
             {
                 InitTextures();
-                return PrefilterCubeArrayTexture;
+                return PrefilterCubes;
             }
         }
 
@@ -1120,7 +1097,13 @@ namespace BfresEditor
             SetSystemSamplerParams(WhiteArrayTexture);
             SetSystemSamplerParams(CubemapTexture);
             SetSystemSamplerParams(BrdfTexture);
+        }
 
+        //Loaded on first use: a frame source that supplies its own env map never needs it.
+        static GLTextureCubeArray PrefilterCubes => PrefilterCubeArrayTexture ??= LoadPrefilterCubes();
+
+        static GLTextureCubeArray LoadPrefilterCubes()
+        {
             //Prefer the game's own prefiltered env cubemap array (dumped, R11G11B10F);
             //the Odyssey stand-in is far brighter and adds a fake sheen on gear.
             string gameCubemap = Path.Combine("Resources", "SPL3", "cubemap.dds");
@@ -1128,16 +1111,16 @@ namespace BfresEditor
             {
                 try
                 {
-                    PrefilterCubeArrayTexture = GLTextureCubeArray.FromDX10ArrayDDS(gameCubemap);
-                    Console.WriteLine($"[SPL3] Loaded game prefilter cubemap array ({PrefilterCubeArrayTexture.ArrayCount} cubes)");
+                    var cubes = GLTextureCubeArray.FromDX10ArrayDDS(gameCubemap);
+                    Console.WriteLine($"[SPL3] Loaded game prefilter cubemap array ({cubes.ArrayCount} cubes)");
+                    return cubes;
                 }
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[SPL3] Failed to load {gameCubemap}: {ex.Message}");
                 }
             }
-            if (PrefilterCubeArrayTexture == null)
-                PrefilterCubeArrayTexture = GLTextureCubeArray.FromDDS(new DDS($"Resources{Path.DirectorySeparatorChar}CubemapPrefilter.dds"));
+            return GLTextureCubeArray.FromDDS(new DDS($"Resources{Path.DirectorySeparatorChar}CubemapPrefilter.dds"));
         }
 
         public override void Render(GLContext control, ShaderProgram shader, GenericPickableMesh mesh)
@@ -1228,13 +1211,17 @@ namespace BfresEditor
 
         GLTexture GetDefaultTexture(string samplerName, ActiveUniformType type)
         {
+            if (FrameSource.Texture(samplerName) is GLTexture own
+                && TargetForSamplerType(type) is TextureTarget want && own.Target == want)
+                return own;
+
             switch (type)
             {
                 case ActiveUniformType.SamplerCube:
                 case ActiveUniformType.SamplerCubeShadow:
                     return CubemapTexture;
                 case ActiveUniformType.SamplerCubeMapArray:
-                    return PrefilterCubeArrayTexture;
+                    return PrefilterCubes;
                 case ActiveUniformType.Sampler2DArray:
                 case ActiveUniformType.Sampler2DArrayShadow:
                     return WhiteArrayTexture;
@@ -1271,9 +1258,10 @@ namespace BfresEditor
 
                 //Find a material texture assigned to this shader sampler.
                 int textureIndex = -1;
-                if (bfresMaterial.Material.ShaderAssign.SamplerAssigns.ContainsKey(sampler))
+                var assigns = bfresMaterial.Drawn.ShaderAssign.SamplerAssigns;
+                if (assigns.ContainsKey(sampler))
                 {
-                    string resSampler = bfresMaterial.Material.ShaderAssign.SamplerAssigns[sampler].String;
+                    string resSampler = assigns[sampler].String;
                     textureIndex = bfresMaterial.TextureMaps.FindIndex(x => x.Sampler == resSampler);
                 }
 

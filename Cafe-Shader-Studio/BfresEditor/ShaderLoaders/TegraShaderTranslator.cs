@@ -27,15 +27,25 @@ namespace BfresEditor
         private class GpuAccessor : IGpuAccessor
         {
             private readonly byte[] _data;
+            private readonly byte[] _constants;
 
-            public GpuAccessor(byte[] data)
+            public GpuAccessor(byte[] data, byte[] constants)
             {
                 _data = data;
+                _constants = constants;
             }
 
             public ReadOnlySpan<ulong> GetCode(ulong address, int minimumSize)
             {
                 return MemoryMarshal.Cast<byte, ulong>(new ReadOnlySpan<byte>(_data).Slice((int)address));
+            }
+
+            /// <summary>Constant bank 1, the stage's embedded constants, where the jump tables live.</summary>
+            public uint ConstantBuffer1Read(int offset)
+            {
+                if (_constants == null || offset < 0 || offset + 4 > _constants.Length)
+                    return 0;
+                return BitConverter.ToUInt32(_constants, offset);
             }
 
               public int QueryHostStorageBufferOffsetAlignment() => _storageBufferOffsetAlignment.Value;
@@ -64,15 +74,19 @@ namespace BfresEditor
         }
 
         /// <summary>
-        /// Translates a vertex and pixel shader pair together.
+        /// Translates a vertex and pixel pair together. Each stage is its code from the program
+        /// header on, with its embedded constants, or null for none.
         /// </summary>
-        public static (string Vertex, string Pixel) TranslatePair(byte[] vertexData, byte[] pixelData)
+        public static (string Vertex, string Pixel) TranslatePair(byte[] vertexData, byte[] vertexConstants,
+            byte[] pixelData, byte[] pixelConstants, ShaderLibrary.GpuIsa isa)
         {
-            var options = new TranslationOptions(
-                TargetLanguage.Glsl, TargetApi.OpenGL, TranslationFlags.DebugMode);
+            var flags = TranslationFlags.DebugMode;
+            if (isa == ShaderLibrary.GpuIsa.Ampere)
+                flags |= TranslationFlags.Ampere;
+            var options = new TranslationOptions(TargetLanguage.Glsl, TargetApi.OpenGL, flags);
 
-            var vertex = Translator.CreateContext(0, new GpuAccessor(vertexData), options);
-            var pixel = Translator.CreateContext(0, new GpuAccessor(pixelData), options);
+            var vertex = Translator.CreateContext(0, new GpuAccessor(vertexData, vertexConstants), options);
+            var pixel = Translator.CreateContext(0, new GpuAccessor(pixelData, pixelConstants), options);
 
             vertex.SetNextStage(pixel);
 

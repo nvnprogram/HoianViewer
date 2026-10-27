@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using BfresEditor;
 using Gsys;
+using PlayerViewer.Core;
 using ShaderBundler;
 using ShaderLibrary;
 using ShaderLibrary.Helpers;
@@ -42,6 +43,10 @@ namespace PlayerViewer.Shaders
         public CellState PreviewState;
 
         public bool Exists => ExistingProgram >= 0;
+
+        //What a splice of this cell leaves out, for the reach version it was worked out against.
+        internal List<string> Lost;
+        internal int LostVersion = -1;
 
         /// <summary>Identity of the splice, shared by any cell that would produce the same
         /// binaries. Default on an existence only cell.</summary>
@@ -94,6 +99,50 @@ namespace PlayerViewer.Shaders
         /// silently a different shader, so the cells carrying them are refused.</summary>
         public readonly List<string> Unsupported = new();
 
+        /// <summary>What stands in for the features the ubershader lacks. Null outside Raiders,
+        /// and when the shipped programs serve the material as edited.</summary>
+        public MissingFeatures.Layer Layer { get; private set; }
+
+        /// <summary>What the splices a save would embed leave out, each feature once. Empty when
+        /// the shipped programs serve the material and nothing is spliced for it.</summary>
+        public List<string> Lost
+        {
+            get
+            {
+                var lost = new List<string>();
+                if (_uber?.Reach == null || !Spliced)
+                    return lost;
+                foreach (var c in Cells)
+                    if (DrawnPasses.IsDrawn(c.Pass) || IsSelected(c.Pass))
+                        Note(lost, LostOf(c));
+                return lost;
+            }
+        }
+
+        /// <summary>What the splices a save would embed rebuild from what the ubershader can do.</summary>
+        public IReadOnlyList<string> Approximated =>
+            Layer != null && Spliced ? Layer.Approximated : NoLoss;
+
+        bool Spliced => ModelBundle.NeedsArchive(this, _uber, null, null, countPending: true);
+
+        /// <summary>What a splice of this cell leaves out, in words. Empty when it needs none or
+        /// the reach is not known yet.</summary>
+        public List<string> LostOf(VariationCell cell)
+        {
+            if (_uber == null || cell.Exists || cell.Refusal != null)
+                return NoLoss;
+            int version = _uber.ReachVersion;
+            if (cell.LostVersion != version)
+            {
+                cell.Lost = SpliceLoss.Of(_uber, cell.Vector.Full, Material.Drawn, Layer);
+                cell.LostVersion = version;
+            }
+            return cell.Lost;
+        }
+
+        static readonly List<string> NoLoss = new();
+        UberContext _uber;
+
         public bool Ok => Error == null && Cells.Count > 0;
 
         public IEnumerable<VariationCell> CellsOf(string pass)
@@ -119,28 +168,35 @@ namespace PlayerViewer.Shaders
         /// The existence half of the grid, from the serving archive alone. It is what the
         /// Stages tab shows with the splicer off.
         /// </summary>
-        public void RebuildExistence(IEnumerable<uint> weights) => Build(null, weights);
+        public void RebuildExistence(IEnumerable<uint> weights) => Build(null, weights, false);
 
-        /// <summary>The full grid: existence, the option vectors and what the cache holds.</summary>
-        public void Rebuild(UberContext uber, IEnumerable<uint> weights) =>
-            Build(uber ?? throw new ArgumentNullException(nameof(uber)), weights);
+        /// <summary>The full grid: existence, the option vectors and what the cache holds.
+        /// With approximate, a material the shipped programs do not serve is spliced with
+        /// stand-ins for what the ubershader lacks.</summary>
+        public void Rebuild(UberContext uber, IEnumerable<uint> weights, bool approximate) =>
+            Build(uber ?? throw new ArgumentNullException(nameof(uber)), weights, approximate);
 
         /// <summary>Marks the grid unusable, for a failure raised outside its own build.</summary>
         public void Fail(string message)
         {
             Cells.Clear();
             Error = message;
+            Layer = null;
+            Material.DrawnMaterial = null;
         }
 
         //One loop for both grids: without a context a cell only carries whether a shipped
         //program exists, with one it carries the vector and the cache state as well.
-        void Build(UberContext uber, IEnumerable<uint> weights)
+        void Build(UberContext uber, IEnumerable<uint> weights, bool approximate)
         {
             Cells.Clear();
             Dropped.Clear();
             Unsupported.Clear();
             Error = null;
+            Layer = null;
+            Material.DrawnMaterial = null;
             ExistenceOnly = uber == null;
+            _uber = uber;
             AssignTypes = Array.Empty<string>();
 
             try
@@ -183,24 +239,46 @@ namespace PlayerViewer.Shaders
                     }
                 }
 
-                var derived = GsysShaderOptions.BuildStaticOptions(Material.Material);
-                foreach (string pass in AssignTypes)
-                foreach (uint weight in Weights)
-                {
-                    GsysShaderOptions.AddDynamicOptions(derived, weight, pass);
-                    Cells.Add(
-                        uber == null
-                            ? ExistenceCell(derived, pass, weight)
-                            : FullCell(uber, derived, pass, weight)
-                    );
-                }
+                AddCells(uber, Material.Material);
+                if (uber == null || !NeedsLayer(uber))
+                    return;
+                Layer = MissingFeatures.Derive(Material.Material, approximate);
+                if (Layer.Drawn == null)
+                    return;
+                Cells.Clear();
+                Dropped.Clear();
+                Unsupported.Clear();
+                AddCells(uber, Layer.Drawn);
+                Material.DrawnMaterial = Layer.Drawn;
             }
             catch (Exception ex)
             {
                 Cells.Clear();
                 Error = ex.Message;
+                Layer = null;
+                Material.DrawnMaterial = null;
             }
         }
+
+        void AddCells(UberContext uber, BfresLibrary.Material source)
+        {
+            var derived = GsysShaderOptions.BuildStaticOptions(source);
+            foreach (string pass in AssignTypes)
+            foreach (uint weight in Weights)
+            {
+                GsysShaderOptions.AddDynamicOptions(derived, weight, pass);
+                Cells.Add(
+                    uber == null
+                        ? ExistenceCell(derived, pass, weight)
+                        : FullCell(uber, derived, pass, weight)
+                );
+            }
+        }
+
+        bool NeedsLayer(UberContext uber) =>
+            uber.Game == GameKind.Spiral
+            && Material.Material.ShaderAssign?.ShadingModelName == MissingFeatures.ShadingModel
+            && Cells.Any(c => c.Pass == PassPolicy.Material && !c.Exists);
 
         VariationCell ExistenceCell(Dictionary<string, string> derived, string pass, uint weight)
         {

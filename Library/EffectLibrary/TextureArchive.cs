@@ -123,6 +123,9 @@ namespace EffectLibrary
 
         public bool IsR16Uint(string textureName) => Bntx != null && _r16Uint.Contains(textureName);
 
+        public bool IsOunce =>
+            BntxBytes.Length >= 0x24 && BntxBytes.Span.Slice(0x20, 4).SequenceEqual("Ounc"u8);
+
         /// <summary>The BRTI format word as the file has it: the high byte is the channel
         /// layout, the low byte the type (1 unorm, 2 snorm, 3 uint, 5 float, 6 srgb).</summary>
         public uint GetFileFormat(Texture texture) =>
@@ -154,8 +157,12 @@ namespace EffectLibrary
         static List<(int FormatAt, string Name)> FindR16Uint(ReadOnlySpan<byte> s)
         {
             var found = new List<(int, string)>();
-            //NX header at 0x20: "NX  ", u32 count, u64 offset of the texture pointer array.
-            if (s.Length < 0x30 || !s.Slice(0x20, 4).SequenceEqual("NX  "u8))
+            //Platform header at 0x20: "NX  " or "Ounc", u32 count, u64 offset of the texture
+            //pointer array.
+            if (
+                s.Length < 0x30
+                || !s.Slice(0x20, 4).SequenceEqual("NX  "u8) && !s.Slice(0x20, 4).SequenceEqual("Ounc"u8)
+            )
                 return found;
             int count = BinaryPrimitives.ReadInt32LittleEndian(s[0x24..]);
             long table = BinaryPrimitives.ReadInt64LittleEndian(s[0x28..]);

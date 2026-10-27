@@ -10,6 +10,9 @@ namespace PlayerViewer.UI
     {
         const float LeftPanelWidth = 330;
 
+        //The classic right panel, wider while it holds the Physics Maker.
+        float ClassicRightWidth => AuthoringShown ? 350 : 300;
+
         void DrawUI()
         {
             if (SideOrderControls.On)
@@ -44,7 +47,7 @@ namespace PlayerViewer.UI
                 return;
             }
 
-            float rightWidth = 300;
+            float rightWidth = ClassicRightWidth;
 
             ImGui.BeginChild("##left", new Vector2(LeftPanelWidth, 0), true);
             DrawLeftPanel();
@@ -95,8 +98,11 @@ namespace PlayerViewer.UI
             DrawTextureWindow();
             DrawProvenanceModal();
             DrawCopyModal();
+            DrawPhiveResultModal();
+            DrawSpiralSaveModal();
             DrawClearPhysicsModal();
             RunDeferred();
+            SyncMakerPose();
         }
 
         void DrawMenuBar()
@@ -142,8 +148,14 @@ namespace PlayerViewer.UI
                 }
                 if (ImGui.MenuItem("View effect file... (or drag && drop)", null, false, ready))
                     BrowseEffectFile();
+                DrawPhiveConvertMenu(!ExportBusy);
                 var effects = RomfsEffectFiles();
-                if (effects.Count > 0 && ImGui.BeginMenu("Game effects", ready))
+                if (_romfs?.Game == GameKind.Spiral)
+                {
+                    if (ImGui.MenuItem("Effect Viewer", null, false, ready && effects.Count > 0))
+                        OpenEffect(effects[0]);
+                }
+                else if (effects.Count > 0 && ImGui.BeginMenu("Game effects", ready))
                 {
                     NoteBarWindow();
                     foreach (string file in effects)
@@ -163,13 +175,28 @@ namespace PlayerViewer.UI
 
             if (ImGui.MenuItem("Settings"))
                 _showSettings = true;
-            //File and Settings take clicks in the custom title bar; the title and path drag it.
+            if (ImGui.BeginMenu("Game"))
+            {
+                NoteBarWindow();
+                foreach (var game in new[] { GameKind.Spiral, GameKind.Thunder })
+                    if (
+                        ImGui.MenuItem(
+                            GameNames.Label(game),
+                            null,
+                            _config.CurrentGame == game,
+                            !ExportBusy
+                        )
+                    )
+                        SwitchGame(game);
+                ImGui.EndMenu();
+            }
+            //The menus take clicks in the custom title bar; the title and path drag it.
             NoteBarItem(new Vector2(menusLeft, ImGui.GetItemRectMin().Y), ImGui.GetItemRectMax());
             if (menuFont != null)
                 ImGui.PopFont();
 
             if (_romfs != null)
-                MenuPath(_config.RomfsPath);
+                MenuPath(_romfs.Root);
 
             ImGui.EndMenuBar();
         }
@@ -191,8 +218,68 @@ namespace PlayerViewer.UI
             ReleaseShaderPrograms();
             CompactHeap();
             _pipeline.FramePlayer();
-            _romfsInput = _config.RomfsPath ?? "";
+            _romfsInput = _config.Thunder.RomfsPath ?? "";
             _sdodrInput = _config.SdodrRomfsPath ?? "";
+            _raidersInput = _config.Spiral.RomfsPath ?? "";
+            _thunderLayeredInput = _config.Thunder.LayeredFsPath ?? "";
+            _raidersLayeredInput = _config.Spiral.LayeredFsPath ?? "";
+        }
+
+        string _thunderLayeredInput = "",
+            _raidersLayeredInput = "";
+
+        //A LayeredFS folder field on the setup screen.
+        static void LayeredField(string title, string id, ref string input, float fieldWidth)
+        {
+            Widgets.SectionHeader(title);
+            ImGui.SetNextItemWidth(fieldWidth);
+            Widgets.PathInput("##" + id, ref input, 512);
+            ImGui.SameLine();
+            if (Widgets.Button("Browse...##" + id))
+            {
+                string folder = NativeFolderPicker.SelectFolder(
+                    "Select LayeredFS (mod) folder",
+                    input
+                );
+                if (!string.IsNullOrEmpty(folder))
+                    input = folder;
+            }
+        }
+
+        //A LayeredFS path typed on the setup screen; a new one is switched on.
+        void SaveLayered(GameKind game, string path)
+        {
+            path ??= "";
+            var settings = _config.Of(game);
+            if (!PathsEqualOrEmpty(path, settings.LayeredFsPath))
+                settings.UseLayeredFs = path.Length > 0;
+            settings.LayeredFsPath = path;
+        }
+
+        static bool PathsEqualOrEmpty(string a, string b) =>
+            string.IsNullOrEmpty(a)
+                ? string.IsNullOrEmpty(b)
+                : !string.IsNullOrEmpty(b) && PathsEqual(a, b);
+
+        /// <summary>
+        /// Makes another game current. Its romfs loads in place of this one when it is set,
+        /// otherwise the setup screen asks for it.
+        /// </summary>
+        void SwitchGame(GameKind game)
+        {
+            if (ExportBusy || game == _config.CurrentGame)
+                return;
+            SavePlayerConfig();
+            _config.CurrentGame = game;
+            _config.Save();
+            _layeredInput = _config.Active.LayeredFsPath ?? "";
+            if (Romfs.IsValidRoot(_config.Active.RomfsPath, game))
+            {
+                StopAnimChain();
+                _needsLoad = true;
+            }
+            else
+                ShowRomfsSetup();
         }
 
         //The scene the Side Order title row names. Classic keeps its one title.
@@ -270,11 +357,14 @@ namespace PlayerViewer.UI
             return lo == 0 ? "" : "..." + path.Substring(path.Length - lo);
         }
 
-        //The setup is as tall as its content asked for last frame.
-        float _setupCardHeight = 220;
+        //Each setup card is as tall as its content asked for last frame.
+        readonly float[] _setupCardHeight = { 220, 160 };
 
-        const float SetupMinHeight = 120;
+        const float SetupMinHeight = 100;
+        const float SetupCardGap = 12;
 
+        //The two games' cards, Splatoon 3 above Raiders, in a region that scrolls when the
+        //window is too short for them.
         void DrawRomfsSetup()
         {
             if (SideOrderControls.On)
@@ -283,42 +373,111 @@ namespace PlayerViewer.UI
                 return;
             }
             var avail = ImGui.GetContentRegionAvail();
-            var size = new Vector2(520, _setupCardHeight);
-            ImGui.SetCursorPos((avail - size) / 2);
-            ImGui.BeginChild("##setup", size, true);
-            DrawRomfsSetupFields();
+            ImGui.BeginChild("##setupscroll", avail, false);
+            const float width = 520;
+            float total = _setupCardHeight[0] + SetupCardGap + _setupCardHeight[1];
+            float y = Math.Max(0, (avail.Y - total) / 2);
+            float x = Math.Max(0, (ImGui.GetContentRegionAvail().X - width) / 2);
             var style = ImGui.GetStyle();
-            _setupCardHeight = Math.Max(
-                SetupMinHeight,
-                MathF.Ceiling(ImGui.GetCursorPosY() - style.ItemSpacing.Y + style.WindowPadding.Y)
-            );
+            for (int i = 0; i < 2; i++)
+            {
+                ImGui.SetCursorPos(new Vector2(x, y));
+                ImGui.BeginChild(
+                    i == 0 ? "##setup" : "##setupraiders",
+                    new Vector2(width, _setupCardHeight[i]),
+                    true
+                );
+                DrawSetupCard(i);
+                _setupCardHeight[i] = Math.Max(
+                    SetupMinHeight,
+                    MathF.Ceiling(
+                        ImGui.GetCursorPosY() - style.ItemSpacing.Y + style.WindowPadding.Y
+                    )
+                );
+                ImGui.EndChild();
+                y += _setupCardHeight[i] + SetupCardGap;
+            }
             ImGui.EndChild();
         }
 
-        //A card in the middle of the window, below the menu row.
+        //The cards in the middle of the window below the menu row.
         void DrawRomfsSetupSideOrder()
         {
             var viewport = ImGui.GetMainViewport();
-            var size = new Vector2(560, _setupCardHeight);
             float top = viewport.Pos.Y + SideOrderLayout.CardsTop;
-            var min = new Vector2(
-                MathF.Round(viewport.Pos.X + (viewport.Size.X - size.X) / 2),
-                MathF.Round(
-                    Math.Max(
-                        top + SideOrderLayout.Gap,
-                        top + (viewport.Size.Y - top - size.Y) / 2 - 40
+            var regionMin = new Vector2(viewport.Pos.X, top);
+            var regionSize = new Vector2(viewport.Size.X, viewport.Pos.Y + viewport.Size.Y - top);
+            ImGui.SetCursorScreenPos(regionMin);
+            ImGui.PushStyleColor(ImGuiCol.ChildBg, System.Numerics.Vector4.Zero);
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+            ImGui.BeginChild("##setupscroll", Vector2.Max(regionSize, Vector2.One), false);
+            ImGui.PopStyleVar();
+            ImGui.PopStyleColor();
+            Widgets.DecorateScrollbar();
+
+            const float width = 560;
+            const float gap = SideOrderLayout.Gap;
+            float total = _setupCardHeight[0] + SetupCardGap + _setupCardHeight[1];
+            var origin = ImGui.GetCursorScreenPos();
+            float y = Math.Max(gap, (regionSize.Y - total) / 2 - 40);
+            float x = MathF.Round(Math.Max(gap, (regionSize.X - width) / 2));
+            for (int i = 0; i < 2; i++)
+            {
+                var min = new Vector2(origin.X + x, MathF.Round(origin.Y + y));
+                var max = min + new Vector2(width, _setupCardHeight[i]);
+                int card = i;
+                _setupCardHeight[i] = Math.Max(
+                    SetupMinHeight,
+                    Card(
+                        i == 0 ? "##setup" : "##setupraiders",
+                        min,
+                        max,
+                        7 + i,
+                        () => DrawSetupCard(card)
                     )
-                )
-            );
-            _setupCardHeight = Math.Max(
-                SetupMinHeight,
-                Card("##setup", min, min + size, 7, DrawRomfsSetupFields)
-            );
+                );
+                y += _setupCardHeight[i] + SetupCardGap;
+            }
+            //The scroll extent: the cards and a gap below them.
+            ImGui.SetCursorScreenPos(new Vector2(origin.X, origin.Y + y - SetupCardGap + gap));
+            ImGui.Dummy(Vector2.One);
+            ImGui.EndChild();
         }
 
-        void DrawRomfsSetupFields()
+        void DrawSetupCard(int card)
         {
-            float fieldWidth = -(Widgets.ButtonWidth("Browse...") + ImGui.GetStyle().ItemSpacing.X);
+            if (card == 0)
+                DrawThunderSetup();
+            else
+                DrawRaidersSetup();
+        }
+
+        //The typed paths' checks, redone only when a path changes.
+        string _checkedThunder,
+            _checkedRaiders;
+        bool _thunderValid;
+        string _raidersRoot;
+
+        static float SetupFieldWidth =>
+            -(Widgets.ButtonWidth("Browse...") + ImGui.GetStyle().ItemSpacing.X);
+
+        void CheckSetupPaths()
+        {
+            if (_checkedThunder != _romfsInput)
+            {
+                _checkedThunder = _romfsInput;
+                _thunderValid = Romfs.IsValidRoot(_romfsInput, GameKind.Thunder);
+            }
+            if (_checkedRaiders != _raidersInput)
+            {
+                _checkedRaiders = _raidersInput;
+                _raidersRoot = Romfs.FindRoot(_raidersInput, GameKind.Spiral);
+            }
+        }
+
+        void DrawThunderSetup()
+        {
+            float fieldWidth = SetupFieldWidth;
 
             Widgets.SectionHeader("Splatoon 3 romfs");
             ImGui.SetNextItemWidth(fieldWidth);
@@ -330,11 +489,9 @@ namespace PlayerViewer.UI
                 if (!string.IsNullOrEmpty(folder))
                     _romfsInput = folder;
             }
-            bool valid = Romfs.IsValidRoot(_romfsInput);
-            if (!valid && !string.IsNullOrEmpty(_romfsInput))
+            CheckSetupPaths();
+            if (!_thunderValid && !string.IsNullOrEmpty(_romfsInput))
                 Widgets.ErrorText("Not a valid romfs (needs Model/ + RSDB/)");
-            if (_romfsError != null)
-                Widgets.ErrorText(_romfsError);
 
             Widgets.SectionHeader("Side Order DLC romfs (optional)");
             ImGui.SetNextItemWidth(fieldWidth);
@@ -349,19 +506,91 @@ namespace PlayerViewer.UI
                 if (!string.IsNullOrEmpty(folder))
                     _sdodrInput = folder;
             }
+            LayeredField(
+                "Splatoon 3 LayeredFS (optional)",
+                "thunderlayered",
+                ref _thunderLayeredInput,
+                fieldWidth
+            );
+            DrawSetupLoad(GameKind.Thunder, _thunderValid);
+        }
 
+        void DrawRaidersSetup()
+        {
+            float fieldWidth = SetupFieldWidth;
+
+            Widgets.SectionHeader("Splatoon Raiders romfs");
+            ImGui.SetNextItemWidth(fieldWidth);
+            Widgets.PathInput("##raiders", ref _raidersInput, 512);
+            ImGui.SameLine();
+            if (Widgets.Button("Browse...##raiders"))
+            {
+                string folder = NativeFolderPicker.SelectFolder(
+                    "Select Splatoon Raiders romfs folder",
+                    _raidersInput
+                );
+                if (!string.IsNullOrEmpty(folder))
+                    _raidersInput = folder;
+            }
+            CheckSetupPaths();
+            if (_raidersRoot == null && !string.IsNullOrEmpty(_raidersInput))
+                Widgets.ErrorText("Not a Raiders romfs (needs Model/Player00.Player00.bfres.zs)");
+            else if (_raidersRoot != null && !PathsEqual(_raidersRoot, _raidersInput))
+                Widgets.DimText(_raidersRoot);
+            LayeredField(
+                "Splatoon Raiders LayeredFS (optional)",
+                "raiderslayered",
+                ref _raidersLayeredInput,
+                fieldWidth
+            );
+            DrawSetupLoad(GameKind.Spiral, _raidersRoot != null);
+        }
+
+        //A card's load button. It needs only its own game's romfs; the other card's paths are
+        //kept when they are valid.
+        void DrawSetupLoad(GameKind game, bool ready)
+        {
+            if (_romfsError != null && game == _config.CurrentGame)
+                Widgets.ErrorText(_romfsError);
             ImGui.Dummy(new Vector2(0, 6));
             Widgets.AccentButton(
-                "Load",
-                valid,
+                $"Load {GameNames.Title(game)}##load{game}",
+                ready,
                 () =>
                 {
-                    _config.RomfsPath = _romfsInput;
-                    _config.SdodrRomfsPath = _sdodrInput;
+                    if (game == GameKind.Thunder || _thunderValid)
+                    {
+                        _config.Thunder.RomfsPath = _romfsInput;
+                        _config.SdodrRomfsPath = _sdodrInput;
+                        SaveLayered(GameKind.Thunder, _thunderLayeredInput);
+                    }
+                    if (game == GameKind.Spiral || _raidersRoot != null)
+                    {
+                        _config.Spiral.RomfsPath = _raidersRoot ?? _raidersInput;
+                        _raidersInput = _config.Spiral.RomfsPath;
+                        SaveLayered(GameKind.Spiral, _raidersLayeredInput);
+                    }
+                    _config.CurrentGame = game;
                     _config.Save();
                     _needsLoad = true;
                 }
             );
+        }
+
+        static bool PathsEqual(string a, string b)
+        {
+            try
+            {
+                return string.Equals(
+                    System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(a)),
+                    System.IO.Path.TrimEndingDirectorySeparator(System.IO.Path.GetFullPath(b)),
+                    StringComparison.OrdinalIgnoreCase
+                );
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
     }
 }

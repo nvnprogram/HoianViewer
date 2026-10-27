@@ -53,6 +53,7 @@ namespace BfresLibrary
         private void SetIndexBufferData(ResFileSaver saver)
        {
             List<byte[]> IndxBuffList = new List<byte[]>();
+            List<int> IndxAlignList = new List<int>();
 
             //Add all buffer byte[] to a list
             foreach (Model fmdl in saver.ResFile.Models.Values) {
@@ -60,10 +61,12 @@ namespace BfresLibrary
                     foreach (Mesh msh in shp.Meshes)
                     {
                         IndxBuffList.Add(msh.Data);
+                        IndxAlignList.Add(fmdl.VertexBuffers[shp.VertexBufferIndex].GPUBufferAlignent);
                     }
                 }
             }
 
+            IndexAlignments = IndxAlignList.ToArray();
             IndexBufferData = new byte[IndxBuffList.Count][];
 
             for (int i = 0; i < IndxBuffList.Count; i++)
@@ -117,6 +120,11 @@ namespace BfresLibrary
         /// 
         /// </summary>
         public int[] VertexAlignments { get; set; }
+
+        /// <summary>
+        /// The alignment of each index buffer, that of its shape's vertex buffer.
+        /// </summary>
+        public int[] IndexAlignments { get; set; }
 
         /// <summary>
         /// Gets or sets an unkown value

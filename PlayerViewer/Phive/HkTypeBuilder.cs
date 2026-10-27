@@ -17,6 +17,7 @@ namespace PlayerViewer.Phive
         readonly Dictionary<string, int> _typeStrings = new(StringComparer.Ordinal);
         readonly Dictionary<string, int> _fieldStrings = new(StringComparer.Ordinal);
         readonly HashSet<int> _hashed = new();
+        HkTypeHash _hasher;
 
         public readonly HkTypeSection Section = new();
 
@@ -132,7 +133,7 @@ namespace PlayerViewer.Phive
             Drain();
             if (_hashed.Add(id))
             {
-                var hash = _catalog.Types[sig].Hash;
+                var hash = _catalog.Types[sig].Hash ?? (_hasher ??= new HkTypeHash(_catalog)).Calc(sig);
                 if (hash == null)
                     Missing.Add("hash of " + sig);
                 Section.Hashes.Add((id, hash ?? 0));

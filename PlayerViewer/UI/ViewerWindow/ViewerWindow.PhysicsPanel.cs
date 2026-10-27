@@ -162,8 +162,8 @@ namespace PlayerViewer.UI
                 );
                 Widgets.DimText(
                     _paint.Bones
-                        ? "The cloth is held while you pick. The bone list, Done and Cancel are in the Physics Maker window."
-                        : "The cloth is held while you paint. The brush, Done and Cancel are in the Physics Maker window."
+                        ? "The cloth is held while you pick. The bone list, Done and Cancel are in the Physics Maker."
+                        : "The cloth is held while you paint. The brush, Done and Cancel are in the Physics Maker."
                 );
                 ImGui.PopTextWrapPos();
                 return;
@@ -192,7 +192,7 @@ namespace PlayerViewer.UI
         //Last frame's height of the save section, which the data tree leaves room for.
         float _clothSaveHeight = 120;
 
-        /// <summary>Simulate, Restart and what runs, then the button that opens the authoring window.</summary>
+        /// <summary>Simulate, Restart and what runs, then the button that shows the Physics Maker.</summary>
         void DrawPhysicsTopRow()
         {
             if (_cloth != null)
@@ -218,14 +218,17 @@ namespace PlayerViewer.UI
                 else
                     Widgets.DimText($"{running} piece(s) running");
             }
-            if (
-                Widgets.Button(
-                    _authoringOpen ? "Physics Maker (open)" : "Physics Maker...",
-                    new Vector2(-1, 0),
-                    accent: !_authoringOpen
-                )
-            )
-                OpenPhysicsMaker();
+            bool maker = _authoringOpen;
+            if (Widgets.ToggleButton("Physics Maker", ref maker, new Vector2(-1, 0)))
+            {
+                if (maker)
+                    OpenPhysicsMaker();
+                else
+                    _authoringOpen = false;
+            }
+            Widgets.ItemTooltip(
+                maker ? "Back to the animation." : "Shows the Physics Maker in place of the animation."
+            );
             DrawCopyFromPartnerButton();
         }
 
@@ -481,7 +484,7 @@ namespace PlayerViewer.UI
                 return;
             }
             string start =
-                _clothLastRoot ?? (_config.LayeredFsPath is { Length: > 0 } l ? l : null);
+                _clothLastRoot ?? (_config.Active.LayeredFsPath is { Length: > 0 } l ? l : null);
             string root = NativeFolderPicker.SelectFolder(
                 "Mod romfs folder (Pack/Actor goes inside)",
                 start

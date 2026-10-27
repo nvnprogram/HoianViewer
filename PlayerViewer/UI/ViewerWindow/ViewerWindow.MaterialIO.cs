@@ -193,8 +193,7 @@ namespace PlayerViewer.UI
         )
         {
             var store = Textures;
-            var bntx = store?.Bntx;
-            if (bntx == null)
+            if (store?.Editable != true)
             {
                 problems.Add("this model has no texture container, so no texture was added");
                 return;

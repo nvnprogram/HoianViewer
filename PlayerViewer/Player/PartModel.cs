@@ -21,6 +21,11 @@ namespace PlayerViewer.Player
         Tank,
         WeaponMain, //Right hand (Weapon_R)
         WeaponLeft, //Left hand (Weapon_L), such as dualies second model
+        Glove,
+        GadgetL, //Raiders tank gadget slots, on the tank's Gadget_L/R/A bones
+        GadgetR,
+        GadgetA,
+        GadgetSpecial,
     }
 
     /// <summary>
@@ -114,6 +119,9 @@ namespace PlayerViewer.Player
         //Restore the attach bone's bind matrix after welding (headgear only; other
         //parts share the human skeleton's bind space and must not be offset).
         public bool RestoreAttachBind;
+
+        //Bones above the attach bone are welded with it and take its offset (weapons).
+        public bool AttachAbove;
 
         public bool Visible = true;
 
@@ -255,7 +263,10 @@ namespace PlayerViewer.Player
                         //point onto the head, so the gear SRT offset applies to all of
                         //them - meshes may rig to Root_Model rather than Root (Hed_AMB020).
                         //Other parts (weapons) only offset the mapped root.
-                        bool isAttach = RestoreAttachBind || bone == AttachBone;
+                        bool isAttach =
+                            RestoreAttachBind
+                            || bone == AttachBone
+                            || (AttachAbove && IsAboveAttach(bone));
                         if (isAttach && AttachOffset != Matrix4.Identity)
                             rt = AttachOffset * rt;
                         //Headgear: the game binds the gear's model origin to the head
@@ -327,6 +338,14 @@ namespace PlayerViewer.Player
                 _weldScale[bone] = scale;
                 bone.Transform = full;
             }
+        }
+
+        bool IsAboveAttach(STBone bone)
+        {
+            for (var b = AttachBone?.Parent; b != null; b = b.Parent)
+                if (b == bone)
+                    return true;
+            return false;
         }
 
         static Vector3 ClampScale(Vector3 s) =>

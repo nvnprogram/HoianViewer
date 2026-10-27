@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
+using BfresEditor;
 using PlayerViewer.Core;
 using ShaderBundler;
 using ShaderLibrary;
@@ -24,10 +26,15 @@ namespace PlayerViewer.Shaders
     public sealed class UberContext
     {
         readonly Romfs _romfs;
+        readonly SplicePlatform _platform;
         readonly object _gate = new();
 
         //Serving archive to why it cannot be paired with this ubershader, null when it can.
         readonly Dictionary<ShaderModel, string> _generation = new();
+
+        UberReach _reach;
+        ISet<string> _noEffect;
+        int _reachVersion;
 
         Task _load;
         UberState _state = UberState.Idle;
@@ -36,8 +43,18 @@ namespace PlayerViewer.Shaders
         public UberContext(Romfs romfs)
         {
             _romfs = romfs ?? throw new ArgumentNullException(nameof(romfs));
-            Cache = new UberSliceCache(AppPaths.UberSliceCacheDir, BundleStamp.Codegen);
+            _platform = romfs.Game == GameKind.Spiral ? SplicePlatform.Nvn2 : SplicePlatform.Nvn;
+            Cache = new UberSliceCache(
+                AppPaths.CacheDir(UberSliceCache.RootName),
+                _platform.SliceCacheName,
+                _platform.Codegen
+            );
         }
+
+        /// <summary>Where this game keeps its ubershader.</summary>
+        public UberSource Source => _platform.Uber;
+
+        public GameKind Game => _romfs.Game;
 
         public UberState State
         {
@@ -74,7 +91,7 @@ namespace PlayerViewer.Shaders
 
         /// <summary>The codegen version that specialiser stamps, or
         /// <see cref="BundleStamp.Unstamped"/> when there is none.</summary>
-        public int Codegen => BundleStamp.Codegen;
+        public int Codegen => _platform.Codegen;
 
         HashSet<ulong> _codeHashes;
 
@@ -106,6 +123,42 @@ namespace PlayerViewer.Shaders
 
         public bool CanCompile => State == UberState.Ready && SpecialiserPath != null;
 
+        /// <summary>What the ubershader can express, measured off its code. Raiders only, and
+        /// null until measured.</summary>
+        public UberReach Reach
+        {
+            get
+            {
+                lock (_gate)
+                    return _reach;
+            }
+        }
+
+        /// <summary>Changes when <see cref="Reach"/> does, so grids built before it can be
+        /// rebuilt.</summary>
+        public int ReachVersion
+        {
+            get
+            {
+                lock (_gate)
+                    return _reachVersion;
+            }
+        }
+
+        /// <summary>
+        /// The options a splice cannot honor as it is unread by the ubershader
+        /// </summary>
+        public ISet<string> NoEffect
+        {
+            get
+            {
+                lock (_gate)
+                    return _noEffect ?? EmptySet;
+            }
+        }
+
+        static readonly ISet<string> EmptySet = new HashSet<string>();
+
         /// <summary>Starts the load if it has not started. Safe to call every frame.</summary>
         public void Ensure()
         {
@@ -114,6 +167,10 @@ namespace PlayerViewer.Shaders
                 if (_load != null)
                     return;
                 _state = UberState.Loading;
+                //The reach is measured by translating the ubershader, which needs the GL
+                //capabilities read on this thread first.
+                if (_platform.ReportsSpliceLoss)
+                    TegraShaderTranslator.InitCaps();
                 _load = Task.Run(Load);
             }
         }
@@ -122,25 +179,34 @@ namespace PlayerViewer.Shaders
         {
             try
             {
+                var src = Source;
                 string sarc =
-                    _romfs.Resolve("Shader/" + UberArchive.SarcName + ".zs")
-                    ?? _romfs.Resolve("Shader/" + UberArchive.SarcName);
+                    _romfs.Resolve("Shader/" + src.SarcName + ".zs")
+                    ?? _romfs.Resolve("Shader/" + src.SarcName);
                 if (sarc == null)
                     throw new FileNotFoundException(
-                        $"no Shader/{UberArchive.SarcName} in the romfs; the ubershader lives "
+                        $"no Shader/{src.SarcName} in the romfs; the ubershader lives "
                             + "inside it and nothing ships as data."
                     );
 
-                var archive = UberArchive.LoadFile(sarc);
-                var model = archive.ShaderModels[UberArchive.ModelName];
+                var archive = UberArchive.LoadFile(sarc, src.EntryName);
+                var model = archive.ShaderModels.ContainsKey(src.ModelName)
+                    ? archive.ShaderModels[src.ModelName]
+                    : null;
                 if (model == null)
                     throw new InvalidOperationException(
-                        $"{UberArchive.EntryName} has no '{UberArchive.ModelName}' shader model."
+                        $"{src.EntryName} has no '{src.ModelName}' shader model."
                     );
 
                 var table = UberOptionTable.Build(model);
                 var assignTypes = UberSelect.AssignTypes(model);
                 string json = table.ToJson();
+
+                //The reach is measured on this thread after the model is published. The programs
+                //load lazily from one shared stream, so they are all loaded before that.
+                if (_platform.ReportsSpliceLoss && model.BnshFile != null)
+                    foreach (var variation in model.BnshFile.Variations)
+                        _ = variation.BinaryProgram;
 
                 lock (_gate)
                 {
@@ -151,9 +217,11 @@ namespace PlayerViewer.Shaders
                     _state = UberState.Ready;
                 }
                 Console.WriteLine(
-                    $"[Uber] {UberArchive.ModelName}: {model.Programs.Count} programs, "
+                    $"[Uber] {src.EntryName} {src.ModelName}: {model.Programs.Count} programs, "
                         + $"{assignTypes.Count} assign types, {table.Rows.Count} options"
                 );
+                if (_platform.ReportsSpliceLoss)
+                    MeasureReach(model);
             }
             catch (Exception ex)
             {
@@ -164,6 +232,100 @@ namespace PlayerViewer.Shaders
                 }
                 Console.WriteLine($"[Uber] load failed: {ex}");
             }
+        }
+
+        //Read back from the last measurement of the same ubershader, else measured and kept.
+        void MeasureReach(ShaderModel model)
+        {
+            var thread = Thread.CurrentThread;
+            var priority = thread.Priority;
+            try
+            {
+                thread.Priority = ThreadPriority.BelowNormal;
+                string path = AppPaths.RaidersUberReachPath;
+                string fingerprint = UberReach.FingerprintOf(model);
+                UberReach reach =
+                    Bundled(fingerprint)
+                    ?? (File.Exists(path) ? UberReach.Parse(File.ReadAllText(path), fingerprint) : null);
+                if (reach == null)
+                {
+                    var sw = System.Diagnostics.Stopwatch.StartNew();
+                    reach = UberReach.Measure(
+                        model,
+                        p =>
+                        {
+                            var bp = model.GetVariation(p).BinaryProgram;
+                            return TegraShaderTranslator.TranslatePair(
+                                bp.VertexShader.ByteCode,
+                                NvnPlatform.EmbeddedConstants(
+                                    bp.VertexShader.ControlCode,
+                                    bp.VertexShader.ByteCode
+                                ),
+                                bp.FragmentShader.ByteCode,
+                                NvnPlatform.EmbeddedConstants(
+                                    bp.FragmentShader.ControlCode,
+                                    bp.FragmentShader.ByteCode
+                                ),
+                                GpuIsa.Ampere
+                            );
+                        }
+                    );
+                    if (reach == null)
+                    {
+                        Console.WriteLine(
+                            "[Uber] reach: the option block is indexed at run time, so what a splice loses is not known"
+                        );
+                        return;
+                    }
+                    File.WriteAllText(path, reach.ToText());
+                    Console.WriteLine($"[Uber] reach measured in {sw.Elapsed.TotalSeconds:F0} s");
+                }
+                var noEffect = new HashSet<string>(reach.Unread, StringComparer.Ordinal);
+                noEffect.ExceptWith(ProductInert(reach));
+                lock (_gate)
+                {
+                    _reach = reach;
+                    _noEffect = noEffect;
+                    _reachVersion++;
+                }
+                Console.WriteLine(
+                    $"[Uber] reach: {reach.Unread.Count} options unread ({noEffect.Count} that matter), "
+                        + $"{reach.UnboundSamplers.Count} samplers bound by no program"
+                );
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Uber] reach failed: {ex}");
+            }
+            finally
+            {
+                thread.Priority = priority;
+            }
+        }
+
+        //The measurement of the stock ubershader ships with the viewer; any other is measured.
+        static UberReach Bundled(string fingerprint)
+        {
+            using var stream = typeof(UberContext).Assembly.GetManifestResourceStream(
+                "PlayerViewer.Shaders.Resources.UberReachSpiral.txt"
+            );
+            if (stream == null)
+                return null;
+            using var reader = new StreamReader(stream);
+            return UberReach.Parse(reader.ReadToEnd().Replace("\r\n", "\n"), fingerprint);
+        }
+
+        //Unread options the product's programs show to change nothing. Its own copy, since the
+        //renderer reads its cached one on the GL thread and programs load from a shared stream.
+        HashSet<string> ProductInert(UberReach reach)
+        {
+            var bytes = _romfs.ReadProduct("Shader", "Hoian_UBER", "product.*.bfsha*");
+            if (bytes == null)
+                return new HashSet<string>();
+            var product = new BfshaFile(new MemoryStream(bytes));
+            return product.ShaderModels.ContainsKey(Source.ModelName)
+                ? reach.Inert(product.ShaderModels[Source.ModelName])
+                : new HashSet<string>();
         }
 
         /// <summary>

@@ -276,7 +276,7 @@ namespace PlayerViewer.Effects.Sim
         void InheritFromParent(int slot)
         {
             var ps = Particles;
-            var s = Def.Source.Section;
+            var s = Def.Raw;
             var pd = Parent.Def;
             Vector3 sourceVec;
             Vector4 sourceScale,

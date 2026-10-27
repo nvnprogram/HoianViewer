@@ -20,6 +20,7 @@ namespace PlayerViewer.UI
             ImGui.PopTextWrapPos();
             if (_standaloneError != null)
                 Widgets.ErrorText(_standaloneError);
+            DrawConvertNotice();
 
             ImGui.Spacing();
             bool back = false;
@@ -147,6 +148,12 @@ namespace PlayerViewer.UI
 
         void DrawModelsTab(List<BfresEditor.BfresModelAsset> models)
         {
+            if (!ReferenceEquals(_renameScene, _standalone))
+            {
+                _renameScene = _standalone;
+                _renameRow = NoRow;
+                _renameError = null;
+            }
             Widgets.BeginList("##models", new Vector2(0, 0));
             for (int mi = 0; mi < models.Count; mi++)
             {
@@ -155,20 +162,184 @@ namespace PlayerViewer.UI
                 bool visible = model.IsVisible;
                 if (Widgets.CheckboxControl($"##{mi}_vis", ref visible))
                     model.IsVisible = visible;
-                ImGui.SameLine();
-                if (ImGui.TreeNode($"{model.ModelData.Name}##{mi}"))
+                var row = (mi, -1);
+                float buttonX = BeginNameRow();
+                bool typing = _renameRow == row;
+                //The ids follow the row, not the name, so a rename keeps the node's open state.
+                bool open = Widgets.ListTreeNode(
+                    typing ? $"###model{mi}" : $"{model.ModelData.Name}###model{mi}",
+                    sameLine: true
+                );
+                if (typing)
                 {
-                    foreach (var mesh in model.Meshes)
+                    ImGui.SameLine();
+                    ImGui.SetCursorScreenPos(
+                        new Vector2(Widgets.ListTreeLabelX(), ImGui.GetCursorScreenPos().Y)
+                    );
+                    DrawRenameField(model, null, buttonX);
+                }
+                EndNameRow(row, buttonX, model.ModelData.Name);
+                if (open)
+                {
+                    for (int si = 0; si < model.Meshes.Count; si++)
                     {
+                        var mesh = model.Meshes[si];
+                        row = (mi, si);
+                        typing = _renameRow == row;
                         Widgets.RowFill(false);
+                        buttonX = BeginNameRow();
                         bool meshVis = mesh.Shape.IsVisible;
-                        if (Widgets.CheckboxControl($"{mesh.Name}##{mi}_{mesh.Name}", ref meshVis))
+                        string label = typing ? "" : mesh.Name;
+                        if (Widgets.CheckboxControl($"{label}###shape{mi}_{si}", ref meshVis))
                             mesh.Shape.IsVisible = meshVis;
+                        if (typing)
+                        {
+                            ImGui.SameLine(0, ImGui.GetStyle().ItemInnerSpacing.X);
+                            DrawRenameField(model, mesh, buttonX);
+                        }
+                        EndNameRow(row, buttonX, mesh.Name);
                     }
                     ImGui.TreePop();
                 }
             }
             Widgets.EndList();
+        }
+
+        static readonly (int Model, int Shape) NoRow = (-1, -1);
+
+        //The row whose name is being typed (a model index, and a shape index or -1 for the model),
+        //and the scene it belongs to.
+        (int Model, int Shape) _renameRow = NoRow;
+        object _renameScene;
+        string _renameText = "";
+
+        //A refused rename's message, shown under its row for a few seconds.
+        string _renameError;
+        (int Model, int Shape) _renameErrorRow = NoRow;
+        DateTime _renameErrorTime;
+
+        //Room between a row's name and its rename button, and between the button and the edge.
+        const float RenameGap = 6,
+            RenameEdgePad = 4;
+
+        /// <summary>
+        /// Starts a list row that ends in a rename button: returns the button's x in window space
+        /// and clips the row's name short of it. Pair with <see cref="EndNameRow"/>.
+        /// </summary>
+        float BeginNameRow()
+        {
+            float size = ImGui.GetFrameHeight();
+            float x = ImGui.GetWindowContentRegionMax().X - size - RenameEdgePad;
+            float clip = ImGui.GetWindowPos().X + x - RenameGap;
+            ImGui.PushClipRect(new Vector2(-1e6f), new Vector2(clip, 1e6f), true);
+            return x;
+        }
+
+        void EndNameRow((int Model, int Shape) row, float buttonX, string name)
+        {
+            ImGui.PopClipRect();
+            ImGui.SameLine(buttonX);
+            Widgets.BeginDisabled(_paint != null);
+            if (Widgets.PencilButton($"##rename{row.Model}_{row.Shape}") && _renameRow != row)
+            {
+                _renameRow = row;
+                _renameText = name;
+                _renameError = null;
+            }
+            Widgets.ItemTooltip(_paint != null ? "Rename (not while painting)" : "Rename");
+            Widgets.EndDisabled();
+            if (
+                _renameError != null
+                && _renameErrorRow == row
+                && (DateTime.Now - _renameErrorTime).TotalSeconds < 5
+            )
+            {
+                ImGui.PushTextWrapPos();
+                Widgets.ErrorText(_renameError);
+                ImGui.PopTextWrapPos();
+            }
+        }
+
+        /// <summary>The name field of the row being renamed; a shape's when <paramref name="mesh"/> is set.</summary>
+        void DrawRenameField(
+            BfresEditor.BfresModelAsset model,
+            BfresEditor.BfresMeshAsset mesh,
+            float buttonX
+        )
+        {
+            float width =
+                ImGui.GetWindowPos().X + buttonX - RenameGap - ImGui.GetCursorScreenPos().X;
+            var state = Widgets.InlineField(
+                $"##renamefield{_renameRow.Model}_{_renameRow.Shape}",
+                ref _renameText,
+                128,
+                width
+            );
+            if (state == Widgets.FieldState.Typing)
+                return;
+            var row = _renameRow;
+            _renameRow = NoRow;
+            if (state == Widgets.FieldState.Cancel)
+                return;
+            string problem = RenameRow(model, mesh, _renameText);
+            if (problem != null)
+            {
+                _renameError = problem;
+                _renameErrorRow = row;
+                _renameErrorTime = DateTime.Now;
+            }
+        }
+
+        /// <summary>
+        /// Renames a model or one of its shapes, in the scene and in the bytes a reload starts
+        /// from, and in the generator when the model is the one its limbs are on. Returns why a
+        /// name was refused, or null.
+        /// </summary>
+        string RenameRow(
+            BfresEditor.BfresModelAsset model,
+            BfresEditor.BfresMeshAsset mesh,
+            string name
+        )
+        {
+            var res = _standalone.Bfres.ResFile;
+            string modelName = model.ModelData.Name;
+            string old = mesh?.Name ?? modelName;
+            if (name == old || _paint != null)
+                return null;
+            string problem =
+                mesh == null
+                    ? Core.BfresNames.ModelProblem(res, old, name)
+                    : Core.BfresNames.ShapeProblem(model.ResModel.Model, old, name);
+            if (problem != null)
+                return problem;
+            try
+            {
+                bool first = res.Models.Keys.FirstOrDefault() == modelName;
+                if (mesh == null)
+                    _standalone.RenameModel(model, name);
+                else
+                    _standalone.RenameShape(model, mesh, name);
+                if (_genOriginal != null && first)
+                {
+                    _genOriginal =
+                        mesh == null
+                            ? Core.BfresNames.RenameModel(_genOriginal, old, name)
+                            : Core.BfresNames.RenameShape(_genOriginal, modelName, old, name);
+                    if (mesh != null && _gen != null)
+                        foreach (var part in _gen.Mesh.Parts)
+                            if (part.Name == old)
+                                part.Name = name;
+                }
+                Console.WriteLine(
+                    $"[Standalone] Renamed {(mesh == null ? "model" : "shape")} {old} to {name}"
+                );
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Standalone] Rename of {old} failed: {ex}");
+                return "The rename failed: " + ex.Message;
+            }
         }
 
         //Every model of the loaded scene.

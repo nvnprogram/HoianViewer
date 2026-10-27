@@ -84,9 +84,15 @@ namespace PlayerViewer.Core.Formats
                 int content = section + BitConverter.ToInt32(_data, contentTable + c * 4);
                 string owner = CString(content);
                 int tags = _data[content + 0x1C];
+                //An extended user data content (type 2) puts the offset of its tag table and of its
+                //name list first.
+                int tagTable =
+                    _data[content + 0x1D] == 2
+                        ? content + BitConverter.ToInt32(_data, content + 0x20)
+                        : content + 0x20;
                 for (int t = 0; t < tags; t++)
                 {
-                    int tag = content + BitConverter.ToInt32(_data, content + 0x20 + t * 4);
+                    int tag = content + BitConverter.ToInt32(_data, tagTable + t * 4);
                     string magic = Encoding.ASCII.GetString(_data, tag, 4);
                     int entries = _data[tag + 4];
                     for (int e = 0; e < entries; e++)

@@ -6,6 +6,9 @@ using ShaderLibrary;
 
 namespace ShaderBundler
 {
+    /// <summary>Where one game keeps its debug ubershader.</summary>
+    public sealed record UberSource(string SarcName, string EntryName, string ModelName);
+
     /// <summary>
     /// The debug ubershader, read out of the sample sarc in a romfs Shader folder.
     /// </summary>
@@ -14,6 +17,16 @@ namespace ShaderBundler
         public const string SarcName = "Sample.Nin_NX_NVN.release.sarc";
         public const string EntryName = "Hoian_UBER.Nin_NX_NVN.bfsha";
         public const string ModelName = "hoian_uber";
+
+        /// <summary>Splatoon 3's.</summary>
+        public static readonly UberSource Nvn = new(SarcName, EntryName, ModelName);
+
+        /// <summary>Splatoon Raiders'</summary>
+        public static readonly UberSource Nvn2 = new(
+            "Sample.Nin_Ounce_NVN2.release.sarc",
+            "Hoian_UBER.Nin_Ounce_NVN2.bfsha",
+            "hoian_uber"
+        );
 
         /// <summary>Options the ubershader has no code for. A vector that sets one of them
         /// away from its default gets a shader that silently does something else.</summary>
@@ -39,13 +52,16 @@ namespace ShaderBundler
         }
 
         /// <summary>Loads the ubershader archive out of the given sarc, plain or zstd.</summary>
-        public static BfshaFile LoadFile(string sarcPath)
+        public static BfshaFile LoadFile(string sarcPath) => LoadFile(sarcPath, EntryName);
+
+        /// <summary>Loads the named archive out of the given sarc, plain or zstd.</summary>
+        public static BfshaFile LoadFile(string sarcPath, string entryName)
         {
             if (!File.Exists(sarcPath))
                 throw new FileNotFoundException($"no such sarc: {sarcPath}");
             var files = ReadSarc(Decompress(File.ReadAllBytes(sarcPath)));
-            if (!files.TryGetValue(EntryName, out var entry))
-                throw new InvalidOperationException($"{sarcPath} has no {EntryName}");
+            if (!files.TryGetValue(entryName, out var entry))
+                throw new InvalidOperationException($"{sarcPath} has no {entryName}");
             return new BfshaFile(new MemoryStream(entry));
         }
 

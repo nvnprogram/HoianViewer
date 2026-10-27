@@ -35,13 +35,17 @@ namespace PlayerViewer.Effects
         /// <summary>Storage buffers the vertex stage reads (stripe plugins, custom attributes).</summary>
         public IReadOnlyList<string> StorageBuffers { get; }
 
+        /// <summary>Storage buffer location per reflection name in the fragment stage.</summary>
+        public IReadOnlyDictionary<string, int> FragmentStorage { get; }
+
         EmitterProgram(
             int index,
             BnshFile.ShaderVariation variation,
             Dictionary<EffectBlock, StageSlots> blocks,
             Dictionary<string, StageSlots> samplers,
             Dictionary<string, int> attributes,
-            List<string> storage
+            List<string> storage,
+            Dictionary<string, int> fragmentStorage
         )
         {
             Index = index;
@@ -50,6 +54,16 @@ namespace PlayerViewer.Effects
             Samplers = samplers;
             Attributes = attributes;
             StorageBuffers = storage;
+            FragmentStorage = fragmentStorage;
+        }
+
+        /// <summary>The fragment storage buffer at <paramref name="location"/>, or null.</summary>
+        public string FragmentStorageAt(int location)
+        {
+            foreach (var (name, at) in FragmentStorage)
+                if (at == location)
+                    return name;
+            return null;
         }
 
         public StageSlots Block(EffectBlock block) =>
@@ -104,10 +118,7 @@ namespace PlayerViewer.Effects
 
         static EmitterProgram LoadLocked(ShaderArchive archive, int index)
         {
-            var model = archive.GeneralModel;
-            if (model == null || index < 0 || index >= model.Programs.Count)
-                return null;
-            var variation = model.GetVariation(model.Programs[index]);
+            var variation = archive.GetRenderVariation(index);
             var program = variation?.BinaryProgram;
             if (program == null)
                 return null;
@@ -118,7 +129,19 @@ namespace PlayerViewer.Effects
             var storage = new List<string>();
             Collect(program.VertexShaderReflection, true, blocks, samplers, attributes, storage);
             Collect(program.FragmentShaderReflection, false, blocks, samplers, null, storage);
-            return new EmitterProgram(index, variation, blocks, samplers, attributes, storage);
+            var fragmentStorage = new Dictionary<string, int>();
+            if (program.FragmentShaderReflection is { } fr)
+                for (int i = 0; i < fr.StorageBuffers.Count; i++)
+                    fragmentStorage[fr.StorageBuffers.GetKey(i)] = (int)fr.StorageBuffers[i].Value;
+            return new EmitterProgram(
+                index,
+                variation,
+                blocks,
+                samplers,
+                attributes,
+                storage,
+                fragmentStorage
+            );
         }
 
         static void Collect(

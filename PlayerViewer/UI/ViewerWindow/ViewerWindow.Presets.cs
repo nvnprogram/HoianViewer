@@ -27,13 +27,13 @@ namespace PlayerViewer.UI
             if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
                 path += ".json";
 
-            //Mirror the live scene into _config.Player, then serialize that snapshot.
+            //Mirror the live scene into the game's player config, then serialize that snapshot.
             SavePlayerConfig();
             try
             {
                 File.WriteAllText(
                     path,
-                    JsonConvert.SerializeObject(_config.Player, Formatting.Indented)
+                    JsonConvert.SerializeObject(_config.Active.Player, Formatting.Indented)
                 );
                 _presetStatus = $"Saved {Path.GetFileName(path)}";
                 Console.WriteLine($"[UI] Saved preset {path}");
@@ -79,7 +79,7 @@ namespace PlayerViewer.UI
                 //Adopt the preset as the current config and apply it. Gear rows missing from
                 //the loaded game resolve to blank slots inside RestorePlayerConfig.
                 preset.Normalize();
-                _config.Player = preset;
+                _config.Active.Player = preset;
                 RestorePlayerConfig();
                 SavePlayerConfig();
                 _presetStatus = $"Loaded {Path.GetFileName(path)}";

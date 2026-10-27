@@ -7,13 +7,15 @@ using PlayerViewer.Core.Formats;
 namespace PlayerViewer.Core
 {
     /// <summary>
-    /// Access to a Splatoon 3 romfs dump with optional LayeredFS overlay:
+    /// Access to a romfs dump with optional LayeredFS overlay:
     /// if a file exists under the layered root it wins over the base romfs,
     /// mirroring atmosphere mods. Lookup also handles .zs decompression.
     /// </summary>
     public class Romfs
     {
         public string Root { get; }
+
+        public GameKind Game { get; }
 
         /// <summary>Optional mod overlay root (same layout as romfs). Null = none.</summary>
         public string LayeredRoot { get; }
@@ -30,24 +32,29 @@ namespace PlayerViewer.Core
             string root,
             string layeredRoot = null,
             bool useLayered = false,
-            string sdodrRoot = null
+            string sdodrRoot = null,
+            GameKind game = GameKind.Thunder
         )
         {
             Root = root;
+            Game = game;
             LayeredRoot = layeredRoot;
             UseLayered =
                 useLayered && !string.IsNullOrEmpty(layeredRoot) && Directory.Exists(layeredRoot);
             SdodrRoot =
                 !string.IsNullOrEmpty(sdodrRoot) && Directory.Exists(sdodrRoot) ? sdodrRoot : null;
+            Layout = RomfsLayout.For(this);
         }
 
-        public static bool IsValidRoot(string root)
-        {
-            return !string.IsNullOrEmpty(root)
-                && Directory.Exists(Path.Combine(root, "Model"))
-                && Directory.Exists(Path.Combine(root, "RSDB"))
-                && File.Exists(Path.Combine(root, "Model", "Player00.bfres.zs"));
-        }
+        /// <summary>Where this game keeps its files.</summary>
+        public RomfsLayout Layout { get; }
+
+        public static bool IsValidRoot(string root, GameKind game) =>
+            RomfsLayout.IsRoot(root, game);
+
+        /// <summary>The romfs a chosen folder names for a game, or null.</summary>
+        public static string FindRoot(string path, GameKind game) =>
+            RomfsLayout.FindRoot(path, game);
 
         /// <summary>
         /// Resolves a romfs-relative path (also trying + ".zs") to a full path,
@@ -121,12 +128,23 @@ namespace PlayerViewer.Core
         }
 
         /// <summary>Model bfres by name (e.g. "Hed_ACC003"), decompressed. Null if missing.</summary>
-        public byte[] ReadModel(string modelName) => ReadFile($"Model/{modelName}.bfres");
+        public byte[] ReadModel(string modelName) => Layout.ReadModel(modelName);
 
         /// <summary>Alias of ReadModel (used by animation loading).</summary>
         public byte[] ReadModelFile(string modelName) => ReadModel(modelName);
 
-        public bool ModelExists(string modelName) => FileExists($"Model/{modelName}.bfres");
+        public bool ModelExists(string modelName) => Layout.ModelExists(modelName);
+
+        /// <summary>
+        /// The animation archive that goes with a Raiders model archive, or null.
+        /// </summary>
+        public byte[] ReadAnimArchive(string archive) => Layout.ReadAnimArchive(archive);
+
+        /// <summary>The archive a Raiders model is in, or null.</summary>
+        public string ArchiveOf(string modelName) => Layout.ArchiveOf(modelName);
+
+        /// <summary>The file a model's animations are read from: its archive's for Raiders, else its own.</summary>
+        public string AnimFileOf(string modelName) => Layout.AnimFileOf(modelName);
 
         /// <summary>
         /// Lists files in a romfs directory matching a pattern, unioned across the
@@ -208,18 +226,7 @@ namespace PlayerViewer.Core
                 : null;
 
         /// <summary>Lists model names (without extension) starting with the given prefix.</summary>
-        public List<string> ListModelFiles(string prefix)
-        {
-            var results = new List<string>();
-            foreach (var file in FindFiles("Model", prefix + "*.bfres.zs"))
-            {
-                string name = Path.GetFileName(file);
-                name = name.Substring(0, name.Length - ".bfres.zs".Length);
-                results.Add(name);
-            }
-            results.Sort(StringComparer.OrdinalIgnoreCase);
-            return results;
-        }
+        public List<string> ListModelFiles(string prefix) => Layout.ListModelFiles(prefix);
 
         /// <summary>Actor pack by name (e.g. "Hed_ACC003"), cached. Null if missing.</summary>
         public Sarc GetActorPack(string actorName)

@@ -111,9 +111,16 @@ namespace PlayerViewer.UI
             //is what says which of them still resolve.
             EnsureUberContext();
 
+            //Raiders keeps a model's files in several folders, so the save takes a romfs root.
+            if (_romfs?.Game == Core.GameKind.Spiral)
+            {
+                OpenSpiralSave();
+                return;
+            }
+
             string path = NativeFolderPicker.SaveFile(
                 "Save Model As",
-                ModelBundle.SuggestName(_standalone.SourcePath),
+                ConvertedSuggestName() ?? ModelBundle.SuggestName(_standalone.SourcePath),
                 "BFRES models (*.bfres;*.zs)",
                 "*.bfres.zs;*.bfres"
             );
@@ -185,6 +192,7 @@ namespace PlayerViewer.UI
                 meta.Note = "physics metadata not written: " + ex.Message;
                 Console.WriteLine($"[Meta] {ex}");
             }
+            var companions = PrepareConvertedSave(path);
             _saveReportTime = DateTime.Now;
             _saveReport = ModelBundle.Save(
                 _standalone.Bfres,
@@ -193,6 +201,7 @@ namespace PlayerViewer.UI
                 SavingWithSplicer() ? GetVariations : ExistenceVariations,
                 Textures
             );
+            FinishConvertedSave(companions);
             _saveProblemsOpen = _saveReport.VerifyFailed > 0 || !_saveReport.Ok;
             if (!_saveReport.Ok)
                 meta.Undo?.Invoke();

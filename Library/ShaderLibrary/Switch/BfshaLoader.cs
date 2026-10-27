@@ -42,6 +42,7 @@ namespace ShaderLibrary.Switch
             ushort ModelCount = reader.ReadUInt16();
             ushort flag = reader.ReadUInt16();
             reader.ReadUInt16();
+            bfsha.Flags = flag;
         }
 
         private static ShaderModel ReadShaderModel(BinaryDataReader reader)
@@ -69,8 +70,10 @@ namespace ShaderLibrary.Switch
             long symbolInfoOffset = reader.ReadInt64();
             long shaderFileOffset = reader.ReadInt64();
             reader.ReadInt64(); //0
-            reader.ReadInt64(); //0
-            reader.ReadInt64(); //0
+            ulong unknownTableOffset = reader.ReadUInt64();
+            ulong unknownTableLength = reader.ReadUInt64();
+            if ((reader.Header.VersionMajor > 9 || (reader.Header.VersionMajor == 9 && reader.Header.VersionMinor >= 1)) && unknownTableOffset != 0)
+                shaderModel.UnknownTable = reader.ReadCustom(() => reader.ReadBytes((int)unknownTableLength), unknownTableOffset);
 
             if (reader.Header.VersionMajor >= 7)
             {
@@ -121,10 +124,12 @@ namespace ShaderLibrary.Switch
             //v9 keeps one symbol and one location per stage the shaders use, and a compute model
             //has only the compute stage.
             bool computeOnly = reader.Header.VersionMajor >= 9 && IsComputeOnly(shaderModel.BnshFile);
+            //v9 adds the geometry stage between the two when the programs have one.
+            bool geometry = reader.Header.VersionMajor >= 9 && !computeOnly && HasGeometry(shaderModel.BnshFile);
 
             shaderModel.Programs = ReadArray(reader,
                  (ulong)shaderProgramArrayOffset,
-                 programCount, r => ReadBfshaShaderProgram(r, computeOnly));
+                 programCount, r => ReadBfshaShaderProgram(r, computeOnly, geometry));
 
             foreach (var program in shaderModel.Programs)
                 program.ParentShader = shaderModel;
@@ -139,7 +144,7 @@ namespace ShaderLibrary.Switch
             if (symbolInfoOffset != 0)
             {
                 reader.SeekBegin(symbolInfoOffset);
-                shaderModel.SymbolData = ReadSymbolTable(reader, shaderModel, computeOnly);
+                shaderModel.SymbolData = ReadSymbolTable(reader, shaderModel, computeOnly, geometry);
             }
 
             //Compute variation index for saving
@@ -167,6 +172,17 @@ namespace ShaderLibrary.Switch
             programReader.SeekBegin((long)variation.header.BinaryOffset + 48);
             ulong computeOffset = programReader.ReadUInt64();
             return vertexOffset == 0 && computeOffset != 0;
+        }
+
+        /// <summary>Whether the first variation has a geometry stage.</summary>
+        static bool HasGeometry(BnshFile bnsh)
+        {
+            var variation = bnsh.Variations.FirstOrDefault();
+            if (variation == null)
+                return false;
+            var programReader = new BinaryDataReader(variation._stream, false, true);
+            programReader.SeekBegin((long)variation.header.BinaryOffset + 32);
+            return programReader.ReadUInt64() != 0;
         }
 
         static BfshaSampler ReadSampler(BinaryDataReader reader)
@@ -267,10 +283,10 @@ namespace ShaderLibrary.Switch
             };
         }
 
-        static BfshaShaderProgram ReadBfshaShaderProgram(BinaryDataReader reader, bool computeOnly)
+        static BfshaShaderProgram ReadBfshaShaderProgram(BinaryDataReader reader, bool computeOnly, bool geometry)
         {
             BfshaShaderProgram prog = new BfshaShaderProgram();
-            Func<BinaryDataReader, ShaderIndexHeader> ReadShaderLocations = r => ReadShaderLocationsPerStage(r, computeOnly);
+            Func<BinaryDataReader, ShaderIndexHeader> ReadShaderLocations = r => ReadShaderLocationsPerStage(r, computeOnly, geometry);
 
             if (reader.Header.VersionMajor >= 8)
             {
@@ -325,7 +341,7 @@ namespace ShaderLibrary.Switch
             return prog;
         }
 
-        static ShaderIndexHeader ReadShaderLocationsPerStage(BinaryDataReader reader, bool computeOnly)
+        static ShaderIndexHeader ReadShaderLocationsPerStage(BinaryDataReader reader, bool computeOnly, bool geometry)
         {
             ShaderIndexHeader header = new ShaderIndexHeader();
             if (reader.Header.VersionMajor >= 9 && computeOnly)
@@ -333,6 +349,8 @@ namespace ShaderLibrary.Switch
             else if (reader.Header.VersionMajor >= 9)
             {
                 header.VertexLocation = reader.ReadInt32();
+                if (geometry)
+                    header.GeoemetryLocation = reader.ReadInt32();
                 header.FragmentLocation = reader.ReadInt32();
             }
             else
@@ -351,10 +369,10 @@ namespace ShaderLibrary.Switch
             return header;
         }
 
-        static SymbolData ReadSymbolTable(BinaryDataReader reader, ShaderModel shaderModel, bool computeOnly)
+        static SymbolData ReadSymbolTable(BinaryDataReader reader, ShaderModel shaderModel, bool computeOnly, bool geometry)
         {
             SymbolData symbolTable = new();
-            Func<BinaryDataReader, SymbolData.SymbolEntry> ReadSymbol = r => ReadSymbolPerStage(r, computeOnly);
+            Func<BinaryDataReader, SymbolData.SymbolEntry> ReadSymbol = r => ReadSymbolPerStage(r, computeOnly, geometry);
 
             if (reader.Header.VersionMajor >= 8)
             {
@@ -380,7 +398,7 @@ namespace ShaderLibrary.Switch
             return symbolTable;
         }
 
-        static SymbolData.SymbolEntry ReadSymbolPerStage(BinaryDataReader reader, bool computeOnly)
+        static SymbolData.SymbolEntry ReadSymbolPerStage(BinaryDataReader reader, bool computeOnly, bool geometry)
         {
             SymbolData.SymbolEntry symbol = new();
             symbol.Name1 = reader.LoadString();
@@ -397,6 +415,9 @@ namespace ShaderLibrary.Switch
             }
             if (reader.Header.VersionMajor == 9 && !computeOnly)
             {
+                //With a geometry stage the fragment name stays in Value1 and the geometry one goes to Name2.
+                if (geometry)
+                    symbol.Name2 = reader.LoadString();
                 symbol.Value1 = reader.LoadString();
             }
             return symbol;

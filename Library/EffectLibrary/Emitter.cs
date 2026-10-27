@@ -37,9 +37,10 @@ namespace EffectLibrary
         {
             if (section.Tag != "EMTR")
                 throw new InvalidOperationException($"Expected EMTR, found {section.Tag}");
-            if (section.Payload.Length != EmitterLayout.PayloadSize)
+            Map = set.File.EmitterMap;
+            if (section.Payload.Length != Map.PayloadSize)
                 throw new InvalidOperationException(
-                    $"EMTR payload is 0x{section.Payload.Length:X} bytes, v46 is 0x{EmitterLayout.PayloadSize:X}"
+                    $"EMTR payload is 0x{section.Payload.Length:X} bytes, v{Map.Version} is 0x{Map.PayloadSize:X}"
                 );
             Set = set;
             Parent = parent;
@@ -49,6 +50,9 @@ namespace EffectLibrary
         }
 
         public Span<byte> Data => Section.Data;
+
+        /// <summary>Where this file's version keeps the fields below.</summary>
+        public EmitterMap Map { get; }
 
         public string Name
         {
@@ -60,93 +64,94 @@ namespace EffectLibrary
             new[] { this }.Concat(Children.SelectMany(x => x.SelfAndDescendants));
 
         /// <summary>The bytes the game uploads as sysEmitterStaticUniformBlock.</summary>
-        public Span<byte> StaticBlock => Data[..EmitterLayout.StaticBlockSize];
+        public Span<byte> StaticBlock => Data[..Map.StaticBlockSize];
 
         public bool Visible
         {
-            get => Section.GetU8(EmitterLayout.Visible) != 0;
-            set => Section.SetU8(EmitterLayout.Visible, value ? (byte)1 : (byte)0);
+            get => Section.GetU8(Map.Visible) != 0;
+            set => Section.SetU8(Map.Visible, value ? (byte)1 : (byte)0);
         }
 
         public EmitterCalcType CalcType
         {
-            get => (EmitterCalcType)Section.GetU8(EmitterLayout.CalcType);
-            set => Section.SetU8(EmitterLayout.CalcType, (byte)value);
+            get => (EmitterCalcType)Section.GetU8(Map.CalcType);
+            set => Section.SetU8(Map.CalcType, (byte)value);
         }
 
-        public byte FollowType => Section.GetU8(EmitterLayout.FollowType);
+        public byte FollowType => Section.GetU8(Map.FollowType);
 
-        public uint DrawPath => Section.GetU32(EmitterLayout.DrawPath);
+        public uint DrawPath => Section.GetU32(Map.DrawPath);
 
-        public int Life => Section.GetS32(EmitterLayout.Life);
+        public int Life => Section.GetS32(Map.Life);
 
-        public bool InfiniteLife => Section.GetU8(EmitterLayout.InfiniteLife) != 0;
+        public bool InfiniteLife => Section.GetU8(Map.InfiniteLife) != 0;
 
-        public byte BillboardType => Section.GetU8(EmitterLayout.BillboardType);
+        public byte BillboardType => Section.GetU8(Map.BillboardType);
 
-        public byte VolumeType => Section.GetU8(EmitterLayout.VolumeType);
+        public byte VolumeType => Section.GetU8(Map.VolumeType);
 
-        public ulong ShapePrimitiveId => Section.GetU64(EmitterLayout.ShapePrimitiveId);
+        public ulong ShapePrimitiveId => Section.GetU64(Map.ShapePrimitiveId);
 
-        public ulong ParticlePrimitiveId => Section.GetU64(EmitterLayout.ParticlePrimitiveId);
+        public ulong ParticlePrimitiveId => Section.GetU64(Map.ParticlePrimitiveId);
 
-        public ulong ParticlePrimitiveExId => Section.GetU64(EmitterLayout.ParticlePrimitiveExId);
+        public ulong ParticlePrimitiveExId => Section.GetU64(Map.ParticlePrimitiveExId);
 
         /// <summary>Program index into the general shader archive for the ordinary pass.</summary>
         public int ShaderIndex
         {
-            get => Section.GetS32(EmitterLayout.ShaderIndex);
-            set => Section.SetS32(EmitterLayout.ShaderIndex, value);
+            get => Section.GetS32(Map.ShaderIndex);
+            set => Section.SetS32(Map.ShaderIndex, value);
         }
 
         /// <summary>The same program with the converter option <see cref="DepthMode"/> names set
         /// (ZONLY_CONVERTER, LUMA_CONVERTER or NO_DEPTH_TEST_CONVERTER).</summary>
         public int DepthModeShaderIndex
         {
-            get => Section.GetS32(EmitterLayout.DepthModeShaderIndex);
-            set => Section.SetS32(EmitterLayout.DepthModeShaderIndex, value);
+            get => Section.GetS32(Map.DepthModeShaderIndex);
+            set => Section.SetS32(Map.DepthModeShaderIndex, value);
         }
 
         /// <summary>The same program with the converter option <see cref="PassInfo"/> names set,
         /// XLU_Z_PREPASS_CONVERTER in every stock file.</summary>
         public int PassShaderIndex
         {
-            get => Section.GetS32(EmitterLayout.PassShaderIndex);
-            set => Section.SetS32(EmitterLayout.PassShaderIndex, value);
+            get => Section.GetS32(Map.PassShaderIndex);
+            set => Section.SetS32(Map.PassShaderIndex, value);
         }
 
         /// <summary>Program index into the compute archive (GRSC) for a stream out emitter, -1
         /// for the others.</summary>
         public int ComputeShaderIndex
         {
-            get => Section.GetS32(EmitterLayout.ComputeShaderIndex);
-            set => Section.SetS32(EmitterLayout.ComputeShaderIndex, value);
+            get => Section.GetS32(Map.ComputeShaderIndex);
+            set => Section.SetS32(Map.ComputeShaderIndex, value);
         }
 
         /// <summary>ZONLY, LUMA or NO_DEPTH_TEST: names the option that tells the depth mode
         /// program from the base one.</summary>
-        public string DepthMode => Section.GetString(EmitterLayout.DepthMode, 16);
+        public string DepthMode => Section.GetString(Map.DepthMode, 16);
 
         /// <summary>XLU_Z_PREPASS in every stock file: names the option of the pass program.</summary>
-        public string PassInfo => Section.GetString(EmitterLayout.PassInfo, 48);
+        public string PassInfo => Section.GetString(Map.PassInfo, 48);
 
         /// <summary>The game callback set the emitter's particles go through, 0 for none.</summary>
-        public int CustomAction => Section.GetS32(EmitterLayout.CustomAction);
+        public int CustomAction => Section.GetS32(Map.CustomAction);
 
-        public RenderState RenderState => new(Section);
+        public RenderState RenderState => new(Section, Map.RenderState);
 
         public TextureSampler GetSampler(int slot)
         {
-            if ((uint)slot >= EmitterLayout.SamplerCount)
+            if ((uint)slot >= Map.SamplerCount)
                 throw new ArgumentOutOfRangeException(nameof(slot));
             return new TextureSampler(
                 Section,
-                EmitterLayout.Samplers + slot * EmitterLayout.SamplerStride
+                Map.Samplers + slot * Map.SamplerStride,
+                Map.SamplerStride
             );
         }
 
         public IEnumerable<TextureSampler> Samplers =>
-            Enumerable.Range(0, EmitterLayout.SamplerCount).Select(GetSampler);
+            Enumerable.Range(0, Map.SamplerCount).Select(GetSampler);
 
         /// <summary>The emitter keyframe animations (the EA** sub-sections).</summary>
         public IEnumerable<EmitterAnimation> Animations =>
@@ -174,41 +179,53 @@ namespace EffectLibrary
         public override string ToString() => Name;
     }
 
-    /// <summary>ResEmitter +0xBD8, 16 bytes: blend, depth and cull state.</summary>
+    /// <summary>ResEmitter +0xBD8 (v54 +0xE08), 16 bytes: blend, depth and cull state.</summary>
     public readonly struct RenderState
     {
         readonly VfxSection _section;
+        readonly int _at;
 
-        internal RenderState(VfxSection section) => _section = section;
+        internal RenderState(VfxSection section, int at)
+        {
+            _section = section;
+            _at = at;
+        }
 
-        public bool BlendEnable => _section.GetU8(EmitterLayout.BlendEnable) != 0;
-        public bool DepthTest => _section.GetU8(EmitterLayout.DepthTest) != 0;
-        public byte DepthFunc => _section.GetU8(EmitterLayout.DepthFunc);
-        public bool DepthWrite => _section.GetU8(EmitterLayout.DepthWrite) != 0;
-        public byte AlphaTest => _section.GetU8(EmitterLayout.AlphaTest);
-        public byte AlphaFunc => _section.GetU8(EmitterLayout.AlphaFunc);
+        public bool BlendEnable => _section.GetU8(_at) != 0;
+        public bool DepthTest => _section.GetU8(_at + 1) != 0;
+        public byte DepthFunc => _section.GetU8(_at + 2);
+        public bool DepthWrite => _section.GetU8(_at + 3) != 0;
+        public byte AlphaTest => _section.GetU8(_at + 4);
+        public byte AlphaFunc => _section.GetU8(_at + 5);
 
         /// <summary>0 normal, 1 add, 2 sub, 3 screen, 4 multiply.</summary>
-        public byte BlendType => _section.GetU8(EmitterLayout.BlendType);
+        public byte BlendType => _section.GetU8(_at + 6);
 
         /// <summary>0 both sides, 1 front (cull back), 2 back (cull front).</summary>
-        public byte DisplaySide => _section.GetU8(EmitterLayout.DisplaySide);
+        public byte DisplaySide => _section.GetU8(_at + 7);
 
         public override string ToString() =>
             $"blend {(BlendEnable ? BlendType.ToString() : "off")} depth test {DepthTest} func {DepthFunc} write {DepthWrite} side {DisplaySide}";
     }
 
-    /// <summary>One of the six 0x20 byte sampler slots at ResEmitter +0xD90.</summary>
+    /// <summary>
+    /// One of the six sampler slots: 0x20 bytes at ResEmitter +0xD90 in v46, 0x18 bytes at
+    /// +0x1038 in v54, which drops the two LOD floats and moves the flag bytes up.
+    /// </summary>
     public readonly struct TextureSampler
     {
         readonly VfxSection _section;
         readonly int _at;
+        readonly bool _short;
 
-        internal TextureSampler(VfxSection section, int at)
+        internal TextureSampler(VfxSection section, int at, int stride)
         {
             _section = section;
             _at = at;
+            _short = stride != EmitterLayout.SamplerStride;
         }
+
+        int Flag(int v46) => _short ? v46 - 7 : v46;
 
         /// <summary>The GTNT guid of the texture; 0 or all ones when the slot is unused.</summary>
         public ulong TextureId
@@ -221,13 +238,13 @@ namespace EffectLibrary
         public byte WrapV => _section.GetU8(_at + 0x09);
         public byte Filter => _section.GetU8(_at + 0x0A);
         public byte IsSphereMap => _section.GetU8(_at + 0x0B);
-        public float MaxLod => _section.GetF32(_at + 0x0C);
-        public float LodBias => _section.GetF32(_at + 0x10);
-        public byte MipLevelLimit => _section.GetU8(_at + 0x14);
-        public byte IsDensityFixedU => _section.GetU8(_at + 0x15);
-        public byte IsDensityFixedV => _section.GetU8(_at + 0x16);
-        public byte IsSquareRgb => _section.GetU8(_at + 0x17);
-        public byte IsOnAnotherBinary => _section.GetU8(_at + 0x18);
+        public float MaxLod => _short ? 16 : _section.GetF32(_at + 0x0C);
+        public float LodBias => _short ? 0 : _section.GetF32(_at + 0x10);
+        public byte MipLevelLimit => _section.GetU8(_at + Flag(0x14));
+        public byte IsDensityFixedU => _section.GetU8(_at + Flag(0x15));
+        public byte IsDensityFixedV => _section.GetU8(_at + Flag(0x16));
+        public byte IsSquareRgb => _section.GetU8(_at + Flag(0x17));
+        public byte IsOnAnotherBinary => _short ? (byte)0 : _section.GetU8(_at + 0x18);
 
         public bool IsUsed => TextureId != 0 && TextureId != ulong.MaxValue;
     }

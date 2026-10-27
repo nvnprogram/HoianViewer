@@ -25,38 +25,30 @@ namespace ShaderBundler
         /// <summary>'UBSP'</summary>
         public const uint Magic = 0x50534255;
 
-        /// <summary>Offset of the stamp inside the 2176 byte control blob.</summary>
-        public const int Offset = 0x768;
-
-        /// <summary>Offset of the code hash inside the control blob.</summary>
-        public const int CodeHashOffset = 0x7e0;
-
         /// <summary>What <see cref="Read"/> answers for a program with no stamp.</summary>
         public const int Unstamped = -1;
-
-        /// <summary>
-        /// The codegen version of the specialiser this build splices with, or
-        /// <see cref="Unstamped"/> if uninit.
-        /// </summary>
-        public static int Codegen { get; set; } = Unstamped;
 
         /// <summary>The codegen version stamped in a control blob, or <see cref="Unstamped"/>.</summary>
         public static int Read(byte[] control)
         {
-            if (control == null || control.Length < Offset + 8)
+            int at = NvnPlatform.Of(control).StampOffset;
+            if (control == null || control.Length < at + 8)
                 return Unstamped;
-            if (BitConverter.ToUInt32(control, Offset) != Magic)
+            if (BitConverter.ToUInt32(control, at) != Magic)
                 return Unstamped;
-            return BitConverter.ToInt32(control, Offset + 4);
+            return BitConverter.ToInt32(control, at + 4);
         }
 
         /// <summary>
         /// The control blob's code hash
         /// </summary>
-        public static ulong CodeHash(byte[] control) =>
-            control == null || control.Length < CodeHashOffset + 8
+        public static ulong CodeHash(byte[] control)
+        {
+            int at = NvnPlatform.Of(control).CodeHashOffset;
+            return control == null || control.Length < at + 8
                 ? 0
-                : BitConverter.ToUInt64(control, CodeHashOffset);
+                : BitConverter.ToUInt64(control, at);
+        }
 
         /// <summary>
         /// Whether an embedded archive holds a program this build's specialiser did not make.
@@ -67,7 +59,7 @@ namespace ShaderBundler
         /// </summary>
         public static BundleAge Age(BfshaFile archive, ISet<ulong> uberCodeHashes)
         {
-            if (archive == null || Codegen == Unstamped)
+            if (archive == null || !SplicePlatform.AnyCodegen)
                 return BundleAge.Unknown;
 
             bool any = false;
@@ -85,8 +77,11 @@ namespace ShaderBundler
                             continue;
                         any = true;
 
+                        int current = SplicePlatform.Of(code.ControlCode).Codegen;
+                        if (current == Unstamped)
+                            return BundleAge.Unknown;
                         int stamp = Read(code.ControlCode);
-                        if (stamp == Codegen)
+                        if (stamp == current)
                             continue;
                         if (stamp != Unstamped)
                             return BundleAge.Stale;

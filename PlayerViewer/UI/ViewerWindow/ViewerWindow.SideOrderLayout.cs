@@ -162,6 +162,11 @@ namespace PlayerViewer.UI
         {
             const float gap = SideOrderLayout.RightStackGap;
             const float floor = 2 * SideOrderLayout.CardRounding;
+            if (AuthoringShown)
+            {
+                DrawMakerCards(min, max);
+                return;
+            }
             float avail = max.Y - min.Y - 2 * gap;
             float animMin = Math.Min(_animCardMin, Math.Max(avail - 2 * floor, 0));
             float room = Math.Max(avail - animMin, 0);
@@ -205,6 +210,39 @@ namespace PlayerViewer.UI
                     if (_animMode == 1)
                         DrawSequencePanel();
                 }
+            );
+            _captureCardHeight = Card(
+                "##capture",
+                new Vector2(min.X, captureTop),
+                max,
+                6,
+                DrawCapturePanel
+            );
+        }
+
+        //The least the Physics Maker's card keeps when the capture card is tall.
+        const float MakerCardMin = 240;
+
+        /// <summary>
+        /// The Physics Maker's card in place of the animation and source cards, the capture card
+        /// under it as tall as its content while the maker keeps its minimum.
+        /// </summary>
+        void DrawMakerCards(Vector2 min, Vector2 max)
+        {
+            const float gap = SideOrderLayout.RightStackGap;
+            const float floor = 2 * SideOrderLayout.CardRounding;
+            float avail = max.Y - min.Y - gap;
+            float capture = Math.Max(
+                Math.Min(_captureCardHeight, avail - MakerCardMin),
+                Math.Min(floor, avail / 2)
+            );
+            float captureTop = max.Y - capture;
+            Card(
+                "##maker",
+                min,
+                new Vector2(max.X, Math.Max(captureTop - gap, min.Y)),
+                4,
+                DrawAuthoringPanel
             );
             _captureCardHeight = Card(
                 "##capture",

@@ -40,7 +40,7 @@ namespace PlayerViewer.Player
             var data = romfs.ReadModel("GearAlphaMask");
             if (data == null)
             {
-                Console.WriteLine("[AlphaMask] GearAlphaMask.bfres not found");
+                LoadSeparate(romfs);
                 return;
             }
 
@@ -52,24 +52,58 @@ namespace PlayerViewer.Player
                 new MemoryStream(data, bntxOffset, data.Length - bntxOffset)
             );
             foreach (var tex in bntx.Textures)
+                AddMask(bntx, tex, tex.Name);
+            Console.WriteLine($"[AlphaMask] Loaded {_masks.Count} masks");
+        }
+
+        //Raiders: one file per mask, Tex/GearAlphaMask.<name>_Opa.bntx.zs.
+        void LoadSeparate(Romfs romfs)
+        {
+            const string prefix = "GearAlphaMask.";
+            foreach (var path in romfs.FindFiles("Tex", prefix + "*.bntx.zs"))
             {
+                string file = Path.GetFileName(path);
+                string name = file[prefix.Length..^".bntx.zs".Length];
                 try
                 {
-                    //Texture names carry an _Opa suffix; RSDB mask names do not.
-                    string name = tex.Name.EndsWith("_Opa") ? tex.Name[..^4] : tex.Name;
-                    var bt = new BntxTexture(bntx, tex);
-                    _masks[name] = new MaskImage(
-                        bt.GetDecodedSurface(0, 0),
-                        (int)bt.Width,
-                        (int)bt.Height
-                    );
+                    var data = Romfs.Decompress(File.ReadAllBytes(path));
+                    var bntx = new Syroot.NintenTools.NSW.Bntx.BntxFile(new MemoryStream(data));
+                    if (bntx.Textures.Count > 0)
+                        AddMask(bntx, bntx.Textures[0], name);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[AlphaMask] Failed to decode {tex.Name}: {ex.Message}");
+                    Console.WriteLine($"[AlphaMask] Failed to read {file}: {ex.Message}");
                 }
             }
-            Console.WriteLine($"[AlphaMask] Loaded {_masks.Count} masks");
+            if (_masks.Count == 0)
+                Console.WriteLine("[AlphaMask] GearAlphaMask.bfres not found");
+            else
+                Console.WriteLine($"[AlphaMask] Loaded {_masks.Count} masks");
+        }
+
+        void AddMask(
+            Syroot.NintenTools.NSW.Bntx.BntxFile bntx,
+            Syroot.NintenTools.NSW.Bntx.Texture tex,
+            string name
+        )
+        {
+            try
+            {
+                //Texture names carry an _Opa suffix; RSDB mask names do not.
+                if (name.EndsWith("_Opa"))
+                    name = name[..^4];
+                var bt = new BntxTexture(bntx, tex);
+                _masks[name] = new MaskImage(
+                    bt.GetDecodedSurface(0, 0),
+                    (int)bt.Width,
+                    (int)bt.Height
+                );
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[AlphaMask] Failed to decode {tex.Name}: {ex.Message}");
+            }
         }
 
         static int FindBntx(byte[] data)

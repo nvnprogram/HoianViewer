@@ -38,7 +38,7 @@ namespace PlayerViewer.HairGen
             var sourceMesh = SkinnedMesh.FromModel(partnerFirst);
             meta.ApplyRest(sourceMesh);
 
-            var stock = new Romfs(romfs.Root, null, false, romfs.SdodrRoot).ReadModel(partner);
+            var stock = new Romfs(romfs.Root, null, false, romfs.SdodrRoot, romfs.Game).ReadModel(partner);
             if (stock != null)
             {
                 var removed = meta

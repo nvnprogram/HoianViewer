@@ -6,6 +6,7 @@ using BfresLibrary;
 using Gsys;
 using ImGuiNET;
 using PlayerViewer.Materials;
+using PlayerViewer.Shaders;
 using Vector2 = System.Numerics.Vector2;
 
 namespace PlayerViewer.UI
@@ -15,6 +16,9 @@ namespace PlayerViewer.UI
     {
         string _optionSearch = "";
         bool _optionsStoredOnly;
+
+        //The options a splice ignores, set once per draw of the tab.
+        ISet<string> _optionsNoEffect = new HashSet<string>();
 
         /// <summary>
         /// Every option the archive declares, not only the ones the material happens to store.
@@ -47,6 +51,7 @@ namespace PlayerViewer.UI
                 return;
             }
 
+            _optionsNoEffect = _uber?.NoEffect ?? new HashSet<string>();
             var declared = shaderModel.StaticOptions;
             int stored = 0;
             for (int i = 0; i < declared.Count; i++)
@@ -107,6 +112,8 @@ namespace PlayerViewer.UI
             bool changed = baseline.OptionChanged(material.Material, name);
 
             DrawEntryName(name, changed, dim: atDefault);
+            if (_optionsNoEffect.Contains(name))
+                NoEffectWhenSpliced(ApproximatedWhenSpliced(material, name));
 
             var reset = ResetAction(
                 material,
@@ -130,6 +137,19 @@ namespace PlayerViewer.UI
                 return;
             SetShaderOption(material, name, picked ?? GsysShaderOptions.Unset);
         }
+
+        static void NoEffectWhenSpliced(bool approximated = false)
+        {
+            ImGui.SameLine();
+            Widgets.DimText(approximated ? "approximated when spliced" : "no effect when spliced");
+        }
+
+        //Whether this material's splice rebuilds the feature of an option or sampler.
+        bool ApproximatedWhenSpliced(FMAT material, string name) =>
+            _queue != null
+            && _queue.TryGet(material, out var v)
+            && v.Layer?.Drawn != null
+            && v.Layer.Covered.Contains(name);
 
         void DrawFreeTextOption(FMAT material, string name, string value)
         {

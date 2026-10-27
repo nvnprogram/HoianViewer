@@ -9,7 +9,7 @@ namespace PlayerViewer.Env
     /// 30 point and spot lights, and a 20 by 20 grid of cells over XZ that each list up to four of
     /// them. Rebuilt the way the game does each frame: reset, add the lights, write the block.
     /// </summary>
-    public sealed class LightCluster
+    public sealed class LightCluster : BfresEditor.ILightTable
     {
         public const int MaxLights = 30;
         public const int Grid = 20;
@@ -186,6 +186,44 @@ namespace PlayerViewer.Env
             Row(span, InverseCellRow, new Vector4(Vector3.One / CellSize, 0));
             return b;
         }
+
+        /// <summary>
+        /// Raiders' form of the same lights: one cluster listing every light, and the light
+        /// array, as the gsys_view_proj_data and gsys_env_obj_data buffers.
+        /// </summary>
+        (byte[] Clusters, byte[] Objects) BfresEditor.ILightTable.BuildStorageBuffers() =>
+            BuildRaiders();
+
+        public (byte[] Clusters, byte[] Objects) BuildRaiders()
+        {
+            var clusters = new byte[Math.Max(16, (RaidersElementHead + Count) * 4)];
+            BinaryPrimitives.WriteInt32LittleEndian(clusters, Count);
+            for (int i = 0; i < Count; i++)
+                BinaryPrimitives.WriteInt32LittleEndian(clusters.AsSpan((RaidersElementHead + i) * 4), i);
+
+            var objects = new byte[Math.Max(176, 16 + Count * 80)];
+            var span = objects.AsSpan();
+            BinaryPrimitives.WriteInt32LittleEndian(span, Count);
+            BinaryPrimitives.WriteInt32LittleEndian(span[8..], Count);
+            for (int i = 0; i < Count; i++)
+            {
+                var l = _lights[i];
+                var at = span[(16 + i * 80)..];
+                //The game's own types, whose distance falloff is (1 - d / range) ^ exponent.
+                BinaryPrimitives.WriteInt32LittleEndian(at, l.Spot ? 17 : 16);
+                BinaryPrimitives.WriteUInt32LittleEndian(at[8..], 0xFFFF);
+                var data = at[16..];
+                Row(data, 0, new Vector4(l.Color.X, l.Color.Y, l.Color.Z, l.Param.X));
+                Row(data, 1, new Vector4(l.Position, 1));
+                Row(data, 2, new Vector4(l.Param.Y, 0, 0, l.Spot ? l.Param.Z : -1));
+                Row(data, 3, new Vector4(l.Direction, l.Param.W));
+            }
+            return (clusters, objects);
+        }
+
+        /// <summary>Where the light indices start in <see cref="BuildRaiders"/>'s cluster buffer,
+        /// after the one list's count and start.</summary>
+        public const int RaidersElementHead = 2;
 
         static void Row(Span<byte> b, int row, Vector4 v)
         {

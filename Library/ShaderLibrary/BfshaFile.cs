@@ -233,6 +233,10 @@ namespace ShaderLibrary
         /// </summary>
         public BnshFile BnshFile { get; set; }
         /// <summary>
+        /// A byte table only v9.1 writes, after the bnsh pointer. Null when the file has none.
+        /// </summary>
+        public byte[] UnknownTable;
+        /// <summary>
         /// The index for what default program to use when option searching fails.
         /// </summary>
         public int DefaultProgramIndex = -1;

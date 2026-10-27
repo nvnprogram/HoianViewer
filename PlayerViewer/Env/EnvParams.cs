@@ -79,73 +79,15 @@ namespace PlayerViewer.Env
                 return p;
 
             var lighting = Hash(root, "Lighting");
-            var main = Hash(lighting, "MainLight");
-            p.MainLightLatitude = Byml.GetFloat(main, "Latitude", p.MainLightLatitude);
-            p.MainLightLongitude = Byml.GetFloat(main, "Longitude", p.MainLightLongitude);
-            p.MainLightColor = Color(main, "Color", p.MainLightColor);
-            p.MainLightIntens = Byml.GetFloat(main, "Intens", p.MainLightIntens);
-            p.CubeMapIntens = Byml.GetFloat(main, "CubeMapIntens", p.CubeMapIntens);
-            p.IsUseCubeMapIntens = Byml.GetBool(main, "IsUseCubeMapIntens", p.IsUseCubeMapIntens);
-
-            var sky = Hash(lighting, "SkySphere");
-            p.SkyEnable = Byml.GetBool(sky, "Enable", p.SkyEnable);
-            p.SkyActor = Byml.GetString(sky, "ActorName", p.SkyActor);
-            p.SkyEmissionIntensInEnvMap = Byml.GetFloat(
-                sky,
-                "EmissionIntensInEnvMap",
-                p.SkyEmissionIntensInEnvMap
-            );
-            p.SkySaturationInEnvMap = Byml.GetFloat(
-                sky,
-                "SaturationInEnvMap",
-                p.SkySaturationInEnvMap
-            );
-            p.SkyRotate = Byml.GetFloat(sky, "Rotate", p.SkyRotate);
+            p.ReadMainLight(Hash(lighting, "MainLight"), "Intens");
+            p.ReadSky(Hash(lighting, "SkySphere"));
 
             var fog = Hash(root, "Fog");
-            var depth = Hash(fog, "DepthFog");
-            p.DepthFogStart = Byml.GetFloat(depth, "Start", p.DepthFogStart);
-            p.DepthFogEnd = Byml.GetFloat(depth, "End", p.DepthFogEnd);
-            p.DepthFogScattering = Byml.GetFloat(depth, "ScatteringCoeff", p.DepthFogScattering);
-            p.DepthFogColor = Color(depth, "Color", p.DepthFogColor);
+            p.ReadDepthFog(Hash(fog, "DepthFog"));
+            p.ReadHeightFog(Hash(fog, "HeightFog"));
+            p.ReadRadialFog(Hash(fog, "RadialFog"));
 
-            var height = Hash(fog, "HeightFog");
-            p.HeightFogStart = Byml.GetFloat(height, "Start", p.HeightFogStart);
-            p.HeightFogEnd = Byml.GetFloat(height, "End", p.HeightFogEnd);
-            p.HeightFogColor = Color(height, "Color", p.HeightFogColor);
-            var dir = Hash(height, "Dir");
-            if (dir != null)
-                p.HeightFogDir = new Vector3(
-                    Byml.GetFloat(dir, "X", p.HeightFogDir.X),
-                    Byml.GetFloat(dir, "Y", p.HeightFogDir.Y),
-                    Byml.GetFloat(dir, "Z", p.HeightFogDir.Z)
-                );
-
-            var radial = Hash(fog, "RadialFog");
-            p.RadialFogLobeCtrl = Byml.GetFloat(radial, "LobeCtrl", p.RadialFogLobeCtrl);
-            p.RadialFogSizeCtrl = Byml.GetFloat(radial, "SizeCtrl", p.RadialFogSizeCtrl);
-            p.RadialFogColor = Color(radial, "Color", p.RadialFogColor);
-            p.RadialFogIntens = Byml.GetFloat(radial, "Intens", p.RadialFogIntens);
-            p.RadialFogBlendFactor = Byml.GetFloat(radial, "BlendFactor", p.RadialFogBlendFactor);
-
-            var bake = Hash(Hash(root, "Shadow"), "BakeShadow");
-            p.BakeShadowIntensOffset = Byml.GetFloat(
-                bake,
-                "BakeShadowIntensOffset",
-                p.BakeShadowIntensOffset
-            );
-            p.BakeShadowIntensScale = Byml.GetFloat(
-                bake,
-                "BakeShadowIntensScale",
-                p.BakeShadowIntensScale
-            );
-            p.BakeAOIntensOffset = Byml.GetFloat(bake, "BakeAOIntensOffset", p.BakeAOIntensOffset);
-            p.BakeAOIntensScale = Byml.GetFloat(bake, "BakeAOIntensScale", p.BakeAOIntensScale);
-            p.BakeAOMainLightOcclude = Byml.GetFloat(
-                bake,
-                "BakeAOMainLightOcclude",
-                p.BakeAOMainLightOcclude
-            );
+            p.ReadBake(Hash(Hash(root, "Shadow"), "BakeShadow"));
 
             var post = Hash(root, "PostEffect");
             p.BloomThreshold = Byml.GetFloat(Hash(post, "Bloom"), "Threshold", p.BloomThreshold);
@@ -155,12 +97,84 @@ namespace PlayerViewer.Env
             return p;
         }
 
-        static Dictionary<string, object> Hash(Dictionary<string, object> hash, string key) =>
+        //The groups both games' params share; each game keeps them under its own keys.
+        internal void ReadMainLight(Dictionary<string, object> main, string intensKey)
+        {
+            MainLightLatitude = Byml.GetFloat(main, "Latitude", MainLightLatitude);
+            MainLightLongitude = Byml.GetFloat(main, "Longitude", MainLightLongitude);
+            MainLightColor = Color(main, "Color", MainLightColor);
+            MainLightIntens = Byml.GetFloat(main, intensKey, MainLightIntens);
+            CubeMapIntens = Byml.GetFloat(main, "CubeMapIntens", CubeMapIntens);
+            IsUseCubeMapIntens = Byml.GetBool(main, "IsUseCubeMapIntens", IsUseCubeMapIntens);
+        }
+
+        internal void ReadSky(Dictionary<string, object> sky)
+        {
+            SkyEnable = Byml.GetBool(sky, "Enable", SkyEnable);
+            SkyActor = Byml.GetString(sky, "ActorName", SkyActor);
+            SkyEmissionIntensInEnvMap = Byml.GetFloat(
+                sky,
+                "EmissionIntensInEnvMap",
+                SkyEmissionIntensInEnvMap
+            );
+            SkySaturationInEnvMap = Byml.GetFloat(sky, "SaturationInEnvMap", SkySaturationInEnvMap);
+            SkyRotate = Byml.GetFloat(sky, "Rotate", SkyRotate);
+        }
+
+        internal void ReadDepthFog(Dictionary<string, object> depth)
+        {
+            DepthFogStart = Byml.GetFloat(depth, "Start", DepthFogStart);
+            DepthFogEnd = Byml.GetFloat(depth, "End", DepthFogEnd);
+            DepthFogScattering = Byml.GetFloat(depth, "ScatteringCoeff", DepthFogScattering);
+            DepthFogColor = Color(depth, "Color", DepthFogColor);
+        }
+
+        internal void ReadHeightFog(Dictionary<string, object> height)
+        {
+            HeightFogStart = Byml.GetFloat(height, "Start", HeightFogStart);
+            HeightFogEnd = Byml.GetFloat(height, "End", HeightFogEnd);
+            HeightFogColor = Color(height, "Color", HeightFogColor);
+            var dir = Hash(height, "Dir");
+            if (dir != null)
+                HeightFogDir = new Vector3(
+                    Byml.GetFloat(dir, "X", HeightFogDir.X),
+                    Byml.GetFloat(dir, "Y", HeightFogDir.Y),
+                    Byml.GetFloat(dir, "Z", HeightFogDir.Z)
+                );
+        }
+
+        internal void ReadRadialFog(Dictionary<string, object> radial)
+        {
+            RadialFogLobeCtrl = Byml.GetFloat(radial, "LobeCtrl", RadialFogLobeCtrl);
+            RadialFogSizeCtrl = Byml.GetFloat(radial, "SizeCtrl", RadialFogSizeCtrl);
+            RadialFogColor = Color(radial, "Color", RadialFogColor);
+            RadialFogIntens = Byml.GetFloat(radial, "Intens", RadialFogIntens);
+            RadialFogBlendFactor = Byml.GetFloat(radial, "BlendFactor", RadialFogBlendFactor);
+        }
+
+        internal void ReadBake(Dictionary<string, object> bake)
+        {
+            BakeShadowIntensOffset = Byml.GetFloat(
+                bake,
+                "BakeShadowIntensOffset",
+                BakeShadowIntensOffset
+            );
+            BakeShadowIntensScale = Byml.GetFloat(bake, "BakeShadowIntensScale", BakeShadowIntensScale);
+            BakeAOIntensOffset = Byml.GetFloat(bake, "BakeAOIntensOffset", BakeAOIntensOffset);
+            BakeAOIntensScale = Byml.GetFloat(bake, "BakeAOIntensScale", BakeAOIntensScale);
+            BakeAOMainLightOcclude = Byml.GetFloat(
+                bake,
+                "BakeAOMainLightOcclude",
+                BakeAOMainLightOcclude
+            );
+        }
+
+        internal static Dictionary<string, object> Hash(Dictionary<string, object> hash, string key) =>
             hash != null && hash.TryGetValue(key, out var v)
                 ? v as Dictionary<string, object>
                 : null;
 
-        static Vector4 Color(Dictionary<string, object> hash, string key, Vector4 fallback)
+        internal static Vector4 Color(Dictionary<string, object> hash, string key, Vector4 fallback)
         {
             var c = Hash(hash, key);
             if (c == null)

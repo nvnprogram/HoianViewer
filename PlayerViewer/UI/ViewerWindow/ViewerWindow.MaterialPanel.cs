@@ -4,6 +4,7 @@ using System.Linq;
 using BfresEditor;
 using BfresLibrary;
 using ImGuiNET;
+using PlayerViewer.Core;
 using PlayerViewer.Materials;
 using PlayerViewer.Textures;
 using Vector2 = System.Numerics.Vector2;
@@ -104,12 +105,11 @@ namespace PlayerViewer.UI
             if (Widgets.CheckboxControl("Use splicer", ref use))
                 SetSplicer(use);
             Widgets.ItemTooltip(
-                "Generates the shader variations the game does not ship, by splicing the "
-                    + "ubershader's bytecode, and packs them into the model on save.\n\nUnsupported materials "
-                    + "are automatically normalized to conform and render(i.e., a Splatoon 2 material).\n\n"
-                    + "A generated variation has ~1.1x instructions of an equivalent shipping variation, "
-                    + "which is negligible next to the fallback ubershader(which is 25x more instructions)."
+                "Generates shader variations game didn't have previously.\n\n"
+                    + "Unsupported materials(i.e., Splatoon2) are automatically normalized.\n"
+                    + "This is basically a fix for 'invalid materials' lagging the game."
             );
+            DrawApproxToggle();
 
             if (_config.UseSplicer && _uber != null && _uber.SpecialiserPath == null)
             {
@@ -121,6 +121,24 @@ namespace PlayerViewer.UI
                 ImGui.PopTextWrapPos();
             }
             ImGui.Separator();
+        }
+
+        //Raiders only. Shown off and locked while the splicer is off; the setting is kept.
+        void DrawApproxToggle()
+        {
+            if (_romfs?.Game != GameKind.Spiral)
+                return;
+            ImGui.SameLine();
+            bool splicer = _config.UseSplicer;
+            bool on = splicer && _config.Spiral.ApproxMissingOpts;
+            Widgets.BeginDisabled(!splicer);
+            if (Widgets.CheckboxControl("Approx Missing Opts", ref on) && splicer)
+            {
+                _config.Spiral.ApproxMissingOpts = on;
+                _config.Save();
+            }
+            Widgets.EndDisabled();
+            Widgets.ItemTooltip("Rebuilds features the Raiders ubershader lacks from calc colours");
         }
 
         /// <summary>
@@ -316,7 +334,7 @@ namespace PlayerViewer.UI
             for (int i = 0; i < values.Length; i++)
             {
                 T value = values[i];
-                ImGui.SetNextItemWidth(i == 0 ? ControlWidth(reset) : -1);
+                ImGui.SetNextItemWidth(ControlWidth(i == 0 ? reset : null));
                 bool edited = input($"##{id}_{i}", ref value);
                 if (i == 0)
                     DrawResetButton(id, reset);
@@ -374,6 +392,7 @@ namespace PlayerViewer.UI
         //Width of the reset button and the gap in front of it, so a control that has one does
         //not run to the edge and push it off.
         const float ResetButtonWidth = 52;
+        const float ScrollGap = 3;
 
         readonly Dictionary<FMAT, MaterialBaseline> _materialBaselines = new();
 
@@ -389,8 +408,14 @@ namespace PlayerViewer.UI
             return baseline;
         }
 
-        static float ControlWidth(Action reset) =>
-            reset == null ? -1 : -(ResetButtonWidth + ImGui.GetStyle().ItemSpacing.X);
+        //Under a scrollbar the control stops short, so it keeps the gap between rows from the thumb.
+        static float ControlWidth(Action reset)
+        {
+            float right = ImGui.GetScrollMaxY() > 0 ? ScrollGap : 0;
+            if (reset != null)
+                right += ResetButtonWidth + ImGui.GetStyle().ItemSpacing.X;
+            return -Math.Max(1, right);
+        }
 
         /// <summary>Sits to the right of the control it undoes. A null action means the entry
         /// still holds what the file did, so there is nothing to draw.</summary>
