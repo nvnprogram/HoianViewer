@@ -407,6 +407,7 @@ namespace PlayerViewer.UI
                 if (tries == 600)
                     throw new TimeoutException("its programs did not finish linking");
                 System.Threading.Thread.Sleep(50);
+                GLFrameworkEngine.ShaderProgram.FrameStamp++;
             }
         }
 
