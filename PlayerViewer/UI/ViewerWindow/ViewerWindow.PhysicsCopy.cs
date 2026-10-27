@@ -162,7 +162,7 @@ namespace PlayerViewer.UI
                 var missing = file
                     .Skeletons.SelectMany(s => s.BoneNames)
                     .Distinct()
-                    .Where(n => !have.Contains(n))
+                    .Where(n => !have.Contains(n) && !have.Contains(ClothSkeleton.ModelName(n)))
                     .ToList();
                 if (missing.Count > 0)
                 {

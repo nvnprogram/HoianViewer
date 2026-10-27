@@ -193,6 +193,28 @@ namespace PlayerViewer.Phive
 
         public string[] BoneNames => Bones.Objects.Select(b => b.String("name") ?? "").ToArray();
 
+        /// <summary>A bone's name as the model has it, without the namespace an exporter may write before it (<c>Mdl:Head</c>).</summary>
+        public static string ModelName(string bone) => bone[(bone.LastIndexOf(':') + 1)..];
+
+        /// <summary>A cloth bone in the model: by its name, else by its name without a namespace.</summary>
+        public static T FindInModel<T>(string bone, Func<string, T> find)
+            where T : class =>
+            find(bone) ?? (ModelName(bone) is var name && name != bone ? find(name) : null);
+
+        /// <summary>The model index of a cloth bone, matched as <see cref="FindInModel{T}"/> does; -1 for none.</summary>
+        public static int IndexInModel(string bone, Func<string, int> indexOf)
+        {
+            int index = indexOf(bone);
+            return index < 0 && ModelName(bone) is var name && name != bone ? indexOf(name) : index;
+        }
+
+        /// <summary>The cloth index of a model bone among <paramref name="names"/>, matched as <see cref="FindInModel{T}"/> does; -1 for none.</summary>
+        public static int IndexOfModelBone(string[] names, string modelBone)
+        {
+            int index = Array.IndexOf(names, modelBone);
+            return index >= 0 ? index : Array.FindIndex(names, n => ModelName(n) == modelBone);
+        }
+
         public int[] ParentIndices => Source.Array("parentIndices").Ints();
 
         /// <summary>The local reference pose (hkQsTransform): translation, rotation quaternion, scale; w as stored.</summary>

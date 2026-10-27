@@ -367,11 +367,15 @@ namespace PlayerViewer.Phive
             var skeleton = file.SkeletonFor(piece);
             string name = model[modelBone].Name;
             var names = skeleton.BoneNames;
-            int existing = Array.IndexOf(names, name);
+            int existing = ClothSkeleton.IndexOfModelBone(names, name);
             if (existing >= 0)
                 return existing;
 
-            int parent = ClothParent(model, modelBone, a => Array.IndexOf(names, model[a].Name));
+            int parent = ClothParent(
+                model,
+                modelBone,
+                a => ClothSkeleton.IndexOfModelBone(names, model[a].Name)
+            );
             AppendBone(
                 skeleton.Source,
                 name,
@@ -388,7 +392,8 @@ namespace PlayerViewer.Phive
         }
 
         static Matrix4 WorldOf(IReadOnlyList<AuthorBone> model, string name) =>
-            model.FirstOrDefault(b => b.Name == name)?.World ?? Matrix4.Identity;
+            ClothSkeleton.FindInModel(name, n => model.FirstOrDefault(b => b.Name == n))?.World
+            ?? Matrix4.Identity;
 
         /// <summary>The cloth index of a model bone's nearest ancestor in the cloth skeleton, -1 for none.</summary>
         static int ClothParent(

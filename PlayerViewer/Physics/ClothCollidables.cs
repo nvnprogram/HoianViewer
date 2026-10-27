@@ -25,7 +25,10 @@ namespace PlayerViewer.Physics
                 string boneName = names?.ElementAtOrDefault(
                     sim.CollidableTransformIndices.ElementAtOrDefault(slot)
                 );
-                int model = boneName != null ? BoneTree.IndexOf(bones, boneName) : -1;
+                int model =
+                    boneName != null
+                        ? ClothSkeleton.IndexInModel(boneName, n => BoneTree.IndexOf(bones, n))
+                        : -1;
                 if (model < 0)
                     continue;
                 var offset = HkValue.Affine(col.Transform) * Matrix4.Invert(bones[model].World);

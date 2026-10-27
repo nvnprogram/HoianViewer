@@ -102,16 +102,11 @@ namespace PlayerViewer.Physics
             }
         }
 
-        static STBone Find(IReadOnlyList<STSkeleton> skeletons, string name)
-        {
-            foreach (var s in skeletons)
-            {
-                var b = s.SearchBone(name);
-                if (b != null)
-                    return b;
-            }
-            return null;
-        }
+        static STBone Find(IReadOnlyList<STSkeleton> skeletons, string name) =>
+            ClothSkeleton.FindInModel(
+                name,
+                n => skeletons.Select(s => s.SearchBone(n)).FirstOrDefault(b => b != null)
+            );
 
         /// <summary>
         /// Steps every running piece; the skeleton must hold this frame's pose. When not enabled

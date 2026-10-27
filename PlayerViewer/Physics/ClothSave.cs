@@ -19,7 +19,9 @@ namespace PlayerViewer.Physics
             foreach (var piece in file.Container.ClothDatas)
                 if (file.Params.MeshFor(piece.Name) == null)
                 {
-                    string root = file.SkeletonFor(piece)?.BoneNames.FirstOrDefault() ?? "";
+                    string root = ClothSkeleton.ModelName(
+                        file.SkeletonFor(piece)?.BoneNames.FirstOrDefault() ?? ""
+                    );
                     file.Params.AddMesh(piece.Name, root);
                     notes.Add($"added cloth_mesh parameters for {piece.Name}");
                 }

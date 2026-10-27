@@ -68,11 +68,13 @@ namespace PlayerViewer.Player
             var bones = new STBone[piece.BoneNames.Length];
             for (int i = 0; i < bones.Length; i++)
             {
-                string name = piece.BoneNames[i];
-                bones[i] =
-                    name == "Spine_3"
-                        ? humanSkeleton?.SearchBone(name) ?? hairSkeleton.SearchBone(name)
-                        : hairSkeleton.SearchBone(name) ?? humanSkeleton?.SearchBone(name);
+                bones[i] = ClothSkeleton.FindInModel(
+                    piece.BoneNames[i],
+                    name =>
+                        name == "Spine_3"
+                            ? humanSkeleton?.SearchBone(name) ?? hairSkeleton.SearchBone(name)
+                            : hairSkeleton.SearchBone(name) ?? humanSkeleton?.SearchBone(name)
+                );
                 if (bones[i] == null)
                     return null;
             }
