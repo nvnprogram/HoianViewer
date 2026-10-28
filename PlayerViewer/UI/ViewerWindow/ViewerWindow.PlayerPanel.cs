@@ -105,7 +105,7 @@ namespace PlayerViewer.UI
             DrawTeamColorSection();
 
             Widgets.SectionHeader("Gear");
-            GearRow("Head", GearSlot.Head, _scene.CurrentHead, allowNone: false);
+            GearRow("Head", GearSlot.Head, _scene.CurrentHead, allowNone: !_db.HasInvisibleHead);
             GearRow("Clothes", GearSlot.Clothes, _scene.CurrentClothes);
             if (_db.Glove.Count > 0)
                 GearRow("Gloves", GearSlot.Glove, _scene.CurrentGlove);

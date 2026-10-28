@@ -717,6 +717,8 @@ namespace BfresLibrary
             foreach (var anim in BoneVisibilityAnims.Values)
             {
                 anim.BakedSize = 0;
+                if (IsPlatformSwitch)
+                    continue;
                 foreach (var curve in anim.Curves)
                     anim.BakedSize += curve.CalculateBakeSize(IsPlatformSwitch);
             }

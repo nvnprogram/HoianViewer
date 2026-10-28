@@ -174,6 +174,9 @@ namespace PlayerViewer.Core
         //nothing but still carries the default hair-arrange presets (e.g.
         //Blitz_SQD004_0 collapsing SQD004's extra curl shells). It replaces the
         //old "Blank" option, so float it to the top as the default head.
+        /// <summary>Whether the head table has Hed_INV000. Raiders has none, so no headgear is a null head there.</summary>
+        public bool HasInvisibleHead => Head.Exists(x => x.RowId == "Hed_INV000");
+
         void FloatInvisibleHead()
         {
             int inv = Head.FindIndex(x => x.RowId == "Hed_INV000");

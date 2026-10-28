@@ -193,10 +193,25 @@ namespace BfresLibrary
         {
             if (isSwitch)
             {
-                if (CurveType == AnimCurveType.StepInt || CurveType == AnimCurveType.StepBool)
-                    return (uint)(1 * (EndFrame - StartFrame + 1) + 12) + 4;
+                int start = (int)System.Math.Floor(StartFrame);
+                if (CurveType < AnimCurveType.StepInt)
+                {
+                    int floatKeys = (int)(System.Math.Floor(EndFrame) + 1) - start + 1;
+                    return floatKeys <= 2 ? 0u : (uint)(Align8(4 * floatKeys) + 24);
+                }
+                int keys = (int)System.Math.Floor(EndFrame) - start + 1;
+                if (keys <= 2)
+                    return 0;
+                int size;
+                if (CurveType == AnimCurveType.StepBool || CurveType == AnimCurveType.BakedBool)
+                    size = ((keys + 31) & ~31) / 8;
+                else if (KeyType == AnimCurveKeyType.SByte)
+                    size = keys;
+                else if (KeyType == AnimCurveKeyType.Int16)
+                    size = keys * 2;
                 else
-                    return (uint)(4 * (EndFrame - StartFrame + 1) + 32 ) - 4;
+                    size = keys * 4;
+                return (uint)(Align8(size) + 16);
             }
             else
             {
@@ -206,6 +221,8 @@ namespace BfresLibrary
                     return (uint)(4 * (EndFrame - StartFrame + 1) + 20);
             }
         }
+
+        static int Align8(int size) => (size + 7) & ~7;
 
         public AnimCurve Copy()
         {
